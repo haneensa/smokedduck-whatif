@@ -79,6 +79,9 @@ if (EXTENSION_STATIC_BUILD AND "${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
   endif()
 endif()
 
+option(BUILD_LINEAGE_DEBUG_EXTENSION "Build LINEAGE DEBUG extension" FALSE)
+option(BUILD_LINEAGE_EXTENSION "Build LINEAGE extension." FALSE)
+
 option(DISABLE_UNITY "Disable unity builds." FALSE)
 
 option(FORCE_COLORED_OUTPUT
@@ -147,6 +150,16 @@ if((BUILD_PYTHON OR BUILD_R OR BUILD_NODE OR CONFIGURE_R)
     set(ENABLE_UBSAN FALSE)
   endif()
 endif()
+
+if(${BUILD_LINEAGE_EXTENSION})
+  message(STATUS "Enable Lineage collection")
+  add_definitions(-DLINEAGE=1)
+  if (${BUILD_LINEAGE_DEBUG_EXTENSION})
+    message(STATUS "Enable Lineage debug")
+    add_definitions(-DLINEAGE_DEBUG=1)
+  endif()
+endif()
+
 if(${ENABLE_THREAD_SANITIZER})
   if(${ENABLE_SANITIZER})
     message(
