@@ -433,6 +433,7 @@ void RowGroup::TemplatedScan(TransactionData transaction, CollectionScanState &s
 		} else {
 			count = max_count;
 		}
+		// NOTE: if not table_filters, then no need to capture anything except for parallel execution
 		if (count == max_count && !table_filters) {
 			// scan all vectors completely: full scan without deletions or table filters
 			for (idx_t i = 0; i < column_ids.size(); i++) {
@@ -451,7 +452,11 @@ void RowGroup::TemplatedScan(TransactionData transaction, CollectionScanState &s
 					}
 				}
 			}
+#ifdef LINEAGE
+			//! TODO: capture the range this scan read
+#endif
 		} else {
+			// TODO: table_filters, we need to capture data movement
 			// partial scan: we have deletions or table filters
 			idx_t approved_tuple_count = count;
 			SelectionVector sel;
@@ -495,6 +500,10 @@ void RowGroup::TemplatedScan(TransactionData transaction, CollectionScanState &s
 				state.vector_index++;
 				continue;
 			}
+#ifdef LINEAGE
+			auto lineage = make_uniq<LineageSelVec>(sel, approved_tuple_count);
+			result.log_record = make_shared<LogRecord>(move(lineage), this->start + current_row);
+#endif
 			//! Now we use the selection vector to fetch data for the other columns.
 			for (idx_t i = 0; i < column_ids.size(); i++) {
 				if (!table_filters || table_filters->filters.find(i) == table_filters->filters.end()) {

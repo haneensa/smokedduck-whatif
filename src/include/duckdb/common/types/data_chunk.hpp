@@ -14,6 +14,9 @@
 #include "duckdb/common/types/vector.hpp"
 #include "duckdb/common/winapi.hpp"
 
+#ifdef LINEAGE
+#include "duckdb/execution/lineage/operator_lineage.hpp"
+#endif
 struct ArrowArray;
 
 namespace duckdb {
@@ -161,6 +164,10 @@ public:
 	//! FUNCTION ONLY!
 	DUCKDB_API void Verify();
 
+#ifdef LINEAGE
+	//shared_ptr<OperatorLineage> lineage_op;
+	shared_ptr<LogRecord> log_record;
+#endif
 private:
 	//! The amount of tuples stored in the data chunk
 	idx_t count;

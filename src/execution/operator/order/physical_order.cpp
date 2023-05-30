@@ -7,6 +7,9 @@
 #include "duckdb/parallel/event.hpp"
 #include "duckdb/storage/buffer_manager.hpp"
 
+#ifdef LINEAGE
+#include "duckdb/parallel/thread_context.hpp"
+#endif
 namespace duckdb {
 
 PhysicalOrder::PhysicalOrder(vector<LogicalType> types, vector<BoundOrderByNode> orders, vector<idx_t> projections,
@@ -93,9 +96,9 @@ SinkResultType PhysicalOrder::Sink(ExecutionContext &context, DataChunk &chunk, 
 	keys.Verify();
 	chunk.Verify();
 	local_sort_state.SinkChunk(keys, payload);
-
 	// When sorting data reaches a certain size, we sort it
 	if (local_sort_state.SizeInBytes() >= gstate.memory_per_thread) {
+		//! TODO LINEAGE: handle this branch
 		local_sort_state.Sort(global_sort_state, true);
 	}
 	return SinkResultType::NEED_MORE_INPUT;
@@ -105,6 +108,10 @@ void PhysicalOrder::Combine(ExecutionContext &context, GlobalSinkState &gstate_p
 	auto &gstate = gstate_p.Cast<OrderGlobalSinkState>();
 	auto &lstate = lstate_p.Cast<OrderLocalSinkState>();
 	gstate.global_sort_state.AddLocalState(lstate.local_sort_state);
+#ifdef LINEAGE
+	if (lstate.local_sort_state.log_record)
+		lineage_op->Capture(move(lstate.local_sort_state.log_record), LINEAGE_SOURCE, context.thread.thread_id);
+#endif
 }
 
 class PhysicalOrderMergeTask : public ExecutorTask {

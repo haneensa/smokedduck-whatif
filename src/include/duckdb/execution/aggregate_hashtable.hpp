@@ -150,6 +150,10 @@ public:
 
 	void Finalize();
 
+#ifdef LINEAGE
+	//shared_ptr<OperatorLineage> lineage_op;
+	shared_ptr<LogRecord> log_record;
+#endif
 private:
 	HtEntryType entry_type;
 

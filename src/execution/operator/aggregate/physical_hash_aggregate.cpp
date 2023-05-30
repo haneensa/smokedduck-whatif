@@ -391,6 +391,11 @@ SinkResultType PhysicalHashAggregate::Sink(ExecutionContext &context, DataChunk 
 		auto &grouping = groupings[i];
 		auto &table = grouping.table_data;
 		table.Sink(context, chunk, sink_input, aggregate_input_chunk, non_distinct_filter);
+#ifdef LINEAGE
+		if (lineage_op && chunk.log_record) {
+			lineage_op->log_per_thead[context.thread.thread_id].Append(move(chunk.log_record), LINEAGE_SINK);
+		}
+#endif
 	}
 
 	return SinkResultType::NEED_MORE_INPUT;
@@ -804,8 +809,12 @@ SinkFinalizeType PhysicalHashAggregate::FinalizeInternal(Pipeline &pipeline, Eve
 	for (idx_t i = 0; i < groupings.size(); i++) {
 		auto &grouping = groupings[i];
 		auto &grouping_gstate = gstate.grouping_states[i];
-
 		bool is_partitioned = grouping.table_data.Finalize(context, *grouping_gstate.table_state);
+#ifdef LINEAGE
+		if (grouping_gstate.table_state->log_record) {
+			lineage_op->Capture(move(grouping_gstate.table_state->log_record), LINEAGE_FINALIZE, 0);
+		}
+#endif
 		if (is_partitioned) {
 			any_partitioned = true;
 		}
@@ -898,6 +907,11 @@ SourceResultType PhysicalHashAggregate::GetData(ExecutionContext &context, DataC
 		OperatorSourceInput source_input {*gstate.radix_states[radix_idx], *lstate.radix_states[radix_idx],
 		                                  interrupt_state};
 		auto res = radix_table.GetData(context, chunk, *grouping_gstate.table_state, source_input);
+#ifdef LINEAGE
+		if (chunk.log_record) {
+			lineage_op->Capture(move(chunk.log_record), LINEAGE_SOURCE, context.thread.thread_id);
+		}
+#endif
 		if (chunk.size() != 0) {
 			return SourceResultType::HAVE_MORE_OUTPUT;
 		} else if (res == SourceResultType::BLOCKED) {

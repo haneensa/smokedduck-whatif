@@ -301,6 +301,15 @@ idx_t GroupedAggregateHashTable::AddChunk(AggregateHTAppendState &state, DataChu
 		filter_idx++;
 	}
 
+#ifdef LINEAGE
+//	if (groups.lineage_op) {
+		auto ptrs = FlatVector::GetData<uintptr_t>(state.addresses);
+		unique_ptr<uintptr_t[]> addresses_copy(new uintptr_t[groups.size()]);
+		std::copy(ptrs, ptrs + groups.size() , addresses_copy.get());
+		auto lineage_data = make_uniq<LineageDataArray<uintptr_t>>(move(addresses_copy),  groups.size() );
+		groups.log_record = make_shared<LogRecord>(move(lineage_data), 0);
+	//}
+#endif
 	Verify();
 	return new_group_count;
 }
@@ -587,7 +596,21 @@ void GroupedAggregateHashTable::Combine(GroupedAggregateHashTable &other) {
 		RowOperations::CombineStates(row_state, layout, state.scan_state.chunk_state.row_locations,
 		                             state.group_addresses, state.groups.size());
 	}
+#ifdef LINEAGE
+	//if (lineage_op) {
+		auto ptrs = FlatVector::GetData<uintptr_t>( state.scan_state.chunk_state.row_locations);
+		unique_ptr<uintptr_t[]> src_addresses_copy(new uintptr_t[state.groups.size()]);
+		std::copy(ptrs, ptrs + state.groups.size() , src_addresses_copy.get());
+		auto src_lineage_data = make_uniq<LineageDataArray<uintptr_t>>(move(src_addresses_copy),  state.groups.size() );
 
+		ptrs = FlatVector::GetData<uintptr_t>( state.group_addresses);
+		unique_ptr<uintptr_t[]> dst_addresses_copy(new uintptr_t[state.groups.size()]);
+		std::copy(ptrs, ptrs + state.groups.size() , dst_addresses_copy.get());
+		auto dst_lineage_data = make_uniq<LineageDataArray<uintptr_t>>(move(dst_addresses_copy),  state.groups.size() );
+		auto lineage_probe_data = make_shared<LineageBinary>(move(src_lineage_data), move(dst_lineage_data));
+	    log_record = make_shared<LogRecord>(move(lineage_probe_data), 0);
+	//}
+#endif
 	Verify();
 }
 
@@ -630,11 +653,18 @@ void GroupedAggregateHashTable::InitializeFirstPart() {
 idx_t GroupedAggregateHashTable::Scan(TupleDataParallelScanState &gstate, TupleDataLocalScanState &lstate,
                                       DataChunk &result) {
 	data_collection->Scan(gstate, lstate, result);
-
 	RowOperationsState row_state(aggregate_allocator->GetAllocator());
 	const auto group_cols = layout.ColumnCount() - 1;
 	RowOperations::FinalizeStates(row_state, layout, lstate.chunk_state.row_locations, result, group_cols);
-
+#ifdef LINEAGE
+	//if (lineage_op) {
+		auto ptrs = FlatVector::GetData<uintptr_t>( lstate.chunk_state.row_locations);
+		unique_ptr<uintptr_t[]> addresses_copy(new uintptr_t[result.size()]);
+		std::copy(ptrs, ptrs + result.size() , addresses_copy.get());
+		auto lineage_data = make_uniq<LineageDataArray<uintptr_t>>(move(addresses_copy),  result.size() );
+		log_record = make_uniq<LogRecord>(move(lineage_data), 0);
+	//}
+#endif
 	return result.size();
 }
 

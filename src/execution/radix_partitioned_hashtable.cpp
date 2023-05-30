@@ -154,6 +154,9 @@ void RadixPartitionedHashTable::Sink(ExecutionContext &context, DataChunk &chunk
 		D_ASSERT(gstate.finalized_hts[0]);
 		llstate.total_groups +=
 		    gstate.finalized_hts[0]->AddChunk(gstate.append_state, group_chunk, payload_input, filter);
+#ifdef LINEAGE
+		chunk.log_record = move(group_chunk.log_record);
+#endif
 		return;
 	}
 
@@ -166,9 +169,11 @@ void RadixPartitionedHashTable::Sink(ExecutionContext &context, DataChunk &chunk
 		    make_uniq<PartitionableHashTable>(context.client, Allocator::Get(context.client), gstate.partition_info,
 		                                      group_types, op.payload_types, op.bindings);
 	}
-
 	llstate.total_groups += llstate.ht->AddChunk(group_chunk, payload_input,
 	                                             gstate.partitioned && gstate.partition_info.n_partitions > 1, filter);
+#ifdef LINEAGE
+	chunk.log_record = move(group_chunk.log_record);
+#endif
 	if (llstate.total_groups >= radix_limit) {
 		gstate.partitioned = true;
 	}
@@ -259,6 +264,10 @@ bool RadixPartitionedHashTable::Finalize(ClientContext &context, GlobalSinkState
 			for (auto &unpartitioned_ht : unpartitioned) {
 				D_ASSERT(unpartitioned_ht);
 				gstate.finalized_hts[0]->Combine(*unpartitioned_ht);
+#ifdef LINEAGE
+				if (gstate.finalized_hts[0]->log_record)
+					gstate.log_record = move(gstate.finalized_hts[0]->log_record);
+#endif
 				unpartitioned_ht.reset();
 			}
 			unpartitioned.clear();
@@ -469,9 +478,11 @@ SourceResultType RadixPartitionedHashTable::GetData(ExecutionContext &context, D
 		lstate.ht_index = ht_index;
 		lstate.ht = gstate.finalized_hts[ht_index];
 		D_ASSERT(lstate.ht);
-
 		auto &global_scan_state = state.ht_scan_states[ht_index];
 		elements_found = lstate.ht->Scan(global_scan_state, local_scan_state, lstate.scan_chunk);
+#ifdef LINEAGE
+		chunk.log_record = move(lstate.ht->log_record);
+#endif
 		if (elements_found > 0) {
 			break;
 		}

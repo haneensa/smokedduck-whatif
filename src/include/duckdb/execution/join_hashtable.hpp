@@ -78,6 +78,9 @@ public:
 		//! Get the next batch of data from the scan structure
 		void Next(DataChunk &keys, DataChunk &left, DataChunk &result);
 
+#ifdef LINEAGE
+		//! Operator lineage for hash join
+#endif
 	private:
 		//! Next operator for the inner join
 		void NextInnerJoin(DataChunk &keys, DataChunk &left, DataChunk &result);

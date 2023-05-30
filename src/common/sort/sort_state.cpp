@@ -297,12 +297,23 @@ void LocalSortState::ReOrder(SortedData &sd, data_ptr_t sorting_ptr, RowDataColl
 	// Re-order fixed-size row layout
 	const idx_t row_width = sd.layout.GetRowWidth();
 	const idx_t sorting_entry_size = gstate.sort_layout.entry_size;
+
+#ifdef LINEAGE
+	auto lineage_sel = SelectionVector(count);
+#endif
 	for (idx_t i = 0; i < count; i++) {
 		auto index = Load<uint32_t>(sorting_ptr);
+#ifdef LINEAGE
+		lineage_sel.set_index(i, index);
+#endif
 		FastMemcpy(ordered_data_ptr, unordered_data_ptr + index * row_width, row_width);
 		ordered_data_ptr += row_width;
 		sorting_ptr += sorting_entry_size;
 	}
+#ifdef LINEAGE
+	auto lineage_data = make_uniq<LineageSelVec>(move(lineage_sel),  count);
+	log_record = make_shared<LogRecord>(move(lineage_data), 0);
+#endif
 	ordered_data_block->block->SetSwizzling(
 	    sd.layout.AllConstant() || !sd.swizzled ? nullptr : "LocalSortState::ReOrder.ordered_data");
 	// Replace the unordered data block with the re-ordered data block

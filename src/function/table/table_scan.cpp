@@ -123,6 +123,10 @@ static void TableScanFunc(ClientContext &context, TableFunctionInput &data_p, Da
 		} else if (gstate.CanRemoveFilterColumns()) {
 			state.all_columns.Reset();
 			storage.Scan(transaction, state.all_columns, state.scan_state);
+#ifdef LINEAGE
+			if (state.all_columns.log_record)
+				output.log_record = move(state.all_columns.log_record);
+#endif
 			output.ReferenceColumns(state.all_columns, gstate.projection_ids);
 		} else {
 			storage.Scan(transaction, output, state.scan_state);

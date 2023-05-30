@@ -507,6 +507,24 @@ void ScanStructure::NextInnerJoin(DataChunk &keys, DataChunk &left, DataChunk &r
 			D_ASSERT(vector.GetType() == ht.build_types[i]);
 			GatherResult(vector, result_vector, result_count, i + ht.condition_types.size());
 		}
+#ifdef LINEAGE
+		//if (result.lineage_op) {
+			auto ptrs = FlatVector::GetData<uintptr_t>(pointers);
+			unique_ptr<uintptr_t[]> key_locations_lineage(new uintptr_t[result_count]);
+			for (idx_t i = 0; i < result_count; i++) {
+				auto idx = result_vector.get_index(i);
+				key_locations_lineage[i] = ptrs[idx];
+			}
+			auto rhs_lineage = make_uniq<LineageDataArray<uintptr_t>>(move(key_locations_lineage), result_count);
+			std::cout << "Capture slice " << result_vector.ToString(result_count) << std::endl;
+			std::cout << "Capture pointers " << std::endl;
+			rhs_lineage->Debug();
+			auto lhs_lineage = make_uniq<LineageSelVec>(sel_vector, result_count);
+			lhs_lineage->Debug();
+			auto lineage_probe_data = make_shared<LineageBinary>(move(lhs_lineage), move(rhs_lineage));
+		    result.log_record = make_uniq<LogRecord>(move(lineage_probe_data), 0);
+		//}
+#endif
 		AdvancePointers();
 	}
 }

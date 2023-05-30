@@ -103,6 +103,10 @@ public:
 		D_ASSERT(dynamic_cast<const TARGET *>(this));
 		return reinterpret_cast<const TARGET &>(*this);
 	}
+#ifdef LINEAGE
+	//shared_ptr<OperatorLineage> lineage_op;
+	shared_ptr<LogRecord> log_record;
+#endif
 };
 
 class LocalSinkState {

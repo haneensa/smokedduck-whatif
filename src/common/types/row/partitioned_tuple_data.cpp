@@ -71,7 +71,16 @@ void PartitionedTupleData::Append(PartitionedTupleDataAppendState &state, DataCh
 
 	// Build the buffer space
 	BuildBufferSpace(state);
-
+#ifdef LINEAGE
+	auto ptrs = FlatVector::GetData<uintptr_t>( state.chunk_state.row_locations);
+	unique_ptr<uintptr_t[]> key_locations_lineage(new uintptr_t[input.size()]);
+	for (idx_t i = 0; i < input.size(); i++) {
+		auto idx = state.partition_sel.get_index(i);
+		key_locations_lineage[idx] = ptrs[i];
+	}
+	auto rhs_lineage = make_uniq<LineageDataArray<uintptr_t>>(move(key_locations_lineage),  input.size());
+	rhs_lineage->Debug();
+#endif
 	// Now scatter everything in one go
 	partitions[0]->Scatter(state.chunk_state, input, state.partition_sel, input.size());
 }
