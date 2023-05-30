@@ -48,6 +48,9 @@ enum class PhysicalOperatorType : uint8_t {
 	DELIM_SCAN,
 	EXPRESSION_SCAN,
 	POSITIONAL_SCAN,
+#ifdef LINEAGE
+  LINEAGE_SCAN,
+#endif
 	// -----------------------------
 	// Joins
 	// -----------------------------

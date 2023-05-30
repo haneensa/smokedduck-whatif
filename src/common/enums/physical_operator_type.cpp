@@ -5,6 +5,10 @@ namespace duckdb {
 // LCOV_EXCL_START
 string PhysicalOperatorToString(PhysicalOperatorType type) {
 	switch (type) {
+#ifdef LINEAGE
+	case PhysicalOperatorType::LINEAGE_SCAN:
+		return "LINEAGE_SCAN";
+#endif
 	case PhysicalOperatorType::TABLE_SCAN:
 		return "TABLE_SCAN";
 	case PhysicalOperatorType::DUMMY_SCAN:
