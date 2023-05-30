@@ -70,6 +70,13 @@ public:
 	DUCKDB_API explicit ClientContext(shared_ptr<DatabaseInstance> db);
 	DUCKDB_API ~ClientContext();
 
+#ifdef LINEAGE
+	idx_t GetNextThreadID() {
+		return current_thread_id++;
+	}
+
+	idx_t current_thread_id = 0;
+#endif
 	//! The database that this client is connected to
 	shared_ptr<DatabaseInstance> db;
 	//! Whether or not the query is interrupted

@@ -67,6 +67,10 @@ struct ClientData {
 	bool debug_set_max_line_length = false;
 	idx_t debug_max_line_length = 0;
 
+#ifdef LINEAGE
+	unique_ptr<LineageManager> lineage_manager;
+#endif
+
 public:
 	DUCKDB_API static ClientData &Get(ClientContext &context);
 };

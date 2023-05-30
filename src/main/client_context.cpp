@@ -155,7 +155,12 @@ void ClientContext::BeginQueryInternal(ClientContextLock &lock, const string &qu
 
 PreservedError ClientContext::EndQueryInternal(ClientContextLock &lock, bool success, bool invalidate_transaction) {
 	client_data->profiler->EndQuery();
-
+#ifdef LINEAGE
+	if (client_data->lineage_manager->trace_lineage && active_query->prepared->plan ) {
+		client_data->lineage_manager->StoreQueryLineage(*this, active_query->prepared->plan.get(),  active_query->query);
+	}
+	current_thread_id = 0;
+#endif
 	if (client_data->http_state) {
 		client_data->http_state->Reset();
 	}
@@ -425,6 +430,10 @@ unique_ptr<PendingQueryResult> ClientContext::PendingPreparedStatement(ClientCon
 	    make_uniq<PendingQueryResult>(shared_from_this(), *statement_p, std::move(types), stream_result);
 	active_query->prepared = std::move(statement_p);
 	active_query->open_result = pending_result.get();
+#ifdef LINEAGE
+	// Always annotate plan with lineage
+	client_data->lineage_manager->InitOperatorPlan(active_query->prepared->plan.get());
+#endif
 	return pending_result;
 }
 

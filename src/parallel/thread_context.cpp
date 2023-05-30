@@ -4,7 +4,12 @@
 
 namespace duckdb {
 
+#ifdef LINEAGE
+ThreadContext::ThreadContext(ClientContext &context) : profiler(QueryProfiler::Get(context).IsEnabled()),
+      thread_id(context.GetNextThreadID()) {
+#else
 ThreadContext::ThreadContext(ClientContext &context) : profiler(QueryProfiler::Get(context).IsEnabled()) {
+#endif
 }
 
 } // namespace duckdb
