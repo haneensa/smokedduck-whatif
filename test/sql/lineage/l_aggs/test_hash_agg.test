@@ -1,0 +1,51 @@
+# name: test/sql/lineage_v2/l_aggs/test_hash_agg.test
+# description: Test Hash Aggregate Lineage
+# group: [l_aggs]
+
+statement ok
+PRAGMA explain_output = PHYSICAL_ONLY;
+
+
+statement ok
+CREATE TABLE t1(i VARCHAR(10), j INTEGER);
+
+statement ok
+INSERT INTO t1 VALUES ('Haneen', 2),  ('Omar', 2), ('Haneen', 4), ('Mohammed', 1), ('Omar', 1), ('Haneen', 3), ('Mohammed', 2), ('Omar', 1)
+
+statement ok
+PRAGMA enable_lineage;
+
+# standalone limit
+query II
+select i, avg(j) from t1 GROUP BY i
+----
+Haneen	3.000000
+Omar	1.333333
+Mohammed	1.500000
+
+statement ok
+PRAGMA disable_lineage;
+
+
+statement ok
+PRAGMA disable_optimizer;
+
+query II
+select sink.in_index, scan.out_index from LINEAGE_1_HASH_GROUP_BY_2_0 as scan, LINEAGE_1_HASH_GROUP_BY_2_1 as sink, LINEAGE_1_HASH_GROUP_BY_2_3 as finalize
+where sink.out_index=finalize.in_index and scan.in_index=finalize.out_index
+order by sink.in_index
+----
+0	0
+1	1
+2	0
+3	2
+4	1
+5	0
+6	2
+7	1
+
+
+### add distinct
+### add grouping set
+### add having
+
