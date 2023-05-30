@@ -101,6 +101,12 @@ struct DuckDBViewsFun {
 	static void RegisterFunction(BuiltinFunctions &set);
 };
 
+#ifdef LINEAGE
+struct DuckDBQueriesListFun {
+	static void RegisterFunction(BuiltinFunctions &set);
+};
+#endif
+
 struct TestType {
 	TestType(LogicalType type_p, string name_p)
 	    : type(std::move(type_p)), name(std::move(name_p)), min_value(Value::MinimumValue(type)),
