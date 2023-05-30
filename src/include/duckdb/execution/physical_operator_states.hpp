@@ -39,6 +39,10 @@ struct SourcePartitionInfo {
 // LCOV_EXCL_START
 class OperatorState {
 public:
+#ifdef LINEAGE
+	OperatorState() : in_start(0), in_end(0), out_start(0), out_end(0) {
+	}
+#endif
 	virtual ~OperatorState() {
 	}
 
@@ -55,6 +59,12 @@ public:
 		D_ASSERT(dynamic_cast<const TARGET *>(this));
 		return reinterpret_cast<const TARGET &>(*this);
 	}
+#ifdef LINEAGE
+	idx_t in_start;
+	idx_t in_end;
+	idx_t out_start;
+	idx_t out_end;
+#endif
 };
 
 class GlobalOperatorState {
@@ -138,6 +148,10 @@ public:
 
 class LocalSourceState {
 public:
+#ifdef LINEAGE
+	LocalSourceState() : out_start(0), out_end(0) {
+	}
+#endif
 	virtual ~LocalSourceState() {
 	}
 
@@ -151,6 +165,11 @@ public:
 		D_ASSERT(dynamic_cast<const TARGET *>(this));
 		return reinterpret_cast<const TARGET &>(*this);
 	}
+
+#ifdef LINEAGE
+	idx_t out_start;
+	idx_t out_end;
+#endif
 };
 
 struct OperatorSinkInput {

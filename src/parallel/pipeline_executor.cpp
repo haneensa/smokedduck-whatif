@@ -379,8 +379,26 @@ OperatorResultType PipelineExecutor::Execute(DataChunk &input, DataChunk &result
 			// if current_idx > source_idx, we pass the previous operators' output through the Execute of the current
 			// operator
 			StartOperator(current_operator);
+#ifdef LINEAGE
+			auto op_state = intermediate_states[current_intermediate - 1].get();
+			if (context.client.client_data->lineage_manager->trace_lineage) {
+				// Add virtual read
+				if (current_intermediate == initial_idx + 1) {
+					op_state->in_start =  local_source_state->out_start;
+				} else {
+					op_state->in_start =  intermediate_states[current_idx]->out_start;
+				}
+			}
+#endif
 			auto result = current_operator.Execute(context, prev_chunk, current_chunk, *current_operator.op_state,
 			                                       *intermediate_states[current_intermediate - 1]);
+#ifdef LINEAGE
+			if (context.client.client_data->lineage_manager->trace_lineage) {
+				// Add virtual write
+				op_state->out_start = op_state->out_end;
+				op_state->out_end += current_chunk.size();
+			}
+#endif
 			EndOperator(current_operator, &current_chunk);
 			if (result == OperatorResultType::HAVE_MORE_OUTPUT) {
 				// more data remains in this operator
@@ -466,7 +484,10 @@ SourceResultType PipelineExecutor::FetchFromSource(DataChunk &result) {
 
 	OperatorSourceInput source_input = {*pipeline.source_state, *local_source_state, interrupt_state};
 	auto res = GetData(result, source_input);
-
+#ifdef LINEAGE
+	local_source_state->out_start = local_source_state->out_end;
+	local_source_state->out_end += result.size();
+#endif
 	// Ensures Sinks only return empty results when Blocking or Finished
 	D_ASSERT(res != SourceResultType::BLOCKED || result.size() == 0);
 
