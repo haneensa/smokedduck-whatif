@@ -11,6 +11,9 @@
 #include "duckdb/storage/storage_manager.hpp"
 #include "duckdb/function/function_set.hpp"
 
+#ifdef LINEAGE
+#include "duckdb/main/client_data.hpp"
+#endif
 #include <cctype>
 
 namespace duckdb {
@@ -116,9 +119,23 @@ static void PragmaDisableOptimizer(ClientContext &context, const FunctionParamet
 	ClientConfig::GetConfig(context).enable_optimizer = false;
 }
 
+#ifdef LINEAGE
+static void PragmaEnableLineage(ClientContext &context, const FunctionParameters &parameters) {
+	context.client_data->lineage_manager->trace_lineage = true;
+	std::cout << "\nEnable Lineage Capture" << std::endl;
+}
+static void PragmaDisableLineage(ClientContext &context, const FunctionParameters &parameters) {
+	context.client_data->lineage_manager->trace_lineage = false;
+	std::cout << "\nDisable Lineage Capture" << std::endl;
+}
+#endif
+
 void PragmaFunctions::RegisterFunction(BuiltinFunctions &set) {
 	RegisterEnableProfiling(set);
-
+#ifdef LINEAGE
+    set.AddFunction(PragmaFunction::PragmaStatement("enable_lineage", PragmaEnableLineage));
+	  set.AddFunction(PragmaFunction::PragmaStatement("disable_lineage", PragmaDisableLineage));
+#endif
 	set.AddFunction(PragmaFunction::PragmaStatement("disable_profile", PragmaDisableProfiling));
 	set.AddFunction(PragmaFunction::PragmaStatement("disable_profiling", PragmaDisableProfiling));
 
