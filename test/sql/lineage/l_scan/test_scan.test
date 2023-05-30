@@ -1,0 +1,77 @@
+# name: test/sql/lineage/l_scan/test_scan.test
+# description: Test Scan with a filter and an actual Filter Lineage
+# group: [l_scan]
+
+
+statement ok
+PRAGMA explain_output = PHYSICAL_ONLY;
+
+statement ok
+CREATE TABLE t1(i INTEGER);
+
+statement ok
+INSERT INTO t1 SELECT i FROM range(0,200000) tbl(i);
+INSERT INTO t1 SELECT i FROM range(0,5) tabl(i);
+
+
+statement ok
+PRAGMA threads=4
+
+statement ok
+PRAGMA enable_lineage;
+
+# No filter
+statement ok
+select * from t1
+
+# filter from different chunks
+statement ok
+select * from t1 where i < 2
+
+# filter from end chunks
+statement ok
+select * from t1 where i > 199995
+
+# filter from first chunk
+statement ok
+select * from t1 where i=6
+
+statement ok
+PRAGMA disable_lineage;
+
+
+query II
+SELECT query_id, query from duckdb_queries_list()
+----
+0	PRAGMA enable_lineage;
+1	select * from t1
+2	select * from t1 where i < 2
+3	select * from t1 where i > 199995
+4	select * from t1 where i=6
+
+query IIII
+SELECT rowid, in_index, out_index, thread_id FROM LINEAGE_2_SEQ_SCAN_0_0
+----
+0	200000	0	1
+1	200001	1	1
+2	0	0	0
+3	1	1	0
+
+
+query III
+SELECT rowid, in_index, out_index FROM LINEAGE_1_SEQ_SCAN_0_0 where in_index!=out_index and rowid!=out_index
+----
+
+
+query III
+SELECT rowid,  in_index, out_index FROM LINEAGE_3_SEQ_SCAN_0_0
+----
+0	199996	0
+1	199997	1
+2	199998	2
+3	199999	3
+
+query III
+SELECT rowid, in_index, out_index FROM LINEAGE_4_SEQ_SCAN_0_0
+----
+0	6	0

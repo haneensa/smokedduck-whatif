@@ -1,0 +1,69 @@
+# name: test/sql/lineage_v2/l_filter/test_filter.test
+# description: Test Filter Lineage
+# group: [l_filter]
+
+
+statement ok
+PRAGMA explain_output = PHYSICAL_ONLY;
+
+statement ok
+CREATE TABLE t1(i INTEGER);
+
+statement ok
+INSERT INTO t1 SELECT i FROM range(0,4000) tbl(i);
+
+statement ok
+PRAGMA enable_lineage;
+
+query I
+select * from t1 where 2 > i  OR i > 3998
+----
+0
+1
+3999
+
+query I
+select * from t1 where i > 4000 OR i > 3998
+----
+3999
+
+statement ok
+PRAGMA disable_lineage;
+
+query II
+SELECT query_id, query from duckdb_queries_list()
+----
+0	PRAGMA enable_lineage;
+1	select * from t1 where 2 > i  OR i > 3998
+2	select * from t1 where i > 4000 OR i > 3998
+
+query I
+pragma show_tables;
+----
+LINEAGE_1_FILTER_1_0
+LINEAGE_1_SEQ_SCAN_0_0
+LINEAGE_2_FILTER_1_0
+LINEAGE_2_SEQ_SCAN_0_0
+t1
+
+query III
+SELECT rowid, out_index, in_index FROM LINEAGE_1_FILTER_1_0
+----
+0	0	0
+1	1	1
+2	2	3999
+
+query III
+SELECT rowid, out_index, in_index FROM LINEAGE_2_FILTER_1_0
+----
+0	0	3999
+
+query III
+SELECT rowid, out_index, in_index FROM LINEAGE_1_SEQ_SCAN_0_0 WHERE in_index!=out_index OR in_index!=rowid
+----
+
+
+query III
+SELECT rowid, out_index, in_index FROM LINEAGE_2_SEQ_SCAN_0_0 WHERE in_index!=out_index OR in_index!=rowid
+----
+
