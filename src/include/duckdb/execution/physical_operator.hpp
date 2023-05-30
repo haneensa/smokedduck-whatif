@@ -18,6 +18,10 @@
 #include "duckdb/common/optional_idx.hpp"
 #include "duckdb/execution/physical_operator_states.hpp"
 #include "duckdb/common/enums/order_preservation_type.hpp"
+#ifdef LINEAGE
+#include "duckdb/execution/lineage/lineage_manager.hpp"
+//#include "duckdb/parallel/task_context.hpp"
+#endif
 
 namespace duckdb {
 class Event;
@@ -41,6 +45,14 @@ public:
 
 	virtual ~PhysicalOperator() {
 	}
+
+#ifdef LINEAGE
+	//! ID of this operator within the physical plan
+	idx_t id;
+	//! Lineage captured for this operator
+	shared_ptr<OperatorLineage> lineage_op;
+	// bool delim_handled = false;
+#endif
 
 	//! The physical operator type
 	PhysicalOperatorType type;

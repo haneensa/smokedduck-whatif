@@ -3,6 +3,7 @@ add_subdirectory(nested_loop_join)
 add_subdirectory(operator)
 add_subdirectory(physical_plan)
 add_subdirectory(index/art)
+add_subdirectory(lineage)
 
 add_library_unity(
   duckdb_execution
