@@ -363,6 +363,10 @@ shared_ptr<PreparedStatementData> ClientContext::CreatePreparedStatement(ClientC
 #ifdef DEBUG
 	D_ASSERT(!physical_plan->ToString().empty());
 #endif
+
+	// call lineage manager to modify the physical plan
+	physical_plan = client_data->lineage_manager->AddProvenance(std::move(physical_plan));
+
 	result->plan = std::move(physical_plan);
 	return result;
 }

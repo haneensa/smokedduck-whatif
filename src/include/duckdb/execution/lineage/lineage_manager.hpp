@@ -44,6 +44,8 @@ public:
 	void CreateLineageTables(ClientContext &context, PhysicalOperator *op, idx_t query_id);
 	void StoreQueryLineage(ClientContext &context, PhysicalOperator *op, string query);
 
+	unique_ptr<PhysicalOperator> AddProvenance(unique_ptr<PhysicalOperator> op);
+
 	void SetCurrentLineageOp(shared_ptr<OperatorLineage> lop) {
 		current_lop = lop;
 	}

@@ -52,6 +52,7 @@ public:
 	//! Lineage captured for this operator
 	shared_ptr<OperatorLineage> lineage_op;
 	// bool delim_handled = false;
+	bool special = false;
 #endif
 
 	//! The physical operator type
