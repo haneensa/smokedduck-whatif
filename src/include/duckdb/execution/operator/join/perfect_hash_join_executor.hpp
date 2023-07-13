@@ -46,6 +46,9 @@ public:
 	                                         OperatorState &state);
 	bool BuildPerfectHashTable(LogicalType &type);
 
+#ifdef LINEAGE
+	shared_ptr<LogRecord> log_record;
+#endif
 private:
 	void FillSelectionVectorSwitchProbe(Vector &source, SelectionVector &build_sel_vec, SelectionVector &probe_sel_vec,
 	                                    idx_t count, idx_t &probe_sel_count);

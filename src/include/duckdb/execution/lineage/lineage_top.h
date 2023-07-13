@@ -10,6 +10,7 @@
 #pragma once
 
 #include "duckdb/common/constants.hpp"
+#include "duckdb/common/types/vector.hpp"
 
 namespace duckdb {
 struct LogRecord;

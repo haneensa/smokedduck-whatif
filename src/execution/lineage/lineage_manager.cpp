@@ -12,11 +12,11 @@
 
 namespace duckdb {
 
-void LineageManager::CreateOperatorLineage(PhysicalOperator *op, bool trace_lineage) {
+void LineageManager::CreateOperatorLineage(ClientContext &context, PhysicalOperator *op, bool trace_lineage) {
 	for (idx_t i = 0; i < op->children.size(); i++) {
-		CreateOperatorLineage(op->children[i].get(), trace_lineage);
+		CreateOperatorLineage(context, op->children[i].get(), trace_lineage);
 	}
-	op->lineage_op = make_shared<OperatorLineage>(op->type, trace_lineage);
+	op->lineage_op = make_shared<OperatorLineage>(Allocator::Get(context), op->type, trace_lineage);
 }
 
 // Iterate through in Postorder to ensure that children have PipelineLineageNodes set before parents
@@ -28,9 +28,9 @@ idx_t PlanAnnotator(PhysicalOperator *op, idx_t counter) {
 	return counter + 1;
 }
 
-void LineageManager::InitOperatorPlan(PhysicalOperator *op) {
+void LineageManager::InitOperatorPlan(ClientContext &context, PhysicalOperator *op) {
 	PlanAnnotator(op, 0);
-	CreateOperatorLineage(op, trace_lineage);
+	CreateOperatorLineage(context, op, trace_lineage);
 }
 
 void LineageManager::CreateLineageTables(ClientContext &context, PhysicalOperator *op, idx_t query_id) {
@@ -39,7 +39,7 @@ void LineageManager::CreateLineageTables(ClientContext &context, PhysicalOperato
 	}
 
 	// Example: LINEAGE_1_HASH_JOIN_3
-	string prefix = "LINEAGE_" + to_string(query_id) + "_" + op->GetName() + "_" + to_string(op->id);
+	string prefix = "LINEAGE_" + to_string(query_id) + "_" + op->GetName() ;
 	prefix.erase( remove( prefix.begin(), prefix.end(), ' ' ), prefix.end() );
 	// add column_stats, cardinality
 	string catalog_name = "";
@@ -58,6 +58,23 @@ void LineageManager::CreateLineageTables(ClientContext &context, PhysicalOperato
 		}
 		table_lineage_op[table_name] =  op->lineage_op;
 		DuckTableEntry* table = (DuckTableEntry*)catalog.CreateTable(context, move(create_info)).get();
+	}
+
+	// persist intermediate values
+	if (persist_intermediate) {
+		vector<ColumnDefinition> table;
+		for (idx_t col_i = 0; col_i < op->types.size(); col_i++) {
+			table.emplace_back("col_" + to_string(col_i), op->types[col_i]);
+		}
+
+		string table_name = "LINEAGE_" + to_string(query_id) + "_"  + op->GetName() + "_100";
+		auto create_info = make_uniq<CreateTableInfo>(catalog_name, DEFAULT_SCHEMA, table_name);
+		for (idx_t col_i = 0; col_i < table.size(); col_i++) {
+			create_info->columns.AddColumn(move(table[col_i]));
+		}
+
+		catalog.CreateTable(context, move(create_info)).get();
+		table_lineage_op[table_name] = op->lineage_op;
 	}
 }
 

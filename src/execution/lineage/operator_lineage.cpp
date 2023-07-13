@@ -9,7 +9,7 @@ void OperatorLineage::Capture(const shared_ptr<LineageData>& datum, idx_t in_sta
 }
 
 void OperatorLineage::Capture(shared_ptr<LogRecord> log_record, idx_t stage_idx, idx_t thread_id) {
-	if (!trace_lineage) return;
+	if (!trace_lineage || log_record->data->Count() == 0) return;
 	log_per_thead[thread_id].Append(log_record, stage_idx);
 }
 
@@ -71,7 +71,8 @@ vector<vector<ColumnDefinition>> OperatorLineage::GetTableColumnTypes() {
 
 		sink.emplace_back("thread_id", LogicalType::INTEGER);
 		res.emplace_back(move(sink));
-		// LINEAGE_COMBINE stage_idx=3
+
+		// LINEAGE_COMBINE stage_idx=2
 		vector<ColumnDefinition> combine;
 		res.emplace_back(move(combine));
 
@@ -94,6 +95,21 @@ vector<vector<ColumnDefinition>> OperatorLineage::GetTableColumnTypes() {
 	case PhysicalOperatorType::CROSS_PRODUCT:
 	case PhysicalOperatorType::NESTED_LOOP_JOIN:
 	case PhysicalOperatorType::PIECEWISE_MERGE_JOIN: {
+		vector<ColumnDefinition> source;
+		source.emplace_back("lhs_index", LogicalType::INTEGER);
+
+		std::cout << "Type " << PhysicalOperatorToString(type) << std::endl;
+		if (type == PhysicalOperatorType::INDEX_JOIN || (type == PhysicalOperatorType::HASH_JOIN && !use_perfect_hash))
+			// if perfect hash join -> integer else bigint?
+			source.emplace_back("rhs_index", LogicalType::BIGINT);
+		else
+			source.emplace_back("rhs_index", LogicalType::INTEGER);
+
+		source.emplace_back("out_index", LogicalType::INTEGER);
+		source.emplace_back("thread_id", LogicalType::INTEGER);
+		res.emplace_back(move(source));
+
+
 		vector<ColumnDefinition> sink;
 		sink.emplace_back("in_index", LogicalType::INTEGER);
 
@@ -106,17 +122,20 @@ vector<vector<ColumnDefinition>> OperatorLineage::GetTableColumnTypes() {
 		sink.emplace_back("thread_id", LogicalType::INTEGER);
 		res.emplace_back(move(sink));
 
-		vector<ColumnDefinition> source;
-		source.emplace_back("lhs_index", LogicalType::INTEGER);
+		// combine
+		vector<ColumnDefinition> combine;
+		combine.emplace_back("in_index", LogicalType::INTEGER);
+		combine.emplace_back("out_index", LogicalType::INTEGER);
+		combine.emplace_back("thread_id", LogicalType::INTEGER);
+		res.emplace_back(move(combine));
 
-		if (type == PhysicalOperatorType::INDEX_JOIN || type == PhysicalOperatorType::HASH_JOIN)
-			source.emplace_back("rhs_index", LogicalType::BIGINT);
-		else
-			source.emplace_back("rhs_index", LogicalType::INTEGER);
+		// LINEAGE_FINALIZE stage_idx=3
+		vector<ColumnDefinition> finalize;
+		finalize.emplace_back("in_index", LogicalType::BIGINT);
+		finalize.emplace_back("out_index", LogicalType::INTEGER);
+		finalize.emplace_back("thread_id", LogicalType::INTEGER);
+		res.emplace_back(move(finalize));
 
-		source.emplace_back("out_index", LogicalType::INTEGER);
-		source.emplace_back("thread_id", LogicalType::INTEGER);
-		res.emplace_back(move(source));
 		break;
 	}
 		default: {
@@ -127,11 +146,21 @@ vector<vector<ColumnDefinition>> OperatorLineage::GetTableColumnTypes() {
 	return res;
 }
 
+void fillBaseChunk(DataChunk &insert_chunk, idx_t res_count, Vector &lhs_payload, Vector &rhs_payload, idx_t count_so_far, Vector &thread_id_vec) {
+	insert_chunk.SetCardinality(res_count);
+	insert_chunk.data[0].Reference(lhs_payload);
+	insert_chunk.data[1].Reference(rhs_payload);
+	insert_chunk.data[2].Sequence(count_so_far, 1, res_count);
+	insert_chunk.data[3].Reference(thread_id_vec);
+}
+
 idx_t OperatorLineage::GetLineageAsChunk(idx_t count_so_far, DataChunk &insert_chunk, idx_t thread_id, idx_t data_idx, idx_t stage_idx) {
 	idx_t log_size = log_per_thead[thread_id].GetLogSize(stage_idx);
 	if (log_size > data_idx) {
 		LogRecord* data_woffset = log_per_thead[thread_id].GetLogRecord(stage_idx, data_idx).get();
 		Vector thread_id_vec(Value::INTEGER(thread_id));
+
+		// TODO: check if LogRecord is cached, then iterate over the lineage inside the cache
 
 		auto table_types = GetTableColumnTypes();
 		vector<LogicalType> types;
@@ -173,7 +202,6 @@ idx_t OperatorLineage::GetLineageAsChunk(idx_t count_so_far, DataChunk &insert_c
 				insert_chunk.data[2].Reference(thread_id_vec);
 			} else if (stage_idx == LINEAGE_FINALIZE) {
 				idx_t res_count = data_woffset->data->Count();
-
 				Vector source_payload(types[0], data_woffset->data->Process(0));
 				Vector new_payload(types[1], data_woffset->data->Process(0));
 
@@ -191,6 +219,96 @@ idx_t OperatorLineage::GetLineageAsChunk(idx_t count_so_far, DataChunk &insert_c
 				insert_chunk.data[0].Reference(in_index);
 				insert_chunk.data[1].Sequence(count_so_far, 1, res_count); // out_index
 				insert_chunk.data[2].Reference(thread_id_vec);
+			}
+			break;
+		} case PhysicalOperatorType::NESTED_LOOP_JOIN: {
+			if (stage_idx == LINEAGE_SOURCE) {
+				// schema: [INTEGER lhs_index, BIGINT rhs_index, INTEGER out_index]
+
+				// This is pretty hacky, but it's fine since we're just validating that we haven't broken HashJoins
+				// when introducing LineageNested
+				Vector lhs_payload(types[0]);
+				Vector rhs_payload(types[1]);
+
+				idx_t res_count = data_woffset->data->Count();
+
+				// Left side / probe side
+				if (dynamic_cast<LineageBinary&>(*data_woffset->data).left == nullptr) {
+					lhs_payload.SetVectorType(VectorType::CONSTANT_VECTOR);
+					ConstantVector::SetNull(lhs_payload, true);
+				} else {
+					Vector temp(types[0],  data_woffset->data->Process(data_woffset->in_start));
+					lhs_payload.Reference(temp);
+				}
+
+				// Right side / build side
+				if (dynamic_cast<LineageBinary&>(*data_woffset->data).right == nullptr) {
+					rhs_payload.SetVectorType(VectorType::CONSTANT_VECTOR);
+					ConstantVector::SetNull(rhs_payload, true);
+				} else {
+					Vector temp(types[1], data_woffset->data->Process(0));
+					rhs_payload.Reference(temp);
+				}
+
+				fillBaseChunk(insert_chunk, res_count, lhs_payload, rhs_payload, count_so_far, thread_id_vec);
+				count_so_far += res_count;
+			}
+			break;
+		} case PhysicalOperatorType::HASH_JOIN: {
+			// Hash Join - other joins too?
+			if (stage_idx == LINEAGE_SINK) {
+				// sink: [BIGINT in_index, INTEGER out_index, INTEGER thread_id]
+				idx_t res_count = data_woffset->data->Count();
+				Vector payload = data_woffset->data->GetVecRef(types[1], 0);
+				insert_chunk.SetCardinality(res_count);
+				insert_chunk.data[0].Sequence(count_so_far, 1, res_count);
+				insert_chunk.data[1].Reference(payload);
+				insert_chunk.data[2].Reference(thread_id_vec);
+				count_so_far += res_count;
+			} else if (stage_idx == LINEAGE_FINALIZE) {
+				idx_t res_count = data_woffset->data->Count();
+
+				Vector lhs_payload(types[0],  data_woffset->data->Process(0));
+				Vector rhs_payload(types[1], data_woffset->data->Process(0));
+
+				insert_chunk.SetCardinality(res_count);
+				insert_chunk.data[0].Reference(lhs_payload);
+				insert_chunk.data[1].Reference(rhs_payload);
+
+				//insert_chunk.data[1].Sequence(count_so_far, 1, res_count);
+				insert_chunk.data[2].Reference(thread_id_vec);
+
+				count_so_far += res_count;
+			} else if (stage_idx == LINEAGE_SOURCE) {
+					// schema: [INTEGER lhs_index, BIGINT rhs_index, INTEGER out_index]
+
+					// This is pretty hacky, but it's fine since we're just validating that we haven't broken HashJoins
+					// when introducing LineageNested
+					Vector lhs_payload(types[0]);
+					Vector rhs_payload(types[1]);
+
+					idx_t res_count = data_woffset->data->Count();
+
+					// Left side / probe side
+					if (dynamic_cast<LineageBinary&>(*data_woffset->data).left == nullptr) {
+						lhs_payload.SetVectorType(VectorType::CONSTANT_VECTOR);
+						ConstantVector::SetNull(lhs_payload, true);
+					} else {
+						Vector temp(types[0],  data_woffset->data->Process(data_woffset->in_start));
+						lhs_payload.Reference(temp);
+					}
+
+					// Right side / build side
+					if (dynamic_cast<LineageBinary&>(*data_woffset->data).right == nullptr) {
+						rhs_payload.SetVectorType(VectorType::CONSTANT_VECTOR);
+						ConstantVector::SetNull(rhs_payload, true);
+					} else {
+						Vector temp(types[1], data_woffset->data->Process(0));
+						rhs_payload.Reference(temp);
+					}
+
+					fillBaseChunk(insert_chunk, res_count, lhs_payload, rhs_payload, count_so_far, thread_id_vec);
+					count_so_far += res_count;
 			}
 			break;
 		}

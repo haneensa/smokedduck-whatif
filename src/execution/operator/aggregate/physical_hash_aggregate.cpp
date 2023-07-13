@@ -328,9 +328,21 @@ void PhysicalHashAggregate::SinkDistinctGrouping(ExecutionContext &context, Data
 
 			radix_table.Sink(context, filtered_input, sink_input, empty_chunk, empty_filter);
 		} else {
+			// for each i: collect log record
 			radix_table.Sink(context, chunk, sink_input, empty_chunk, empty_filter);
+#ifdef LINEAGE
+			if (lineage_op && chunk.log_record) {
+				std::cout << "Sink Distinct " << table_idx << std::endl;
+				chunk.log_record->data->Debug();
+				// TODO: construct a map between groupings and log records
+				lineage_op->log_per_thead[context.thread.thread_id].Append(move(chunk.log_record), LINEAGE_SINK);
+				chunk.log_record = nullptr;
+			}
+#endif
 		}
 	}
+
+	// construct data for distinct
 }
 
 void PhysicalHashAggregate::SinkDistinct(ExecutionContext &context, DataChunk &chunk, OperatorSinkInput &input) const {
@@ -393,10 +405,16 @@ SinkResultType PhysicalHashAggregate::Sink(ExecutionContext &context, DataChunk 
 		table.Sink(context, chunk, sink_input, aggregate_input_chunk, non_distinct_filter);
 #ifdef LINEAGE
 		if (lineage_op && chunk.log_record) {
+			std::cout << "Sink " << i << std::endl;
+			chunk.log_record->data->Debug();
+			// TODO: construct a map between groupings and log records
 			lineage_op->log_per_thead[context.thread.thread_id].Append(move(chunk.log_record), LINEAGE_SINK);
+			chunk.log_record = nullptr;
 		}
 #endif
 	}
+
+	// call Append here
 
 	return SinkResultType::NEED_MORE_INPUT;
 }
@@ -424,7 +442,7 @@ void PhysicalHashAggregate::CombineDistinct(ExecutionContext &context, GlobalSin
 			auto &radix_table = *distinct_data->radix_tables[table_idx];
 			auto &radix_global_sink = *distinct_state->radix_states[table_idx];
 			auto &radix_local_sink = *grouping_lstate.distinct_states[table_idx];
-
+			std::cout << "combine " << table_idx << std::endl;
 			radix_table.Combine(context, radix_global_sink, radix_local_sink);
 		}
 	}
@@ -594,7 +612,11 @@ public:
 				OperatorSourceInput source_input {*global_source, *local_source, interrupt_state};
 				auto res = radix_table_p->GetData(temp_exec_context, output_chunk, *state.radix_states[table_idx],
 				                                  source_input);
-
+#ifdef LINEAGE
+				if (output_chunk.log_record) {
+  					output_chunk.log_record = nullptr;
+				}
+#endif
 				if (res == SourceResultType::FINISHED) {
 					D_ASSERT(output_chunk.size() == 0);
 					break;
@@ -622,8 +644,16 @@ public:
 				// Sink it into the main ht
 				OperatorSinkInput sink_input {table_state, *temp_local_state, interrupt_state};
 				grouping_data.table_data.Sink(temp_exec_context, group_chunk, sink_input, aggregate_input_chunk, {i});
+				if (group_chunk.log_record) {
+					group_chunk.log_record = nullptr;
+				}
+
 			}
 		}
+
+		// This read distinct columns, and place them in new locations based on the grouping key to aggregate them
+		// we neeed to capture Gather() from old location and Scatter() to new location
+
 		grouping_data.table_data.Combine(temp_exec_context, table_state, *temp_local_state);
 	}
 
@@ -813,6 +843,8 @@ SinkFinalizeType PhysicalHashAggregate::FinalizeInternal(Pipeline &pipeline, Eve
 #ifdef LINEAGE
 		if (grouping_gstate.table_state->log_record) {
 			lineage_op->Capture(move(grouping_gstate.table_state->log_record), LINEAGE_FINALIZE, 0);
+			grouping_gstate.table_state->log_record = nullptr;
+
 		}
 #endif
 		if (is_partitioned) {
@@ -910,6 +942,7 @@ SourceResultType PhysicalHashAggregate::GetData(ExecutionContext &context, DataC
 #ifdef LINEAGE
 		if (chunk.log_record) {
 			lineage_op->Capture(move(chunk.log_record), LINEAGE_SOURCE, context.thread.thread_id);
+			chunk.log_record = nullptr;
 		}
 #endif
 		if (chunk.size() != 0) {

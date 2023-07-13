@@ -30,6 +30,9 @@ public:
 	unique_ptr<BaseStatistics> verification_stats;
 
 public:
+#ifdef LINEAGE
+	string GetColumnBindings() const;
+#endif
 	bool IsAggregate() const override;
 	bool IsWindow() const override;
 	bool HasSubquery() const override;

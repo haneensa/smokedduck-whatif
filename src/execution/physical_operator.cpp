@@ -14,7 +14,11 @@
 namespace duckdb {
 
 string PhysicalOperator::GetName() const {
+#ifdef LINEAGE
+	return PhysicalOperatorToString(type) + "_" + std::to_string(id);
+#else
 	return PhysicalOperatorToString(type);
+#endif
 }
 
 string PhysicalOperator::ToString() const {
@@ -239,7 +243,7 @@ OperatorResultType CachingPhysicalOperator::Execute(ExecutionContext &context, D
 #if STANDARD_VECTOR_SIZE >= 128
 	if (!state.initialized) {
 		state.initialized = true;
-		state.can_cache_chunk = true;
+		state.can_cache_chunk = false;
 
 		if (!context.client.config.enable_caching_operators) {
 			state.can_cache_chunk = false;
@@ -265,15 +269,26 @@ OperatorResultType CachingPhysicalOperator::Execute(ExecutionContext &context, D
 		if (!state.cached_chunk) {
 			state.cached_chunk = make_uniq<DataChunk>();
 			state.cached_chunk->Initialize(Allocator::Get(context.client), chunk.GetTypes());
+#ifdef LINEAGE
+			//state.cached_lineage = make_shared<CacheLineage>(LineageNested());
+#endif
 		}
 
 		state.cached_chunk->Append(chunk);
+#ifdef LINEAGE
+		// TODO: accumelate lineage
+		//state.cached_lineage.AddLineage();
 
+#endif
 		if (state.cached_chunk->size() >= (STANDARD_VECTOR_SIZE - CACHE_THRESHOLD) ||
 		    child_result == OperatorResultType::FINISHED) {
 			// chunk cache full: return it
 			chunk.Move(*state.cached_chunk);
 			state.cached_chunk->Initialize(Allocator::Get(context.client), chunk.GetTypes());
+#ifdef LINEAGE
+			//lineage_op->Capture(move(state.cached_lineage), LINEAGE_SOURCE, 0);
+			//state.cached_lineage = make_shared<CacheLineage>(LineageNested());
+#endif
 			return child_result;
 		} else {
 			// chunk cache not full return empty result
@@ -281,7 +296,6 @@ OperatorResultType CachingPhysicalOperator::Execute(ExecutionContext &context, D
 		}
 	}
 #endif
-
 	return child_result;
 }
 

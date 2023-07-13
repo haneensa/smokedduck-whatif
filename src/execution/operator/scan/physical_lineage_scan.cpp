@@ -42,6 +42,7 @@ public:
 	idx_t log_id = 0;
 	idx_t current_thread = 0;
 	vector<idx_t> thread_ids;
+	idx_t chunk_index = 0;
 };
 
 
@@ -55,21 +56,37 @@ SourceResultType PhysicalLineageScan::GetData(ExecutionContext &context, DataChu
 	auto& thread_ids = state.thread_ids;
 
 	DataChunk result;
-	while (state.current_thread < thread_ids.size() && lineage_op->log_per_thead[thread_ids[state.current_thread]].GetLogSize(stage_idx) == 0) {
-		state.current_thread++;
-		state.log_id = 0;
-		state.thread_count = 0;
-	}
+	idx_t res_count = 0;
+	if (stage_idx == 100) {
+		result.InitializeEmpty(lineage_op->chunk_collection.Types());
 
-	if (state.current_thread >= thread_ids.size()) {
-		return SourceResultType::FINISHED;
-	}
+		if (lineage_op->chunk_collection.Count() == 0) {
+			return SourceResultType::FINISHED;
+		}
+		D_ASSERT(result.GetTypes() == lineage_op->chunk_collection.Types());
+		if (state.chunk_index >= lineage_op->chunk_collection.ChunkCount()) {
+			return SourceResultType::FINISHED;
+		}
+		auto &collection_chunk = lineage_op->chunk_collection.GetChunk(state.chunk_index);
+		result.Reference(collection_chunk);
+		state.chunk_index++;
+		state.count_so_far += result.size();
+	} else {
+		while (state.current_thread < thread_ids.size() && lineage_op->log_per_thead[thread_ids[state.current_thread]].GetLogSize(stage_idx) == 0) {
+			state.current_thread++;
+			state.log_id = 0;
+			state.thread_count = 0;
+		}
 
-	idx_t thread_id = thread_ids[state.current_thread];
+		if (state.current_thread >= thread_ids.size()) {
+			return SourceResultType::FINISHED;
+		}
 
-	idx_t res_count =
+		idx_t thread_id = thread_ids[state.current_thread];
+
+		res_count =
 		    lineage_op->GetLineageAsChunk(state.thread_count, result, thread_id, state.log_id, stage_idx);
-
+	}
 
  	// Apply projection list
 	chunk.Reset();

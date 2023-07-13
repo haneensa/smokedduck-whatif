@@ -204,7 +204,6 @@ void TupleDataCollection::AppendUnified(TupleDataPinState &pin_state, TupleDataC
 #endif
 
 	Scatter(chunk_state, new_chunk, append_sel, actual_append_count);
-
 #ifdef DEBUG
 	// Verify that the size of the data written to the heap is the same as the size we computed it would be
 	if (!layout.AllConstant()) {

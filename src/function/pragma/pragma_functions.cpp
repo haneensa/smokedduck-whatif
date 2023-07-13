@@ -122,11 +122,28 @@ static void PragmaDisableOptimizer(ClientContext &context, const FunctionParamet
 #ifdef LINEAGE
 static void PragmaEnableLineage(ClientContext &context, const FunctionParameters &parameters) {
 	context.client_data->lineage_manager->trace_lineage = true;
+	ClientConfig::GetConfig(context).trace_lineage = true;
 	std::cout << "\nEnable Lineage Capture" << std::endl;
 }
 static void PragmaDisableLineage(ClientContext &context, const FunctionParameters &parameters) {
 	context.client_data->lineage_manager->trace_lineage = false;
+	ClientConfig::GetConfig(context).trace_lineage = false;
 	std::cout << "\nDisable Lineage Capture" << std::endl;
+}
+
+static void PragmaEnableIntermediateTables(ClientContext &context, const FunctionParameters &parameters) {
+	context.client_data->lineage_manager->persist_intermediate = true;
+	std::cout << "\nEnable Intermediate Tables Capture: " << std::endl;
+}
+
+static void PragmaDisableIntermediateTables(ClientContext &context, const FunctionParameters &parameters) {
+	context.client_data->lineage_manager->persist_intermediate = false;
+	std::cout << "\nDisable Intermediate Tables Capture: " << std::endl;
+}
+static void PragmaClearLineage(ClientContext &context, const FunctionParameters &parameters) {
+	context.client_data->lineage_manager->queryid_to_plan.clear();
+	context.client_data->lineage_manager->query_to_id.clear();
+	std::cout << "\nClear Lineage" << std::endl;
 }
 #endif
 
@@ -134,7 +151,10 @@ void PragmaFunctions::RegisterFunction(BuiltinFunctions &set) {
 	RegisterEnableProfiling(set);
 #ifdef LINEAGE
     set.AddFunction(PragmaFunction::PragmaStatement("enable_lineage", PragmaEnableLineage));
-	  set.AddFunction(PragmaFunction::PragmaStatement("disable_lineage", PragmaDisableLineage));
+	set.AddFunction(PragmaFunction::PragmaStatement("disable_lineage", PragmaDisableLineage));
+	set.AddFunction(PragmaFunction::PragmaStatement("enable_intermediate_tables", PragmaEnableIntermediateTables));
+	set.AddFunction(PragmaFunction::PragmaStatement("disable_intermediate_tables", PragmaDisableIntermediateTables));
+	set.AddFunction(PragmaFunction::PragmaStatement("clear_lineage", PragmaClearLineage));
 #endif
 	set.AddFunction(PragmaFunction::PragmaStatement("disable_profile", PragmaDisableProfiling));
 	set.AddFunction(PragmaFunction::PragmaStatement("disable_profiling", PragmaDisableProfiling));

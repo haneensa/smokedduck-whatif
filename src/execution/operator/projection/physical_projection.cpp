@@ -71,8 +71,16 @@ PhysicalProjection::CreateJoinProjection(vector<LogicalType> proj_types, const v
 
 string PhysicalProjection::ParamsToString() const {
 	string extra_info;
+#ifdef LINEAGE
+	extra_info += "\n[INFOSEPARATOR]\n";
+#endif
 	for (auto &expr : select_list) {
+#ifdef LINEAGE
+		string col =  expr->ToString() + "#DEL#" +  expr->GetColumnBindings();
+		extra_info += col + "\n";
+#else
 		extra_info += expr->GetName() + "\n";
+#endif
 	}
 	return extra_info;
 }

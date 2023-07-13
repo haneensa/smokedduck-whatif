@@ -129,6 +129,10 @@ unique_ptr<OperatorState> PhysicalCrossProduct::GetOperatorState(ExecutionContex
 OperatorResultType PhysicalCrossProduct::ExecuteInternal(ExecutionContext &context, DataChunk &input, DataChunk &chunk,
                                                          GlobalOperatorState &gstate, OperatorState &state_p) const {
 	auto &state = state_p.Cast<CrossProductOperatorState>();
+#ifdef LINEAGE
+	// right_position -> tuple id from right side + all tuples from the left side
+	std::cout << state.executor.PositionInChunk() << " " << input.size() << " " <<  state.in_start << std::endl;
+#endif
 	return state.executor.Execute(input, chunk);
 }
 

@@ -16,6 +16,8 @@ namespace duckdb {
 class Allocator;
 class ClientContext;
 
+struct LogRecord;
+
 //!  A ChunkCollection represents a set of DataChunks that all have the same
 //!  types
 /*!

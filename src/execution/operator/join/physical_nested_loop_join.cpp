@@ -395,6 +395,13 @@ OperatorResultType PhysicalNestedLoopJoin::ResolveComplexJoin(ExecutionContext &
 
 			chunk.Slice(input, lvector, match_count);
 			chunk.Slice(right_payload, rvector, match_count, input.ColumnCount());
+#ifdef LINEAGE
+			if (ClientConfig::GetConfig(context.client).trace_lineage) {
+				auto lineage_lhs = make_uniq<LineageSelVec>(lvector, match_count);
+				auto lineage_rhs = make_uniq<LineageSelVec>(rvector, match_count, state.condition_scan_state.current_row_index);
+				lineage_op->Capture( make_shared<LineageBinary>(move(lineage_lhs), move(lineage_rhs)), LINEAGE_SOURCE, 0, state.in_start);
+			}
+#endif
 		}
 
 		// check if we exhausted the RHS, if we did we need to move to the next right chunk in the next iteration

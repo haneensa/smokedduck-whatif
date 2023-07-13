@@ -302,13 +302,13 @@ idx_t GroupedAggregateHashTable::AddChunk(AggregateHTAppendState &state, DataChu
 	}
 
 #ifdef LINEAGE
-//	if (groups.lineage_op) {
+	if (groups.trace_lineage) {
 		auto ptrs = FlatVector::GetData<uintptr_t>(state.addresses);
 		unique_ptr<uintptr_t[]> addresses_copy(new uintptr_t[groups.size()]);
 		std::copy(ptrs, ptrs + groups.size() , addresses_copy.get());
 		auto lineage_data = make_uniq<LineageDataArray<uintptr_t>>(move(addresses_copy),  groups.size() );
 		groups.log_record = make_shared<LogRecord>(move(lineage_data), 0);
-	//}
+	}
 #endif
 	Verify();
 	return new_group_count;
@@ -438,6 +438,8 @@ idx_t GroupedAggregateHashTable::FindOrCreateGroupsInternal(AggregateHTAppendSta
 			// Append everything that belongs to an empty group
 			data_collection->AppendUnified(td_pin_state, state.chunk_state, state.group_chunk, state.empty_vector,
 			                               new_entry_count);
+			// TODO: capture lineage of AppendUnified which scatters state.group_chunk based on state.chunk_state.row_locations
+
 			RowOperations::InitializeStates(layout, state.chunk_state.row_locations,
 			                                *FlatVector::IncrementalSelectionVector(), new_entry_count);
 

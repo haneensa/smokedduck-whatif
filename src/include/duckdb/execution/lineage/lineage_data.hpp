@@ -9,7 +9,6 @@
 #pragma once
 #include "duckdb/catalog/catalog.hpp"
 #include "duckdb/common/common.hpp"
-#include "duckdb/common/types/chunk_collection.hpp"
 #include "duckdb/common/types/value.hpp"
 #include "duckdb/common/unordered_map.hpp"
 #include "lineage_top.h"
@@ -18,6 +17,41 @@
 #include <utility>
 
 namespace duckdb {
+
+struct LogRecord;
+
+
+struct LogRecord {
+	shared_ptr<LineageData> data;
+	idx_t in_start;
+	LogRecord(shared_ptr<LineageData> data, idx_t in_start) :
+	      data(data), in_start(in_start) {
+	}
+};
+
+class Log {
+public:
+	Log() {}
+
+	void Append(shared_ptr<LogRecord> log_record, idx_t stage_idx) {
+		D_ASSERT(stage_idx < 4);
+		log[stage_idx].push_back(log_record);
+	}
+
+	idx_t GetLogSize(idx_t stage_idx) {
+		D_ASSERT(stage_idx < 4);
+		return log[stage_idx].size();
+	}
+
+	shared_ptr<LogRecord> GetLogRecord(idx_t stage_idx, idx_t data_idx) {
+		D_ASSERT(stage_idx < 4 && data_idx < log[stage_idx].size());
+		return log[stage_idx][data_idx];
+	}
+
+	idx_t GetLogSizeBytes();
+
+	std::vector<shared_ptr<LogRecord>> log[4];
+};
 
 template<typename T>
 class LineageDataArray : public LineageData {
@@ -169,6 +203,32 @@ public:
 	unique_ptr<LineageData> right;
 private:
 	bool switch_on_left = true;
+};
+
+class CacheLineage : public LineageData {
+public:
+	CacheLineage() : LineageData(0)  {
+	}
+
+	void Debug() override;
+	data_ptr_t Process(idx_t offset) override {
+		// iterate over all inner lineage data?
+		throw std::logic_error("Can't call process on LineageNested");
+	}
+
+	idx_t Size() override {
+		// iterate over all inner lineage and accumelate their size
+		return 0;
+	}
+
+	idx_t At(idx_t) override {
+		throw std::logic_error("Can't call backward directly on LineageNested");
+	}
+
+	void AddLineage(const shared_ptr<LineageData>& lineage_data);
+
+private:
+	vector<shared_ptr<LineageData>> lineage = {};
 };
 
 } // namespace duckdb

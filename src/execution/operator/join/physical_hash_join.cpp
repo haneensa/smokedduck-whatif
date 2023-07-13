@@ -46,6 +46,23 @@ PhysicalHashJoin::PhysicalHashJoin(LogicalOperator &op, unique_ptr<PhysicalOpera
                        estimated_cardinality, std::move(perfect_join_state)) {
 }
 
+#ifdef LINEAGE
+string PhysicalHashJoin::ParamsToString() const {
+	string extra_info = JoinTypeToString(join_type) + "\n";
+	for (auto &it : conditions) {
+		string op = ExpressionTypeToOperator(it.comparison);
+		extra_info += it.left->GetName() + op + it.right->GetName() + "\n";
+	}
+
+	extra_info += "\n[INFOSEPARATOR]\n";
+
+	for (auto &it : right_projection_map) {
+		extra_info += "#"+to_string(it)+"\n";
+	}
+
+	return extra_info;
+}
+#endif
 //===--------------------------------------------------------------------===//
 // Sink
 //===--------------------------------------------------------------------===//
@@ -187,7 +204,9 @@ SinkResultType PhysicalHashJoin::Sink(ExecutionContext &context, DataChunk &chun
 	// resolve the join keys for the right chunk
 	lstate.join_keys.Reset();
 	lstate.build_executor.Execute(chunk, lstate.join_keys);
-
+#ifdef LINEAGE
+	lstate.join_keys.trace_lineage = ClientConfig::GetConfig(context.client).trace_lineage;
+#endif
 	// build the HT
 	auto &ht = *lstate.hash_table;
 	if (!right_projection_map.empty()) {
@@ -206,7 +225,11 @@ SinkResultType PhysicalHashJoin::Sink(ExecutionContext &context, DataChunk &chun
 		lstate.build_chunk.SetCardinality(chunk.size());
 		ht.Build(lstate.append_state, lstate.join_keys, lstate.build_chunk);
 	}
-
+#ifdef LINEAGE
+	if (lstate.join_keys.trace_lineage  && lstate.join_keys.log_record) {
+		lineage_op->Capture(move(lstate.join_keys.log_record), LINEAGE_SINK, 0);
+	}
+#endif
 	return SinkResultType::NEED_MORE_INPUT;
 }
 
@@ -396,7 +419,16 @@ SinkFinalizeType PhysicalHashJoin::Finalize(Pipeline &pipeline, Event &event, Cl
 		D_ASSERT(ht.equality_types.size() == 1);
 		auto key_type = ht.equality_types[0];
 		use_perfect_hash = sink.perfect_join_executor->BuildPerfectHashTable(key_type);
+#ifdef LINEAGE
+		if (use_perfect_hash && sink.perfect_join_executor->log_record != nullptr) {
+			lineage_op->Capture(move( sink.perfect_join_executor->log_record), LINEAGE_FINALIZE, 0);
+			sink.perfect_join_executor->log_record = nullptr;
+		}
+#endif
 	}
+
+	lineage_op->use_perfect_hash = use_perfect_hash;
+
 	// In case of a large build side or duplicates, use regular hash join
 	if (!use_perfect_hash) {
 		sink.perfect_join_executor.reset();
@@ -475,13 +507,36 @@ OperatorResultType PhysicalHashJoin::ExecuteInternal(ExecutionContext &context, 
 
 	if (sink.perfect_join_executor) {
 		D_ASSERT(!sink.external);
-		return sink.perfect_join_executor->ProbePerfectHashTable(context, input, chunk, *state.perfect_hash_join_state);
+#ifdef LINEAGE
+		chunk.trace_lineage = ClientConfig::GetConfig(context.client).trace_lineage;
+#endif
+		auto result = sink.perfect_join_executor->ProbePerfectHashTable(context, input, chunk, *state.perfect_hash_join_state);
+#ifdef LINEAGE
+		//! TODO: capture lineage
+		if (chunk.trace_lineage && chunk.log_record) {
+			chunk.log_record->in_start =  state.in_start;
+			lineage_op->Capture(move(chunk.log_record), LINEAGE_SOURCE, 0);
+			chunk.log_record = nullptr;
+		}
+#endif
+		return result;
 	}
 
 	if (state.scan_structure) {
+#ifdef LINEAGE
+		chunk.trace_lineage = ClientConfig::GetConfig(context.client).trace_lineage;
+#endif
 		// still have elements remaining (i.e. we got >STANDARD_VECTOR_SIZE elements in the previous probe)
 		state.scan_structure->Next(state.join_keys, input, chunk);
 		if (chunk.size() > 0) {
+
+#ifdef LINEAGE
+			if (chunk.trace_lineage && chunk.log_record) {
+				chunk.log_record->in_start = state.in_start;
+				lineage_op->Capture(move(chunk.log_record), LINEAGE_SOURCE, 0);
+				chunk.log_record = nullptr;
+			}
+#endif
 			return OperatorResultType::HAVE_MORE_OUTPUT;
 		}
 		state.scan_structure = nullptr;
@@ -505,7 +560,19 @@ OperatorResultType PhysicalHashJoin::ExecuteInternal(ExecutionContext &context, 
 	} else {
 		state.scan_structure = sink.hash_table->Probe(state.join_keys);
 	}
+#ifdef LINEAGE
+	chunk.trace_lineage = ClientConfig::GetConfig(context.client).trace_lineage;
+#endif
+
 	state.scan_structure->Next(state.join_keys, input, chunk);
+
+#ifdef LINEAGE
+	if (chunk.trace_lineage  && chunk.log_record) {
+		chunk.log_record->in_start = state.in_start;
+		lineage_op->Capture(move(chunk.log_record), LINEAGE_SOURCE, 0);
+		chunk.log_record = nullptr;
+	}
+#endif
 	return OperatorResultType::HAVE_MORE_OUTPUT;
 }
 

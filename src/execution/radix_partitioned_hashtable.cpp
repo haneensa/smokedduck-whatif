@@ -152,6 +152,9 @@ void RadixPartitionedHashTable::Sink(ExecutionContext &context, DataChunk &chunk
 		}
 		D_ASSERT(gstate.finalized_hts.size() == 1);
 		D_ASSERT(gstate.finalized_hts[0]);
+#ifdef LINEAGE
+		group_chunk.trace_lineage = ClientConfig::GetConfig(context.client).trace_lineage;
+#endif
 		llstate.total_groups +=
 		    gstate.finalized_hts[0]->AddChunk(gstate.append_state, group_chunk, payload_input, filter);
 #ifdef LINEAGE
@@ -169,10 +172,16 @@ void RadixPartitionedHashTable::Sink(ExecutionContext &context, DataChunk &chunk
 		    make_uniq<PartitionableHashTable>(context.client, Allocator::Get(context.client), gstate.partition_info,
 		                                      group_types, op.payload_types, op.bindings);
 	}
+#ifdef LINEAGE
+	group_chunk.trace_lineage = ClientConfig::GetConfig(context.client).trace_lineage;
+#endif
 	llstate.total_groups += llstate.ht->AddChunk(group_chunk, payload_input,
 	                                             gstate.partitioned && gstate.partition_info.n_partitions > 1, filter);
 #ifdef LINEAGE
-	chunk.log_record = move(group_chunk.log_record);
+	if (group_chunk.trace_lineage && group_chunk.log_record) {
+		chunk.log_record = move(group_chunk.log_record);
+		group_chunk.log_record = nullptr;
+	}
 #endif
 	if (llstate.total_groups >= radix_limit) {
 		gstate.partitioned = true;
@@ -265,8 +274,15 @@ bool RadixPartitionedHashTable::Finalize(ClientContext &context, GlobalSinkState
 				D_ASSERT(unpartitioned_ht);
 				gstate.finalized_hts[0]->Combine(*unpartitioned_ht);
 #ifdef LINEAGE
-				if (gstate.finalized_hts[0]->log_record)
+				if (gstate.finalized_hts[0]->log_record) {
+					// todo: accumelate them instead of overwriting
+					// need also to know the index of the partition
+					std::cout << "finalize " << std::endl;
+					gstate.finalized_hts[0]->log_record->data->Debug();
 					gstate.log_record = move(gstate.finalized_hts[0]->log_record);
+					gstate.finalized_hts[0]->log_record = nullptr;
+				}
+
 #endif
 				unpartitioned_ht.reset();
 			}
@@ -481,7 +497,10 @@ SourceResultType RadixPartitionedHashTable::GetData(ExecutionContext &context, D
 		auto &global_scan_state = state.ht_scan_states[ht_index];
 		elements_found = lstate.ht->Scan(global_scan_state, local_scan_state, lstate.scan_chunk);
 #ifdef LINEAGE
-		chunk.log_record = move(lstate.ht->log_record);
+		if (lstate.ht->log_record) {
+			chunk.log_record = move(lstate.ht->log_record);
+			lstate.ht->log_record = nullptr;
+		}
 #endif
 		if (elements_found > 0) {
 			break;
