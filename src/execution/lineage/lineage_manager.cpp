@@ -13,29 +13,38 @@
 #include "duckdb/planner/expression/bound_reference_expression.hpp"
 #include "duckdb/execution/operator/join/physical_hash_join.hpp"
 #include "duckdb/execution/operator/aggregate/physical_hash_aggregate.hpp"
+#include "duckdb/catalog/catalog_entry/aggregate_function_catalog_entry.hpp"
+#include "duckdb/planner/expression_binder.hpp"
 
 #include <utility>
 
 namespace duckdb {
 class BoundReferenceExpression;
 
-vector<idx_t> RecurseAddProvenance(PhysicalOperator *op) {
+vector<idx_t> AdjustPlan(ClientContext &context, PhysicalOperator *op) {
 	vector<idx_t> annotations;
 
 	// if child is hash join, then create projection and place it in between
-	if (!op->special && op->children.size() == 1 && op->children[0]->type == PhysicalOperatorType::HASH_JOIN) {
+	// op could be binary or unary operator with one of the children as join
+	if (!op->special && op->children.size() >= 1 && op->children[0]->type == PhysicalOperatorType::HASH_JOIN) {
 		auto hj = op->children[0].get();
 
 		// push a projection on top that does the projection
 		vector<LogicalType> types;
 		vector<unique_ptr<Expression>> expressions;
-		for (storage_t column_id=0;  column_id < op->children[0]->types.size(); column_id++) {
-			auto left_hj = hj->children[0].get();
-			if (column_id == left_hj->types.size())
-				continue;
+		// this is affected if left_annotation_index also has an annotations?
+		auto left_hj = hj->children[0].get();
+		auto left_annotation_index =
+		    left_hj->types.size(); // always with +1 since we assume all children pass single annotation column
+		for (storage_t column_id = 0; column_id < op->children[0]->types.size(); column_id++) {
 			auto col_type = hj->types[column_id];
 			types.push_back(col_type);
-			expressions.push_back( make_uniq<BoundReferenceExpression>(col_type, column_id));
+
+			if (column_id >= left_annotation_index) {
+				expressions.push_back(make_uniq<BoundReferenceExpression>(col_type, column_id+1));
+			} else {
+				expressions.push_back(make_uniq<BoundReferenceExpression>(col_type, column_id));
+			}
 		}
 
 		auto hj_unique = std::move(op->children[0]);
@@ -44,11 +53,53 @@ vector<idx_t> RecurseAddProvenance(PhysicalOperator *op) {
 		    make_uniq<PhysicalProjection>(std::move(types), std::move(expressions), hj->estimated_cardinality);
 		projection->children.push_back(std::move(hj_unique));
 		projection->special = true;
+		projection->drop_left = true;
+		projection->left_annotation_index = left_annotation_index;
 		op->children[0] = std::move(projection);
 	}
 
+	// op is a binary operator (e.g. join)
+	if (!op->special && op->children.size() > 1 && op->children[1]->type == PhysicalOperatorType::HASH_JOIN) {
+		auto hj = op->children[1].get();
+
+		// push a projection on top that does the projection
+		vector<LogicalType> types;
+		vector<unique_ptr<Expression>> expressions;
+		auto left_hj = hj->children[0].get(); // left child
+		auto left_annotation_index = left_hj->types.size();
+		for (storage_t column_id = 0; column_id < op->children[1]->types.size(); column_id++) {
+			auto col_type = hj->types[column_id];
+			types.push_back(col_type);
+
+			if (column_id >= left_annotation_index) {
+				expressions.push_back(make_uniq<BoundReferenceExpression>(col_type, column_id+1));
+			} else {
+				expressions.push_back(make_uniq<BoundReferenceExpression>(col_type, column_id));
+			}
+		}
+
+		auto hj_unique = std::move(op->children[1]);
+		// construct projection and stitch the plan again
+		auto projection =
+		    make_uniq<PhysicalProjection>(std::move(types), std::move(expressions), hj->estimated_cardinality);
+		projection->children.push_back(std::move(hj_unique));
+		projection->special = true;
+		projection->drop_left = true;
+		projection->left_annotation_index = left_annotation_index;
+		op->children[1] = std::move(projection);
+	}
+
 	for (idx_t i = 0; i < op->children.size(); i++) {
-		annotations = RecurseAddProvenance(op->children[i].get());
+		annotations = AdjustPlan(context, op->children[i].get());
+	}
+	return annotations;
+}
+
+vector<idx_t> RecurseAddProvenance(ClientContext &context, PhysicalOperator *op) {
+	vector<idx_t> annotations;
+
+	for (idx_t i = 0; i < op->children.size(); i++) {
+		annotations = RecurseAddProvenance(context, op->children[i].get());
 	}
 
 	switch (op->type) {
@@ -82,6 +133,9 @@ vector<idx_t> RecurseAddProvenance(PhysicalOperator *op) {
 		op->types.push_back(LogicalTypeId::BIGINT);
 		((PhysicalHashJoin* )op)->build_types.push_back(LogicalTypeId::BIGINT);
 
+		if (!((PhysicalHashJoin* )op)->right_projection_map.empty()) {
+			((PhysicalHashJoin* )op)->right_projection_map.push_back(op->children[1]->types.size()-1);
+		}
 		return { op->types.size() };
 	}
 	case PhysicalOperatorType::LIMIT: {
@@ -92,10 +146,21 @@ vector<idx_t> RecurseAddProvenance(PhysicalOperator *op) {
 	}
 	case PhysicalOperatorType::HASH_GROUP_BY: {
 		// output types
+		/*
 		op->types.push_back(LogicalType::LIST(LogicalType::BIGINT));
 		((PhysicalHashAggregate* )op)->grouped_aggregate_data.payload_types.push_back(LogicalTypeId::BIGINT);
-		//((PhysicalHashAggregate* )op)->grouped_aggregate_data.aggregates.push_back(LogicalTypeId::BIGINT);
+		// bindings
 		((PhysicalHashAggregate* )op)->grouped_aggregate_data.aggregate_return_types.push_back(LogicalType::LIST(LogicalTypeId::BIGINT));
+
+		string catalog_name = "";
+		auto binder = Binder::CreateBinder(context);
+		auto &catalog = Catalog::GetCatalog(context, catalog_name);
+		auto func = catalog.GetEntry(context, CatalogType::SCALAR_FUNCTION_ENTRY, "", "list", static_cast<OnEntryNotFound>(false));
+		auto &bound_function =  ((AggregateFunctionCatalogEntry *)func.get())->functions.functions[0];
+		vector<unique_ptr<Expression>> children;
+		auto e = make_uniq<BoundReferenceExpression>("i", LogicalTypeId::BIGINT, op->types.size()-1);
+		children.push_back(move(e));
+		//((PhysicalHashAggregate* )op)->grouped_aggregate_data.aggregates.push_back(move(aggregate));*/
 
 	break;
 	}
@@ -149,9 +214,10 @@ vector<idx_t> RecurseAddProvenance(PhysicalOperator *op) {
 	return {};
 }
 
-unique_ptr<PhysicalOperator> LineageManager::AddProvenance(unique_ptr<PhysicalOperator> op) {
+unique_ptr<PhysicalOperator> LineageManager::AddProvenance(ClientContext &context, unique_ptr<PhysicalOperator> op) {
 	if (trace_lineage) {
-		RecurseAddProvenance(op.get());
+		AdjustPlan(context, op.get());
+		RecurseAddProvenance(context, op.get());
 
 		// push a projection on top that does the projection
 		vector<LogicalType> types;
@@ -167,6 +233,10 @@ unique_ptr<PhysicalOperator> LineageManager::AddProvenance(unique_ptr<PhysicalOp
 
 		auto projection =
 		    make_uniq<PhysicalProjection>(std::move(types), std::move(expressions), op->estimated_cardinality);
+
+		projection->special = true;
+		projection->drop_left = true;
+		projection->left_annotation_index = types.size();
 		projection->children.push_back(std::move(op));
 		return projection;
 	}

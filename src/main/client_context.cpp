@@ -157,7 +157,7 @@ PreservedError ClientContext::EndQueryInternal(ClientContextLock &lock, bool suc
 	client_data->profiler->EndQuery();
 #ifdef LINEAGE
 	if (client_data->lineage_manager->trace_lineage && active_query->prepared->plan ) {
-		client_data->lineage_manager->StoreQueryLineage(*this, active_query->prepared->plan.get(),  active_query->query);
+		//client_data->lineage_manager->StoreQueryLineage(*this, active_query->prepared->plan.get(),  active_query->query);
 	}
 	current_thread_id = 0;
 #endif
@@ -365,8 +365,7 @@ shared_ptr<PreparedStatementData> ClientContext::CreatePreparedStatement(ClientC
 #endif
 
 	// call lineage manager to modify the physical plan
-	physical_plan = client_data->lineage_manager->AddProvenance(std::move(physical_plan));
-
+	physical_plan = client_data->lineage_manager->AddProvenance(*this, std::move(physical_plan));
 	result->plan = std::move(physical_plan);
 	return result;
 }

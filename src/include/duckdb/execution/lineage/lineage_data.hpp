@@ -54,6 +54,33 @@ private:
 	unique_ptr<T[]> data;
 };
 
+
+class LineageVec : public LineageData {
+public:
+	LineageVec(Vector& vec_p, idx_t count, idx_t in_offset=0) : LineageData(count), vec(std::move(vec_p)), in_offset(in_offset) {
+#ifdef LINEAGE_DEBUG
+		Debug();
+#endif
+	}
+	void Debug() override {
+		std::cout << vec.ToString(count) << std::endl;
+	}
+
+	data_ptr_t Process(idx_t offset) {
+		return (data_ptr_t)vec.GetData();
+	};
+
+	idx_t Size() override {
+		return count * sizeof(vec.GetValue(0));
+	}
+	idx_t At(idx_t i) { return i; };
+
+private:
+	Vector vec;
+	idx_t in_offset;
+};
+
+
 class LineageSelVec : public LineageData {
 public:
 	LineageSelVec(const SelectionVector& vec_p, idx_t count, idx_t in_offset=0) : LineageData(count), vec(vec_p), in_offset(in_offset) {

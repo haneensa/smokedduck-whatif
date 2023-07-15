@@ -53,6 +53,8 @@ public:
 	shared_ptr<OperatorLineage> lineage_op;
 	// bool delim_handled = false;
 	bool special = false;
+	int left_annotation_index = -1;
+	bool drop_left = false;
 #endif
 
 	//! The physical operator type

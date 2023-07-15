@@ -28,7 +28,42 @@ PhysicalProjection::PhysicalProjection(vector<LogicalType> types, vector<unique_
 OperatorResultType PhysicalProjection::Execute(ExecutionContext &context, DataChunk &input, DataChunk &chunk,
                                                GlobalOperatorState &gstate, OperatorState &state_p) const {
 	auto &state = state_p.Cast<ProjectionState>();
+
+	/*if (drop_annotations) {
+		DataChunk temp1;
+		input.Split(temp1, input.ColumnCount()-1);
+	}
+
+	if (add_annotations) {
+		DataChunk temp2;
+	    temp2.Initialize(context.client, {LogicalType::BIGINT}, input.size());
+	    temp2.SetCardinality(input.size());
+ 	    temp2.data[0].Sequence(0, 1, input.size()); // out_index
+		// generate a sequence
+		input.Fuse(temp2);
+	}*/
+
 	state.executor.Execute(input, chunk);
+
+	if (special) {
+		// drop column from the middle of input -- hard to drop from the middle
+		// log the column
+		Vector annotations = std::move(input.data[left_annotation_index]);
+		auto lineage = make_uniq<LineageVec>(annotations,  input.size());
+		std::cout << id << " projection " << std::endl;
+		lineage->Debug();
+		lineage_op->Capture(make_shared<LogRecord>(move(lineage), 0), 0, 0);
+	}
+ 	/*
+
+	 1. drop annotations
+	 chunk.Split()
+
+	 2. add annotations (after projection)
+	 3. normal projection (nothing)
+
+	 */
+
 	return OperatorResultType::NEED_MORE_INPUT;
 }
 
