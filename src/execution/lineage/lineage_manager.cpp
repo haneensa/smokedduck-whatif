@@ -54,6 +54,8 @@ vector<idx_t> AdjustPlan(ClientContext &context, PhysicalOperator *op) {
 		projection->children.push_back(std::move(hj_unique));
 		projection->special = true;
 		projection->drop_left = true;
+		projection->drop_annotations = true;
+		projection->add_annotations = true;
 		projection->left_annotation_index = left_annotation_index;
 		op->children[0] = std::move(projection);
 	}
@@ -85,6 +87,8 @@ vector<idx_t> AdjustPlan(ClientContext &context, PhysicalOperator *op) {
 		projection->children.push_back(std::move(hj_unique));
 		projection->special = true;
 		projection->drop_left = true;
+		projection->drop_annotations = true;
+		projection->add_annotations = true;
 		projection->left_annotation_index = left_annotation_index;
 		op->children[1] = std::move(projection);
 	}
@@ -215,7 +219,7 @@ vector<idx_t> RecurseAddProvenance(ClientContext &context, PhysicalOperator *op)
 }
 
 unique_ptr<PhysicalOperator> LineageManager::AddProvenance(ClientContext &context, unique_ptr<PhysicalOperator> op) {
-	if (trace_lineage) {
+	if (trace_lineage && op->type != PhysicalOperatorType::TRANSACTION && op->type != PhysicalOperatorType::PRAGMA) {
 		AdjustPlan(context, op.get());
 		RecurseAddProvenance(context, op.get());
 

@@ -95,7 +95,7 @@ vector<vector<ColumnDefinition>> OperatorLineage::GetTableColumnTypes() {
 	case PhysicalOperatorType::NESTED_LOOP_JOIN:
 	case PhysicalOperatorType::PIECEWISE_MERGE_JOIN: {
 		vector<ColumnDefinition> sink;
-		sink.emplace_back("in_index", LogicalType::INTEGER);
+		sink.emplace_back("in_index", LogicalType::BIGINT);
 
 		if (type == PhysicalOperatorType::HASH_JOIN) {
 			sink.emplace_back("out_index", LogicalType::BIGINT);
@@ -107,12 +107,12 @@ vector<vector<ColumnDefinition>> OperatorLineage::GetTableColumnTypes() {
 		res.emplace_back(move(sink));
 
 		vector<ColumnDefinition> source;
-		source.emplace_back("lhs_index", LogicalType::INTEGER);
+		source.emplace_back("lhs_index", LogicalType::BIGINT);
 
 		if (type == PhysicalOperatorType::INDEX_JOIN || type == PhysicalOperatorType::HASH_JOIN)
 			source.emplace_back("rhs_index", LogicalType::BIGINT);
 		else
-			source.emplace_back("rhs_index", LogicalType::INTEGER);
+			source.emplace_back("rhs_index", LogicalType::BIGINT);
 
 		source.emplace_back("out_index", LogicalType::INTEGER);
 		source.emplace_back("thread_id", LogicalType::INTEGER);
@@ -194,6 +194,21 @@ idx_t OperatorLineage::GetLineageAsChunk(idx_t count_so_far, DataChunk &insert_c
 			}
 			break;
 		}
+		case PhysicalOperatorType::HASH_JOIN: {
+			// in_index | LogicalType::INTEGER, out_index|LogicalType::BIGINT, thread_id|LogicalType::INTEGER
+			idx_t res_count = data_woffset->data->Count();
+
+			Vector out_index = data_woffset->data->GetVecRef(types[1], 0);
+			Vector lhs_payload = dynamic_cast<LineageBinary&>(*data_woffset->data).left->GetVecRef(types[0], 0);
+			Vector rhs_payload = dynamic_cast<LineageBinary&>(*data_woffset->data).right->GetVecRef(types[1], 0);
+			insert_chunk.SetCardinality(res_count);
+			insert_chunk.data[0].Reference(lhs_payload);
+			insert_chunk.data[1].Reference(rhs_payload);
+			insert_chunk.data[2].Sequence(count_so_far, 1, res_count);
+			insert_chunk.data[3].Reference(thread_id_vec);
+			break;
+		}
+
 		default:
 			// We must capture lineage for everything getting processed
 			D_ASSERT(false);

@@ -55,6 +55,8 @@ public:
 	bool special = false;
 	int left_annotation_index = -1;
 	bool drop_left = false;
+	bool drop_annotations = false;
+	bool add_annotations = false;
 #endif
 
 	//! The physical operator type
