@@ -57,13 +57,18 @@ private:
 
 class LineageVec : public LineageData {
 public:
-	LineageVec(Vector& vec_p, idx_t count, idx_t in_offset=0) : LineageData(count), vec(std::move(vec_p)), in_offset(in_offset) {
+	LineageVec(Vector &vec_p, idx_t count, idx_t in_offset=0) : LineageData(count), vec(std::move(vec_p)), in_offset(in_offset) {
 #ifdef LINEAGE_DEBUG
 		Debug();
 #endif
 	}
 	void Debug() override {
 		std::cout << vec.ToString(count) << std::endl;
+	}
+
+	Vector GetVecRef(LogicalType type, idx_t offset) override {
+		std::cout << vec.ToString(count) << std::endl;
+		return vec;
 	}
 
 	data_ptr_t Process(idx_t offset) {

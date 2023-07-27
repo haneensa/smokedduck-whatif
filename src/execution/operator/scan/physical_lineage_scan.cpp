@@ -70,7 +70,6 @@ SourceResultType PhysicalLineageScan::GetData(ExecutionContext &context, DataChu
 	idx_t res_count =
 		    lineage_op->GetLineageAsChunk(state.thread_count, result, thread_id, state.log_id, stage_idx);
 
-
  	// Apply projection list
 	chunk.Reset();
 	chunk.SetCardinality(result.size());
@@ -86,6 +85,8 @@ SourceResultType PhysicalLineageScan::GetData(ExecutionContext &context, DataChu
 			}
 		}
 	}
+
+	std::cout << chunk.ToString() << std::endl;
 
 	state.thread_count += res_count;
 	state.count_so_far += res_count;

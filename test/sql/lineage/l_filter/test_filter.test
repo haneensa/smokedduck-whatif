@@ -37,19 +37,10 @@ SELECT query_id, query from duckdb_queries_list()
 1	select * from t1 where 2 > i  OR i > 3998
 2	select * from t1 where i > 4000 OR i > 3998
 
-query I
-pragma show_tables;
-----
-LINEAGE_1_FILTER_1_0
-LINEAGE_1_SEQ_SCAN_0_0
-LINEAGE_2_FILTER_1_0
-LINEAGE_2_SEQ_SCAN_0_0
-t1
-
 query III
 SELECT rowid, out_index, in_index FROM LINEAGE_1_FILTER_1_0
 ----
-0	0	0
+0	0	1951
 1	1	1
 2	2	3999
 

@@ -29,48 +29,83 @@ PhysicalProjection::PhysicalProjection(vector<LogicalType> types, vector<unique_
 OperatorResultType PhysicalProjection::Execute(ExecutionContext &context, DataChunk &input, DataChunk &chunk,
                                                GlobalOperatorState &gstate, OperatorState &state_p) const {
 	auto &state = state_p.Cast<ProjectionState>();
+	unique_ptr<LineageData> lineage_left = nullptr;
+
+	if (drop_annotations) {
+		DataChunk temp1;
+		input.Split(temp1, input.ColumnCount()-1);
+		//std::cout << "before: " << temp1.ToString() << std::endl;
+		temp1.data[0].Flatten(input.size());
+ 		lineage_left = make_uniq<LineageVec>(  temp1.data[0], input.size());
+		std::cout << "Left " << input.size() << " " << children[0]->id << " " <<  temp1.data[0].ToString(input.size()) << std::endl;
+		lineage_left->Debug();
+		// add annotations
+		//if (add_annotations) {
+			DataChunk temp2;
+			temp2.Initialize(context.client, {LogicalType::BIGINT});
+			temp2.SetCardinality(input.size());
+			temp2.data[0].Sequence(state.range_start, 1, input.size()); // out_index
+			//std::cout << "after: " << temp2.ToString() << std::endl;
+			// generate a sequence
+			input.Fuse(temp2);
+			state.range_start += input.size();
+		//}
+	}
 
 
 	state.executor.Execute(input, chunk);
 
 	if (special) {
-		unique_ptr<LineageData> lineage_left = nullptr;
-		if (drop_annotations) {
-			DataChunk temp1;
-			input.Split(temp1, input.ColumnCount()-1);
-			lineage_left = make_uniq<LineageVec>(temp1.data[0],  input.size());
-			//std::cout << "Right " << input.size() << " " << children[0]->id << " " <<  std::endl;
-			//lineage->Debug();
-		}
-
-		if (add_annotations) {
+		DataChunk annotations_split;
+		if (left_annotation_index == input.ColumnCount()-1) {
+			// last column, do as above
+			input.Split(annotations_split, input.ColumnCount()-1);
+			//std::cout << "before: " << temp1.ToString() << std::endl;
+			// add annotations
+			//if (add_annotations) {
 			DataChunk temp2;
-			temp2.Initialize(context.client, {LogicalType::BIGINT}, input.size());
+			temp2.Initialize(context.client, {LogicalType::BIGINT});
 			temp2.SetCardinality(input.size());
 			temp2.data[0].Sequence(state.range_start, 1, input.size()); // out_index
+			//std::cout << "after: " << temp2.ToString() << std::endl;
 			// generate a sequence
 			input.Fuse(temp2);
 			state.range_start += input.size();
+		}  else {
+			// drop column from the middle of input -- hard to drop from the middle
+			// log the column
+			DataChunk temp1;
+			input.Split(temp1, left_annotation_index+1);
+			// temp1 last column has annotations
+			input.Split(annotations_split, input.ColumnCount()-1);
+			DataChunk temp2;
+			temp2.Initialize(context.client, {LogicalType::BIGINT});
+			temp2.SetCardinality(input.size());
+			temp2.data[0].Sequence(state.range_start, 1, input.size()); // out_index
+			//std::cout << "after: " << temp2.ToString() << std::endl;
+			// generate a sequence
+			input.Fuse(temp2);
+			input.Fuse(temp1);
 		}
-		// drop column from the middle of input -- hard to drop from the middle
-		// log the column
+		annotations_split.data[0].Flatten(input.size());
+		auto annotations = std::move(annotations_split.data[0]);
+
+		/*
 		Vector annotations = std::move(input.data[left_annotation_index]);
+		std::remove(input.data.begin(), input.data.end(), input.data.begin()+left_annotation_index);
+		//input.data.insert[left_annotation_index] = Vector(annotations.GetType());*/
 		auto lineage_right = make_uniq<LineageVec>(annotations,  input.size());
-		//std::cout << "Left " << input.size() << " " << left_annotation_index << " " << children[0]->id << " " <<  std::endl;
-		//lineage->Debug();
+		std::cout << "Right " << input.size() << " " << left_annotation_index << " " << children[0]->id << " " <<  std::endl;
+		lineage_right->Debug();
 		// Log operator ID this annotations belong to
-		auto lineage = make_uniq<LineageBinary>(std::move(lineage_left), std::move(lineage_right));
-		children[0]->lineage_op->Capture(make_shared<LogRecord>(move(lineage), 0), 1, 0);
+
+		if (lineage_left) {
+			auto lineage = make_uniq<LineageBinary>(std::move(lineage_left), std::move(lineage_right));
+			children[0]->lineage_op->Capture(make_shared<LogRecord>(move(lineage), 0), 0, 0);
+		} else {
+			children[0]->lineage_op->Capture(make_shared<LogRecord>(move(lineage_right), 0), 0, 0);
+		}
 	}
- 	/*
-
-	 1. drop annotations
-	 chunk.Split()
-
-	 2. add annotations (after projection)
-	 3. normal projection (nothing)
-
-	 */
 
 	return OperatorResultType::NEED_MORE_INPUT;
 }

@@ -37,12 +37,14 @@ idx_t Log::GetLogSizeBytes() {
 vector<vector<ColumnDefinition>> OperatorLineage::GetTableColumnTypes() {
     vector<vector<ColumnDefinition>> res;
     switch (type) {
+	case PhysicalOperatorType::TOP_N:
     case PhysicalOperatorType::LIMIT:
     case PhysicalOperatorType::FILTER:
     case PhysicalOperatorType::TABLE_SCAN:
+	case PhysicalOperatorType::PROJECTION:
     case PhysicalOperatorType::ORDER_BY: {
         vector<ColumnDefinition> source;
-        source.emplace_back("in_index", LogicalType::INTEGER);
+        source.emplace_back("in_index", LogicalType::BIGINT);
         source.emplace_back("out_index", LogicalType::INTEGER);
         source.emplace_back("thread_id", LogicalType::INTEGER);
         res.emplace_back(move(source));
@@ -52,40 +54,11 @@ vector<vector<ColumnDefinition>> OperatorLineage::GetTableColumnTypes() {
     case PhysicalOperatorType::PERFECT_HASH_GROUP_BY: {
 		// LINEAGE_SOURCE stage_idx=0
 		vector<ColumnDefinition> source;
-		if (type == PhysicalOperatorType::HASH_GROUP_BY)
-			source.emplace_back("in_index", LogicalType::BIGINT);
-		else
-			source.emplace_back("in_index", LogicalType::INTEGER);
-		source.emplace_back("out_index", LogicalType::INTEGER);
+		source.emplace_back("in_index", LogicalType::LIST(LogicalType::BIGINT));
+		source.emplace_back("out_index", LogicalType::BIGINT);
 		source.emplace_back("thread_id", LogicalType::INTEGER);
 		res.emplace_back(move(source));
 
-		// LINEAGE_SCAN stage_idx=1
-        vector<ColumnDefinition> sink;
-        sink.emplace_back("in_index", LogicalType::INTEGER);
-
-		if (type == PhysicalOperatorType::HASH_GROUP_BY)
-			sink.emplace_back("out_index", LogicalType::BIGINT);
-		else
-			sink.emplace_back("out_index", LogicalType::INTEGER);
-
-		sink.emplace_back("thread_id", LogicalType::INTEGER);
-		res.emplace_back(move(sink));
-		// LINEAGE_COMBINE stage_idx=3
-		vector<ColumnDefinition> combine;
-		res.emplace_back(move(combine));
-
-		// LINEAGE_FINALIZE stage_idx=3
-		vector<ColumnDefinition> finalize;
-		if (type == PhysicalOperatorType::HASH_GROUP_BY) {
-			finalize.emplace_back("in_index", LogicalType::BIGINT);
-			finalize.emplace_back("out_index", LogicalType::BIGINT);
-		} else {
-			finalize.emplace_back("in_index", LogicalType::INTEGER);
-			finalize.emplace_back("out_index", LogicalType::INTEGER);
-		}
-		finalize.emplace_back("thread_id", LogicalType::INTEGER);
-		res.emplace_back(move(finalize));
 		break;
 	}
 	case PhysicalOperatorType::HASH_JOIN:
@@ -94,26 +67,9 @@ vector<vector<ColumnDefinition>> OperatorLineage::GetTableColumnTypes() {
 	case PhysicalOperatorType::CROSS_PRODUCT:
 	case PhysicalOperatorType::NESTED_LOOP_JOIN:
 	case PhysicalOperatorType::PIECEWISE_MERGE_JOIN: {
-		vector<ColumnDefinition> sink;
-		sink.emplace_back("in_index", LogicalType::BIGINT);
-
-		if (type == PhysicalOperatorType::HASH_JOIN) {
-			sink.emplace_back("out_index", LogicalType::BIGINT);
-		} else {
-			sink.emplace_back("out_index", LogicalType::INTEGER);
-		}
-
-		sink.emplace_back("thread_id", LogicalType::INTEGER);
-		res.emplace_back(move(sink));
-
 		vector<ColumnDefinition> source;
 		source.emplace_back("lhs_index", LogicalType::BIGINT);
-
-		if (type == PhysicalOperatorType::INDEX_JOIN || type == PhysicalOperatorType::HASH_JOIN)
-			source.emplace_back("rhs_index", LogicalType::BIGINT);
-		else
-			source.emplace_back("rhs_index", LogicalType::BIGINT);
-
+		source.emplace_back("rhs_index", LogicalType::BIGINT);
 		source.emplace_back("out_index", LogicalType::INTEGER);
 		source.emplace_back("thread_id", LogicalType::INTEGER);
 		res.emplace_back(move(source));
@@ -142,6 +98,8 @@ idx_t OperatorLineage::GetLineageAsChunk(idx_t count_so_far, DataChunk &insert_c
 		insert_chunk.InitializeEmpty(types);
 
 		switch (this->type) {
+		case PhysicalOperatorType::TOP_N:
+		case PhysicalOperatorType::PROJECTION:
 		case PhysicalOperatorType::ORDER_BY:
 		case PhysicalOperatorType::FILTER:
 		case PhysicalOperatorType::LIMIT:
@@ -161,46 +119,28 @@ idx_t OperatorLineage::GetLineageAsChunk(idx_t count_so_far, DataChunk &insert_c
 		case PhysicalOperatorType::PERFECT_HASH_GROUP_BY: {
 			// Hash Aggregate / Perfect Hash Aggregate
 			// sink schema: [INTEGER in_index, INTEGER out_index, INTEGER thread_id]
-			if (stage_idx == LINEAGE_SINK) {
-				// in_index | LogicalType::INTEGER, out_index|LogicalType::BIGINT, thread_id|LogicalType::INTEGER
+ 				// in_index | LogicalType::INTEGER, out_index|LogicalType::BIGINT, thread_id|LogicalType::INTEGER
 				idx_t res_count = data_woffset->data->Count();
 
-				Vector out_index = data_woffset->data->GetVecRef(types[1], 0);
-
-				insert_chunk.SetCardinality(res_count);
-				insert_chunk.data[0].Sequence(count_so_far, 1, res_count);
-				insert_chunk.data[1].Reference(out_index);
-				insert_chunk.data[2].Reference(thread_id_vec);
-			} else if (stage_idx == LINEAGE_FINALIZE) {
-				idx_t res_count = data_woffset->data->Count();
-
-				Vector source_payload(types[0], data_woffset->data->Process(0));
-				Vector new_payload(types[1], data_woffset->data->Process(0));
-
-				insert_chunk.SetCardinality(res_count);
-				insert_chunk.data[0].Reference(source_payload);
-				insert_chunk.data[1].Reference(new_payload);
-				insert_chunk.data[2].Reference(thread_id_vec);
-			} else {
-				// in_index|LogicalType::BIGINT, out_index|LogicalType::INTEGER, thread_id| LogicalType::INTEGER
-				idx_t res_count = data_woffset->data->Count();
-
-				// Vector in_index(types[0], this_data.data->GetLineageAsChunk(0));
 				Vector in_index = data_woffset->data->GetVecRef(types[0], 0);
+
 				insert_chunk.SetCardinality(res_count);
 				insert_chunk.data[0].Reference(in_index);
-				insert_chunk.data[1].Sequence(count_so_far, 1, res_count); // out_index
+			    insert_chunk.data[1].Sequence(count_so_far, 1, res_count);
 				insert_chunk.data[2].Reference(thread_id_vec);
-			}
+
 			break;
 		}
+		case PhysicalOperatorType::CROSS_PRODUCT:
+		case PhysicalOperatorType::PIECEWISE_MERGE_JOIN:
+		case PhysicalOperatorType::BLOCKWISE_NL_JOIN:
+		case PhysicalOperatorType::NESTED_LOOP_JOIN:
 		case PhysicalOperatorType::HASH_JOIN: {
 			// in_index | LogicalType::INTEGER, out_index|LogicalType::BIGINT, thread_id|LogicalType::INTEGER
 			idx_t res_count = data_woffset->data->Count();
-
-			Vector out_index = data_woffset->data->GetVecRef(types[1], 0);
 			Vector lhs_payload = dynamic_cast<LineageBinary&>(*data_woffset->data).left->GetVecRef(types[0], 0);
 			Vector rhs_payload = dynamic_cast<LineageBinary&>(*data_woffset->data).right->GetVecRef(types[1], 0);
+			data_woffset->data->Debug();
 			insert_chunk.SetCardinality(res_count);
 			insert_chunk.data[0].Reference(lhs_payload);
 			insert_chunk.data[1].Reference(rhs_payload);

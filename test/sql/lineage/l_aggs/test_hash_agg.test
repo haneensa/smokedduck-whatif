@@ -31,9 +31,7 @@ statement ok
 PRAGMA disable_optimizer;
 
 query II
-select sink.in_index, scan.out_index from LINEAGE_1_HASH_GROUP_BY_2_0 as scan, LINEAGE_1_HASH_GROUP_BY_2_1 as sink, LINEAGE_1_HASH_GROUP_BY_2_3 as finalize
-where sink.out_index=finalize.in_index and scan.in_index=finalize.out_index
-order by sink.in_index
+select * from LINEAGE_1_HASH_GROUP_BY_2_0
 ----
 0	0
 1	1

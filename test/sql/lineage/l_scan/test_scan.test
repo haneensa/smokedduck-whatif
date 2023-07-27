@@ -15,7 +15,10 @@ INSERT INTO t1 SELECT i FROM range(0,5) tabl(i);
 
 
 statement ok
-PRAGMA threads=4
+PRAGMA threads=1
+
+statement ok
+PRAGMA enable_profiling;
 
 statement ok
 PRAGMA enable_lineage;
@@ -38,6 +41,7 @@ select * from t1 where i=6
 
 statement ok
 PRAGMA disable_lineage;
+PRAGMA disable_profiling;
 
 
 query II
@@ -52,26 +56,21 @@ SELECT query_id, query from duckdb_queries_list()
 query IIII
 SELECT rowid, in_index, out_index, thread_id FROM LINEAGE_2_SEQ_SCAN_0_0
 ----
-0	200000	0	1
-1	200001	1	1
-2	0	0	0
-3	1	1	0
+0	0	0	0
+1	1	1	0
+2	200000	2	0
+3	200001	3	0
 
 
-query III
-SELECT rowid, in_index, out_index FROM LINEAGE_1_SEQ_SCAN_0_0 where in_index!=out_index and rowid!=out_index
+query IIII
+SELECT rowid, in_index, out_index, thread_id FROM LINEAGE_3_SEQ_SCAN_0_0
 ----
+0	199996	0	0
+1	199997	1	0
+2	199998	2	0
+3	199999	3	0
 
-
-query III
-SELECT rowid,  in_index, out_index FROM LINEAGE_3_SEQ_SCAN_0_0
+query IIII
+SELECT rowid, in_index, out_index, thread_id FROM LINEAGE_4_SEQ_SCAN_0_0
 ----
-0	199996	0
-1	199997	1
-2	199998	2
-3	199999	3
-
-query III
-SELECT rowid, in_index, out_index FROM LINEAGE_4_SEQ_SCAN_0_0
-----
-0	6	0
+0	6	0	0

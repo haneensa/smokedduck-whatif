@@ -157,7 +157,7 @@ PreservedError ClientContext::EndQueryInternal(ClientContextLock &lock, bool suc
 	client_data->profiler->EndQuery();
 #ifdef LINEAGE
 	if (client_data->lineage_manager->trace_lineage && active_query->prepared->plan ) {
-		//client_data->lineage_manager->StoreQueryLineage(*this, active_query->prepared->plan.get(),  active_query->query);
+		client_data->lineage_manager->StoreQueryLineage(*this, active_query->prepared->plan.get(),  active_query->query);
 	}
 	current_thread_id = 0;
 #endif

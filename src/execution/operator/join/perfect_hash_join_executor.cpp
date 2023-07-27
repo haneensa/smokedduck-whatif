@@ -188,6 +188,7 @@ OperatorResultType PerfectHashJoinExecutor::ProbePerfectHashTable(ExecutionConte
 		// otherwise, filter it out the values that do not match
 		result.Slice(input, state.probe_sel_vec, probe_sel_count, 0);
 	}
+
 	// on the build side, we need to fetch the data and build dictionary vectors with the sel_vec
 	for (idx_t i = 0; i < ht.build_types.size(); i++) {
 		auto &result_vector = result.data[input.ColumnCount() + i];
