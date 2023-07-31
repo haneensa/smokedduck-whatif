@@ -47,7 +47,7 @@ LINEAGE_2_SEQ_SCAN_0_0
 t1
 
 query III
-SELECT row1id, out_index, in_index FROM LINEAGE_1_FILTER_1_0
+SELECT rowid, out_index, in_index FROM LINEAGE_1_FILTER_1_0
 ----
 0	0	0
 1	1	1
