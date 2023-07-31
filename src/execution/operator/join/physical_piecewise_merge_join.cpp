@@ -613,6 +613,13 @@ OperatorResultType PhysicalPiecewiseMergeJoin::ResolveComplexJoin(ExecutionConte
 					gstate.table->found_match[state.right_base + right_info.result[sel->get_index(i)]] = true;
 				}
 			}
+#ifdef LINEAGE
+			if (ClientConfig::GetConfig(context.client).trace_lineage) {
+				auto lineage_lhs = make_uniq<LineageSelVec>(left_info.result, result_count);
+				auto lineage_rhs = make_uniq<LineageConstant>(state.right_base+state.right_position, result_count);
+				chunk.log_record = make_shared<LogRecord>(make_shared<LineageBinary>(move(lineage_lhs), move(lineage_rhs)), state.in_start);
+			}
+#endif
 			chunk.SetCardinality(result_count);
 			chunk.Verify();
 		}

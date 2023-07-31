@@ -183,11 +183,32 @@ OperatorResultType PhysicalBlockwiseNLJoin::ExecuteInternal(ExecutionContext &co
 					// set the match flag in the RHS
 					gstate.right_outer.SetMatch(state.cross_product.ScanPosition() +
 					                            state.cross_product.PositionInChunk());
+#ifdef LINEAGE
+					if (ClientConfig::GetConfig(context.client).trace_lineage) {
+						unique_ptr<sel_t []> sel_copy(new sel_t[result_count]);
+						std::copy(state.match_sel.data(), state.match_sel.data() + result_count, sel_copy.get());
+						auto lineage_left = make_uniq<LineageDataArray<sel_t>>(move(sel_copy),  result_count);
+						auto lineage_right = make_uniq<LineageConstant>(state.cross_product.ScanPosition() +
+						                                                    state.cross_product.PositionInChunk(), result_count);
+						auto lineage_data = make_uniq<LineageBinary>(std::move(lineage_left), std::move(lineage_right));
+						chunk.log_record = make_shared<LogRecord>(std::move(lineage_data), state.in_start);
+					}
+#endif
 				} else {
 					// set the match flag in the LHS
 					state.left_outer.SetMatch(state.cross_product.PositionInChunk());
 					// set the match flags in the RHS
 					gstate.right_outer.SetMatches(state.match_sel, result_count, state.cross_product.ScanPosition());
+#ifdef LINEAGE
+					if (ClientConfig::GetConfig(context.client).trace_lineage) {
+						unique_ptr<sel_t []> sel_copy(new sel_t[result_count]);
+						std::copy(state.match_sel.data(), state.match_sel.data() + result_count, sel_copy.get());
+						auto lineage_left = make_uniq<LineageDataArray<sel_t>>(move(sel_copy),  result_count);
+						auto lineage_right = make_uniq<LineageConstant>(state.cross_product.ScanPosition(), result_count);
+						auto lineage_data = make_uniq<LineageBinary>(std::move(lineage_left), std::move(lineage_right));
+						chunk.log_record = make_shared<LogRecord>(std::move(lineage_data), state.in_start);
+					}
+#endif
 				}
 				intermediate_chunk->Slice(state.match_sel, result_count);
 			}

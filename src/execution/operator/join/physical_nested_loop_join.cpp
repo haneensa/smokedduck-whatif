@@ -399,7 +399,7 @@ OperatorResultType PhysicalNestedLoopJoin::ResolveComplexJoin(ExecutionContext &
 			if (ClientConfig::GetConfig(context.client).trace_lineage) {
 				auto lineage_lhs = make_uniq<LineageSelVec>(lvector, match_count);
 				auto lineage_rhs = make_uniq<LineageSelVec>(rvector, match_count, state.condition_scan_state.current_row_index);
-				lineage_op->Capture( make_shared<LineageBinary>(move(lineage_lhs), move(lineage_rhs)), LINEAGE_SOURCE, 0, state.in_start);
+				chunk.log_record = make_shared<LogRecord>(make_shared<LineageBinary>(move(lineage_lhs), move(lineage_rhs)), state.in_start);
 			}
 #endif
 		}

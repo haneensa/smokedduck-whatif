@@ -1,0 +1,51 @@
+# name: test/sql/lineage_v2/l_mergejoin/test_mergejoin.test
+# description: Test Piecewise Merge Joins
+# group: [l_mergejoin]
+
+
+statement ok
+CREATE TABLE t1(i INTEGER, j INTEGER);
+
+statement ok
+INSERT INTO t1 VALUES (3, 1),  (NULL, 2), (2, 3), (3, 4), (3, 8), (3, 7)
+
+statement ok
+INSERT INTO t1 SELECT i, i+1 FROM range(0,4000) tbl(i);
+
+statement ok
+CREATE TABLE t2(i INTEGER, k VARCHAR(10));
+
+statement ok
+INSERT INTO t2 SELECT i, 'C' FROM range(0,100) tbl(i);
+
+statement ok
+INSERT INTO t2 VALUES (3, 'A'),   (2, 'B'), (3, 'C'), (1, 'D'), (3, 'A')
+
+
+statement ok
+PRAGMA enable_profiling;
+
+statement ok
+PRAGMA enable_lineage
+
+# standalone limit
+statement ok
+select t1.rowid, t2.rowid, t1.i, t1.j, t2.i, t2.k from t1 inner join t2 on (t1.i > t2.i)
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_profiling;
+
+query IIII
+select * from LINEAGE_1_PIECEWISE_MERGE_JOIN_2_0 limit 10;
+----
+0	1	0	0
+1	1	1	0
+2	1	2	0
+3	1	3	0
+4	1	4	0
+5	1	5	0
+6	1	6	0
+7	1	7	0
+8	1	8	0
+9	1	9	0

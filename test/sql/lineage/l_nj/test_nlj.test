@@ -1,0 +1,31 @@
+# name: test/sql/lineage/nlj_lineage/test_nlj.test
+# description: Test Nested Loop Join
+# group: [l_nj]
+
+statement ok
+CREATE TABLE t1(i INTEGER);
+
+statement ok
+CREATE TABLE t2(i INTEGER);
+
+statement ok
+INSERT INTO t1 SELECT i FROM range(0,1024) tbl(i);
+INSERT INTO t2 VALUES (1022);
+
+statement ok
+PRAGMA enable_lineage
+
+# standalone limit
+query IIII
+select t1.rowid, t2.rowid, t1.i, t2.i from t1, t2 where  t1.i > t2.i and t1.i <> t2.i
+----
+1023	0	1023	1022
+
+
+statement ok
+PRAGMA disable_lineage;
+
+query IIII
+select * from LINEAGE_1_NESTED_LOOP_JOIN_2_0;
+----
+1023	0	0	0

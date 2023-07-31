@@ -232,7 +232,44 @@ idx_t OperatorLineage::GetLineageAsChunk(idx_t count_so_far, DataChunk &insert_c
 				insert_chunk.data[2].Reference(thread_id_vec);
 			}
 			break;
-		} case PhysicalOperatorType::NESTED_LOOP_JOIN: {
+		}
+		case PhysicalOperatorType::PIECEWISE_MERGE_JOIN:
+		case PhysicalOperatorType::BLOCKWISE_NL_JOIN: {
+			if (stage_idx == LINEAGE_SOURCE) {
+				// schema: [INTEGER lhs_index, BIGINT rhs_index, INTEGER out_index]
+
+				// This is pretty hacky, but it's fine since we're just validating that we haven't broken HashJoins
+				// when introducing LineageNested
+				Vector lhs_payload(types[0]);
+				Vector rhs_payload(types[1]);
+
+				idx_t res_count = data_woffset->data->Count();
+
+				// Left side / probe side
+				if (dynamic_cast<LineageBinary &>(*data_woffset->data).left == nullptr) {
+					lhs_payload.SetVectorType(VectorType::CONSTANT_VECTOR);
+					ConstantVector::SetNull(lhs_payload, true);
+				} else {
+					Vector temp(types[0], data_woffset->data->Process(data_woffset->in_start));
+					lhs_payload.Reference(temp);
+				}
+
+				// Right side / build side
+				if (dynamic_cast<LineageBinary &>(*data_woffset->data).right == nullptr) {
+					rhs_payload.SetVectorType(VectorType::CONSTANT_VECTOR);
+					ConstantVector::SetNull(rhs_payload, true);
+				} else {
+					rhs_payload.SetVectorType(VectorType::CONSTANT_VECTOR);
+					rhs_payload.Reference(
+					    Value::INTEGER(dynamic_cast<LineageBinary &>(*data_woffset->data).right->At(0)));
+				}
+
+				fillBaseChunk(insert_chunk, res_count, lhs_payload, rhs_payload, count_so_far, thread_id_vec);
+				count_so_far += res_count;
+			}
+			break;
+		}
+		case PhysicalOperatorType::NESTED_LOOP_JOIN: {
 			if (stage_idx == LINEAGE_SOURCE) {
 				// schema: [INTEGER lhs_index, BIGINT rhs_index, INTEGER out_index]
 
