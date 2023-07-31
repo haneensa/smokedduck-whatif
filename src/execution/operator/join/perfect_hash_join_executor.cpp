@@ -51,15 +51,12 @@ bool PerfectHashJoinExecutor::FullScanHashTable(LogicalType &key_type) {
 	// Scan the build keys in the hash table
 	Vector build_vector(key_type, key_count);
 	RowOperations::FullScanColumn(ht.layout, tuples_addresses, build_vector, key_count, 0);
-	//std::cout << "build_vector  " << build_vector.ToString(key_count) << std::endl;
 
 	// Now fill the selection vector using the build keys and create a sequential vector
 	// TODO: add check for fast pass when probe is part of build domain
 	SelectionVector sel_build(key_count + 1);
 	SelectionVector sel_tuples(key_count + 1);
 	bool success = FillSelectionVectorSwitchBuild(build_vector, sel_build, sel_tuples, key_count);
-	//std::cout << "sel_build " << sel_build.ToString(key_count) << std::endl;
-	//std::cout << "sel_tuples " << sel_tuples.ToString(key_count) << std::endl;
 
 	// early out
 	if (!success) {
@@ -84,18 +81,17 @@ bool PerfectHashJoinExecutor::FullScanHashTable(LogicalType &key_type) {
 
 	}
 #ifdef LINEAGE
-	auto lhs_lineage = make_uniq<LineageSelVec>(sel_build, key_count);
-	auto ptrs = FlatVector::GetData<uintptr_t>( tuples_addresses);
-	unique_ptr<uintptr_t[]> key_locations_lineage(new uintptr_t[key_count]);
-	for (idx_t i = 0; i < key_count; i++) {
-		key_locations_lineage[i] = ptrs[sel_tuples.get_index(i)];
+	if (trace_lineage) {
+			auto lhs_lineage = make_uniq<LineageSelVec>(sel_build, key_count);
+			auto ptrs = FlatVector::GetData<uintptr_t>( tuples_addresses);
+			unique_ptr<uintptr_t[]> key_locations_lineage(new uintptr_t[key_count]);
+			for (idx_t i = 0; i < key_count; i++) {
+				key_locations_lineage[i] = ptrs[sel_tuples.get_index(i)];
+			}
+			auto rhs_lineage = make_uniq<LineageDataArray<uintptr_t>>(move(key_locations_lineage),  key_count);
+			auto lineage_data = make_shared<LineageBinary>(move(rhs_lineage), move(lhs_lineage));
+			log_record = make_shared<LogRecord>(move(lineage_data),0);
 	}
-	auto rhs_lineage = make_uniq<LineageDataArray<uintptr_t>>(move(key_locations_lineage),  key_count);
-	auto lineage_data = make_shared<LineageBinary>(move(rhs_lineage), move(lhs_lineage));
-	//std::cout << "build" << std::endl;
-	//std::cout << tuples_addresses.ToString(key_count) << std::endl;
-	//lineage_data->Debug();
-	log_record = make_shared<LogRecord>(move(lineage_data),0);
 #endif
 	return true;
 }
@@ -214,16 +210,18 @@ OperatorResultType PerfectHashJoinExecutor::ProbePerfectHashTable(ExecutionConte
 	}
 #ifdef LINEAGE
 	// copy
-	unique_ptr<sel_t []> copy_build_sel_vec(new sel_t[probe_sel_count]);
-	std::copy(state.build_sel_vec.data(), state.build_sel_vec.data() + probe_sel_count, copy_build_sel_vec.get());
-	auto rhs_lineage = make_uniq<LineageDataArray<sel_t>>(move(copy_build_sel_vec),  probe_sel_count);
+	if (result.trace_lineage) {
+			unique_ptr<sel_t []> copy_build_sel_vec(new sel_t[probe_sel_count]);
+			std::copy(state.build_sel_vec.data(), state.build_sel_vec.data() + probe_sel_count, copy_build_sel_vec.get());
+			auto rhs_lineage = make_uniq<LineageDataArray<sel_t>>(move(copy_build_sel_vec),  probe_sel_count);
 
-	unique_ptr<sel_t []> copy_probe_sel_vec(new sel_t[probe_sel_count]);
-	std::copy(state.probe_sel_vec.data(), state.probe_sel_vec.data() + probe_sel_count, copy_probe_sel_vec.get());
-	auto lhs_lineage = make_uniq<LineageDataArray<sel_t>>(move(copy_probe_sel_vec),  probe_sel_count);
+			unique_ptr<sel_t []> copy_probe_sel_vec(new sel_t[probe_sel_count]);
+			std::copy(state.probe_sel_vec.data(), state.probe_sel_vec.data() + probe_sel_count, copy_probe_sel_vec.get());
+			auto lhs_lineage = make_uniq<LineageDataArray<sel_t>>(move(copy_probe_sel_vec),  probe_sel_count);
 
-	auto lineage_probe_data = make_shared<LineageBinary>(move(lhs_lineage), move(rhs_lineage));
-	result.log_record = make_shared<LogRecord>(move(lineage_probe_data), state.in_start);
+			auto lineage_probe_data = make_shared<LineageBinary>(move(lhs_lineage), move(rhs_lineage));
+			result.log_record = make_shared<LogRecord>(move(lineage_probe_data), state.in_start);
+	}
 #endif
 	return OperatorResultType::NEED_MORE_INPUT;
 }

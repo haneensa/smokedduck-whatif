@@ -226,12 +226,15 @@ OperatorResultType PipelineExecutor::ExecutePushInternal(DataChunk &input, idx_t
 			result = OperatorResultType::NEED_MORE_INPUT;
 		}
 		auto &sink_chunk = final_chunk;
+		if (context.client.client_data->lineage_manager->trace_lineage) {
+			// Add virtual read
+			local_sink_state->in_start =  local_source_state->out_start;
+		}
 		if (sink_chunk.size() > 0) {
 			StartOperator(*pipeline.sink);
 			D_ASSERT(pipeline.sink);
 			D_ASSERT(pipeline.sink->sink_state);
 			OperatorSinkInput sink_input {*pipeline.sink->sink_state, *local_sink_state, interrupt_state};
-
 			auto sink_result = Sink(sink_chunk, sink_input);
 
 			EndOperator(*pipeline.sink, nullptr);

@@ -48,6 +48,7 @@ public:
 
 #ifdef LINEAGE
 	shared_ptr<LogRecord> log_record;
+	bool trace_lineage = false;
 #endif
 private:
 	void FillSelectionVectorSwitchProbe(Vector &source, SelectionVector &build_sel_vec, SelectionVector &probe_sel_vec,

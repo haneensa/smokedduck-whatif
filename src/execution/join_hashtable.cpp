@@ -236,15 +236,34 @@ void JoinHashTable::Build(PartitionedTupleDataAppendState &append_state, DataChu
 	if (added_count < keys.size()) {
 		source_chunk.Slice(*current_sel, added_count);
 	}
-#ifdef LINEAGE
-	source_chunk.trace_lineage = keys.trace_lineage;
-#endif
 	sink_collection->Append(append_state, source_chunk);
 #ifdef LINEAGE
 	// Append calls Scatter, we capture artifacts in Append and pass the pointer here
-	if (source_chunk.trace_lineage && source_chunk.log_record) {
+	if (keys.trace_lineage) {
+		auto ptrs = FlatVector::GetData<uintptr_t>( append_state.chunk_state.row_locations);
+		// key_locations_lineage: value is out_index, offset is in_index
+		unique_ptr<uintptr_t[]> key_locations_lineage(new uintptr_t[source_chunk.size()]);
+		if ( append_state.partition_entries.size() == 1) {
+			for (idx_t i = 0; i < source_chunk.size(); i++) {
+				key_locations_lineage[i] = ptrs[i];
+			}
+		} else {
+			for (idx_t i = 0; i < source_chunk.size(); i++) {
+				auto idx = append_state.partition_sel.get_index(i);
+				key_locations_lineage[idx] = ptrs[i];
+			}
+		}
+		auto rhs_lineage = make_uniq<LineageDataArray<uintptr_t>>(move(key_locations_lineage),  source_chunk.size());
+		if (added_count < keys.size()) {
+			auto lineage_lhs = make_uniq<LineageSelVec>(sel, added_count);
+			auto lineage_records = make_shared<LineageBinary>(move(lineage_lhs), move(rhs_lineage));
+			source_chunk.log_record = make_shared<LogRecord>(move(lineage_records), 0);
+		}  else {
+			source_chunk.log_record = make_shared<LogRecord>(move(rhs_lineage), 0);
+		}
 		keys.log_record = move(source_chunk.log_record);
 		source_chunk.log_record = nullptr;
+
 	}
 #endif
 }
@@ -653,11 +672,13 @@ void ScanStructure::ConstructMarkJoinResult(DataChunk &join_keys, DataChunk &chi
 		memset(bool_result, 0, sizeof(bool) * child.size());
 	}
 #ifdef LINEAGE
-	SelectionVector lhs_sel(0, child.size());
-	auto rhs_lineage = make_uniq<LineageDataArray<uintptr_t>>(move(key_locations_lineage), child.size());
-	auto lhs_lineage = make_uniq<LineageSelVec>(move(lhs_sel), child.size());
-	auto lineage_probe_data = make_shared<LineageBinary>(move(lhs_lineage), move(rhs_lineage));
-	result.log_record = make_uniq<LogRecord>(move(lineage_probe_data), 0);
+	if (result.trace_lineage) {
+			SelectionVector lhs_sel(0, child.size());
+			auto rhs_lineage = make_uniq<LineageDataArray<uintptr_t>>(move(key_locations_lineage), child.size());
+			auto lhs_lineage = make_uniq<LineageSelVec>(move(lhs_sel), child.size());
+			auto lineage_probe_data = make_shared<LineageBinary>(move(lhs_lineage), move(rhs_lineage));
+			result.log_record = make_uniq<LogRecord>(move(lineage_probe_data), 0);
+	}
 #endif
 	// if the right side contains NULL values, the result of any FALSE becomes NULL
 	if (ht.has_null) {
@@ -767,6 +788,13 @@ void ScanStructure::NextLeftJoin(DataChunk &keys, DataChunk &left, DataChunk &re
 				vec.SetVectorType(VectorType::CONSTANT_VECTOR);
 				ConstantVector::SetNull(vec, true);
 			}
+#ifdef LINEAGE
+			if (result.trace_lineage) {
+				auto lhs_lineage = make_uniq<LineageSelVec>(move(sel),  remaining_count);
+				auto lineage_probe_data = make_shared<LineageBinary>(move(lhs_lineage), nullptr);
+				result.log_record = make_uniq<LogRecord>(move(lineage_probe_data), 0);
+			}
+#endif
 		}
 		finished = true;
 	}
@@ -822,11 +850,13 @@ void ScanStructure::NextSingleJoin(DataChunk &keys, DataChunk &input, DataChunk 
 	}
 	result.SetCardinality(input.size());
 #ifdef LINEAGE
-	SelectionVector lhs_sel(0, input.size());
-	auto rhs_lineage = make_uniq<LineageDataArray<uintptr_t>>(move(key_locations_lineage), result_count);
-	auto lhs_lineage = make_uniq<LineageSelVec>(move(lhs_sel),  input.size());
-	auto lineage_probe_data = make_shared<LineageBinary>(move(lhs_lineage), move(rhs_lineage));
-	result.log_record = make_uniq<LogRecord>(move(lineage_probe_data), 0);
+	if (result.trace_lineage) {
+			SelectionVector lhs_sel(0, input.size());
+			auto rhs_lineage = make_uniq<LineageDataArray<uintptr_t>>(move(key_locations_lineage), result_count);
+			auto lhs_lineage = make_uniq<LineageSelVec>(move(lhs_sel),  input.size());
+			auto lineage_probe_data = make_shared<LineageBinary>(move(lhs_lineage), move(rhs_lineage));
+			result.log_record = make_uniq<LogRecord>(move(lineage_probe_data), 0);
+	}
 #endif
 	// like the SEMI, ANTI and MARK join types, the SINGLE join only ever does one pass over the HT per input chunk
 	finished = true;

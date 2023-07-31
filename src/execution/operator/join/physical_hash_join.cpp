@@ -227,6 +227,7 @@ SinkResultType PhysicalHashJoin::Sink(ExecutionContext &context, DataChunk &chun
 	}
 #ifdef LINEAGE
 	if (lstate.join_keys.trace_lineage  && lstate.join_keys.log_record) {
+		lstate.join_keys.log_record->in_start = lstate.in_start;
 		lineage_op->Capture(move(lstate.join_keys.log_record), LINEAGE_SINK, 0);
 	}
 #endif
@@ -418,6 +419,9 @@ SinkFinalizeType PhysicalHashJoin::Finalize(Pipeline &pipeline, Event &event, Cl
 	if (use_perfect_hash) {
 		D_ASSERT(ht.equality_types.size() == 1);
 		auto key_type = ht.equality_types[0];
+#ifdef LINEAGE
+		sink.perfect_join_executor->trace_lineage = ClientConfig::GetConfig(context).trace_lineage;
+#endif
 		use_perfect_hash = sink.perfect_join_executor->BuildPerfectHashTable(key_type);
 #ifdef LINEAGE
 		if (use_perfect_hash && sink.perfect_join_executor->log_record != nullptr) {
@@ -512,12 +516,7 @@ OperatorResultType PhysicalHashJoin::ExecuteInternal(ExecutionContext &context, 
 #endif
 		auto result = sink.perfect_join_executor->ProbePerfectHashTable(context, input, chunk, *state.perfect_hash_join_state);
 #ifdef LINEAGE
-		//! TODO: capture lineage
-		if (chunk.trace_lineage && chunk.log_record) {
-			chunk.log_record->in_start =  state.in_start;
-			lineage_op->Capture(move(chunk.log_record), LINEAGE_SOURCE, 0);
-			chunk.log_record = nullptr;
-		}
+		// Cache::Execute should capture chunk.log_record
 #endif
 		return result;
 	}
@@ -531,11 +530,7 @@ OperatorResultType PhysicalHashJoin::ExecuteInternal(ExecutionContext &context, 
 		if (chunk.size() > 0) {
 
 #ifdef LINEAGE
-			if (chunk.trace_lineage && chunk.log_record) {
-				chunk.log_record->in_start = state.in_start;
-				lineage_op->Capture(move(chunk.log_record), LINEAGE_SOURCE, 0);
-				chunk.log_record = nullptr;
-			}
+			// Cache::Execute should capture chunk.log_record
 #endif
 			return OperatorResultType::HAVE_MORE_OUTPUT;
 		}
@@ -567,11 +562,7 @@ OperatorResultType PhysicalHashJoin::ExecuteInternal(ExecutionContext &context, 
 	state.scan_structure->Next(state.join_keys, input, chunk);
 
 #ifdef LINEAGE
-	if (chunk.trace_lineage  && chunk.log_record) {
-		chunk.log_record->in_start = state.in_start;
-		lineage_op->Capture(move(chunk.log_record), LINEAGE_SOURCE, 0);
-		chunk.log_record = nullptr;
-	}
+	// Cache::Execute should capture chunk.log_record
 #endif
 	return OperatorResultType::HAVE_MORE_OUTPUT;
 }

@@ -259,6 +259,12 @@ OperatorResultType CachingPhysicalOperator::Execute(ExecutionContext &context, D
 		}
 	}
 	if (!state.can_cache_chunk) {
+#ifdef LINEAGE
+		if (chunk.log_record) {
+			lineage_op->Capture(move(chunk.log_record), LINEAGE_SOURCE, 0);
+			chunk.log_record = nullptr;
+		}
+#endif
 		return child_result;
 	}
 	// TODO chunk size of 0 should not result in a cache being created!
