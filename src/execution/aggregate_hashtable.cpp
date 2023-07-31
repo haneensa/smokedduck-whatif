@@ -599,7 +599,7 @@ void GroupedAggregateHashTable::Combine(GroupedAggregateHashTable &other) {
 		                             state.group_addresses, state.groups.size());
 	}
 #ifdef LINEAGE
-	//if (lineage_op) {
+	if (other.trace_lineage) {
 		auto ptrs = FlatVector::GetData<uintptr_t>( state.scan_state.chunk_state.row_locations);
 		unique_ptr<uintptr_t[]> src_addresses_copy(new uintptr_t[state.groups.size()]);
 		std::copy(ptrs, ptrs + state.groups.size() , src_addresses_copy.get());
@@ -611,7 +611,7 @@ void GroupedAggregateHashTable::Combine(GroupedAggregateHashTable &other) {
 		auto dst_lineage_data = make_uniq<LineageDataArray<uintptr_t>>(move(dst_addresses_copy),  state.groups.size() );
 		auto lineage_probe_data = make_shared<LineageBinary>(move(src_lineage_data), move(dst_lineage_data));
 	    log_record = make_shared<LogRecord>(move(lineage_probe_data), 0);
-	//}
+	}
 #endif
 	Verify();
 }
@@ -623,6 +623,10 @@ void GroupedAggregateHashTable::Partition(vector<GroupedAggregateHashTable *> &p
 	// Partition the data
 	auto partitioned_data =
 	    make_uniq<RadixPartitionedTupleData>(buffer_manager, layout, radix_bits, layout.ColumnCount() - 1);
+
+	// SD: discard old locations and just persist the new row locations and their selection vectors for partitions if any
+	// this is safe since this does the same thing as if we are iterating over the sink input and building partitions
+	// one at a time -- same ids
 	partitioned_data->Partition(*data_collection, TupleDataPinProperties::KEEP_EVERYTHING_PINNED);
 	D_ASSERT(partitioned_data->GetPartitions().size() == num_partitions);
 
@@ -659,13 +663,13 @@ idx_t GroupedAggregateHashTable::Scan(TupleDataParallelScanState &gstate, TupleD
 	const auto group_cols = layout.ColumnCount() - 1;
 	RowOperations::FinalizeStates(row_state, layout, lstate.chunk_state.row_locations, result, group_cols);
 #ifdef LINEAGE
-	//if (lineage_op) {
+	if (result.trace_lineage) {
 		auto ptrs = FlatVector::GetData<uintptr_t>( lstate.chunk_state.row_locations);
 		unique_ptr<uintptr_t[]> addresses_copy(new uintptr_t[result.size()]);
 		std::copy(ptrs, ptrs + result.size() , addresses_copy.get());
 		auto lineage_data = make_uniq<LineageDataArray<uintptr_t>>(move(addresses_copy),  result.size() );
 		log_record = make_uniq<LogRecord>(move(lineage_data), 0);
-	//}
+	}
 #endif
 	return result.size();
 }

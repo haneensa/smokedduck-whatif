@@ -205,31 +205,43 @@ private:
 	bool switch_on_left = true;
 };
 
-class CacheLineage : public LineageData {
-public:
-	CacheLineage() : LineageData(0)  {
-	}
 
-	void Debug() override;
+class CollectionLineage : public LineageData {
+public:
+	CollectionLineage(shared_ptr<vector<shared_ptr<LineageData>>> lineage_vec, idx_t count) : LineageData(count),
+	      lineage_vec(lineage_vec) {
+	}
+	void Debug() override {
+		if (lineage_vec == nullptr) return;
+	    for (idx_t i = 0; i < lineage_vec->size(); i++) {
+			if (lineage_vec->operator[](i))
+				lineage_vec->operator[](i)->Debug();
+		}
+	};
+
 	data_ptr_t Process(idx_t offset) override {
-		// iterate over all inner lineage data?
 		throw std::logic_error("Can't call process on LineageNested");
 	}
 
 	idx_t Size() override {
-		// iterate over all inner lineage and accumelate their size
-		return 0;
+		idx_t size = 0;
+		if (lineage_vec == nullptr) return 0;
+		for (idx_t i = 0; i < lineage_vec->size(); i++) {
+			if (lineage_vec->operator[](i))
+				size += lineage_vec->operator[](i)->Size();
+		}
+
+		return size;
 	}
 
 	idx_t At(idx_t) override {
 		throw std::logic_error("Can't call backward directly on LineageNested");
 	}
 
-	void AddLineage(const shared_ptr<LineageData>& lineage_data);
-
-private:
-	vector<shared_ptr<LineageData>> lineage = {};
+public:
+	shared_ptr<vector<shared_ptr<LineageData>>> lineage_vec;
 };
+
 
 } // namespace duckdb
 #endif

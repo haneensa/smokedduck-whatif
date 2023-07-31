@@ -192,22 +192,33 @@ idx_t OperatorLineage::GetLineageAsChunk(idx_t count_so_far, DataChunk &insert_c
 			// sink schema: [INTEGER in_index, INTEGER out_index, INTEGER thread_id]
 			if (stage_idx == LINEAGE_SINK) {
 				// in_index | LogicalType::INTEGER, out_index|LogicalType::BIGINT, thread_id|LogicalType::INTEGER
-				idx_t res_count = data_woffset->data->Count();
+				//  data_woffset->data is CollectionLineage
 
-				Vector out_index = data_woffset->data->GetVecRef(types[1], 0);
+				// encode grouping set in the table name
+				//dynamic_cast<CollectionLineage &>(*data_woffset->data).Debug();
+				auto lineage_vec = dynamic_cast<CollectionLineage &>(*data_woffset->data).lineage_vec;
+				idx_t res_count =  lineage_vec->at(0)->Count();
 
+				Vector out_index(types[1], lineage_vec->at(0)->Process(0));
 				insert_chunk.SetCardinality(res_count);
 				insert_chunk.data[0].Sequence(count_so_far, 1, res_count);
 				insert_chunk.data[1].Reference(out_index);
 				insert_chunk.data[2].Reference(thread_id_vec);
 			} else if (stage_idx == LINEAGE_FINALIZE) {
-				idx_t res_count = data_woffset->data->Count();
-				Vector source_payload(types[0], data_woffset->data->Process(0));
-				Vector new_payload(types[1], data_woffset->data->Process(0));
+				//dynamic_cast<CollectionLineage &>(*data_woffset->data).Debug();
+				auto lineage_vec = dynamic_cast<CollectionLineage &>(*data_woffset->data).lineage_vec;
+				auto nested_lineage_vec =  dynamic_cast<CollectionLineage &>(*lineage_vec->at(0)).lineage_vec;
+				idx_t res_count =  0;
+				for (idx_t i=0; i < nested_lineage_vec->size(); i++) {
+					res_count +=  nested_lineage_vec->at(i)->Count();
+					Vector source_payload(types[0], nested_lineage_vec->at(i)->Process(0));
+					Vector new_payload(types[1], nested_lineage_vec->at(i)->Process(0));
+					insert_chunk.data[0].Reference(source_payload);
+					insert_chunk.data[1].Reference(new_payload);
+					break;
+				}
 
 				insert_chunk.SetCardinality(res_count);
-				insert_chunk.data[0].Reference(source_payload);
-				insert_chunk.data[1].Reference(new_payload);
 				insert_chunk.data[2].Reference(thread_id_vec);
 			} else {
 				// in_index|LogicalType::BIGINT, out_index|LogicalType::INTEGER, thread_id| LogicalType::INTEGER
@@ -259,10 +270,23 @@ idx_t OperatorLineage::GetLineageAsChunk(idx_t count_so_far, DataChunk &insert_c
 			if (stage_idx == LINEAGE_SINK) {
 				// sink: [BIGINT in_index, INTEGER out_index, INTEGER thread_id]
 				idx_t res_count = data_woffset->data->Count();
-				Vector payload = data_woffset->data->GetVecRef(types[1], 0);
 				insert_chunk.SetCardinality(res_count);
-				insert_chunk.data[0].Sequence(count_so_far, 1, res_count);
-				insert_chunk.data[1].Reference(payload);
+				// if data_woffset->data is Binary, then there is a null in the input build
+				// else it is just a single vector
+				if (typeid(*data_woffset->data) == typeid(LineageBinary)) {
+					// get selection vector
+					Vector payload = dynamic_cast<LineageBinary&>(*data_woffset->data).right->GetVecRef(types[1], 0);
+					insert_chunk.data[1].Reference(payload);
+
+					// in_index
+					Vector sel = dynamic_cast<LineageBinary&>(*data_woffset->data).left->GetVecRef(types[0], data_woffset->in_start);
+					insert_chunk.data[0].Reference(sel);
+				} else {
+					Vector payload = data_woffset->data->GetVecRef(types[1], 0);
+					insert_chunk.data[1].Reference(payload);
+					// in_index
+					insert_chunk.data[0].Sequence(data_woffset->in_start, 1, res_count);
+				}
 				insert_chunk.data[2].Reference(thread_id_vec);
 				count_so_far += res_count;
 			} else if (stage_idx == LINEAGE_FINALIZE) {

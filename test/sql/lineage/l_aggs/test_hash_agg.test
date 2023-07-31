@@ -16,16 +16,16 @@ statement ok
 PRAGMA enable_lineage;
 
 # standalone limit
-statement ok
+query III
 select i, avg(j),  avg(distinct j) from t1 GROUP BY i
+----
+Haneen	3.0	3.0
+Omar	1.3333333333333333	1.5
+Mohammed	1.5	1.5
 
 statement ok
 PRAGMA disable_lineage;
-
-
-statement ok
 PRAGMA disable_optimizer;
-
 
 query II
 select sink.in_index, scan.out_index from LINEAGE_1_HASH_GROUP_BY_2_0 as scan, LINEAGE_1_HASH_GROUP_BY_2_1 as sink, LINEAGE_1_HASH_GROUP_BY_2_3 as finalize
