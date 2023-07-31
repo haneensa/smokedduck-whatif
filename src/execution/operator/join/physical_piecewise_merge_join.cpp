@@ -542,6 +542,7 @@ OperatorResultType PhysicalPiecewiseMergeJoin::ResolveComplexJoin(ExecutionConte
 		BlockMergeInfo left_info(*state.lhs_global_state, 0, state.left_position, lhs_not_null);
 
 		const auto &rblock = *rsorted.radix_sorting_data[state.right_chunk_index];
+
 		const auto rhs_not_null =
 		    SortedBlockNotNull(state.right_base, rblock.count, gstate.table->count - gstate.table->has_null);
 		BlockMergeInfo right_info(gstate.table->global_sort_state, state.right_chunk_index, state.right_position,

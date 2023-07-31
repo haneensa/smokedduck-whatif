@@ -98,7 +98,6 @@ vector<vector<ColumnDefinition>> OperatorLineage::GetTableColumnTypes() {
 		vector<ColumnDefinition> source;
 		source.emplace_back("lhs_index", LogicalType::INTEGER);
 
-		std::cout << "Type " << PhysicalOperatorToString(type) << std::endl;
 		if (type == PhysicalOperatorType::INDEX_JOIN || (type == PhysicalOperatorType::HASH_JOIN && !use_perfect_hash))
 			// if perfect hash join -> integer else bigint?
 			source.emplace_back("rhs_index", LogicalType::BIGINT);
