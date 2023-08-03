@@ -13,6 +13,11 @@ void OperatorLineage::Capture(shared_ptr<LogRecord> log_record, idx_t stage_idx,
 	log_per_thead[thread_id].Append(log_record, stage_idx);
 }
 
+void OperatorLineage::Capture(shared_ptr<vector<shared_ptr<LogRecord>>> log_record, idx_t stage_idx, idx_t thread_id) {
+	if (!trace_lineage || !log_record) return;
+	log_per_thead[thread_id].Append(log_record, stage_idx);
+}
+
 idx_t OperatorLineage::Size() {
 	idx_t size = 0;
 	for (auto& log : log_per_thead) {
@@ -313,7 +318,6 @@ idx_t OperatorLineage::GetLineageAsChunk(idx_t count_so_far, DataChunk &insert_c
 					// get selection vector
 					Vector payload = dynamic_cast<LineageBinary&>(*data_woffset->data).right->GetVecRef(types[1], 0);
 					insert_chunk.data[1].Reference(payload);
-
 					// in_index
 					Vector sel = dynamic_cast<LineageBinary&>(*data_woffset->data).left->GetVecRef(types[0], data_woffset->in_start);
 					insert_chunk.data[0].Reference(sel);

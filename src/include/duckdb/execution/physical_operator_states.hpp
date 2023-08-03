@@ -128,7 +128,8 @@ public:
 		return reinterpret_cast<const TARGET &>(*this);
 	}
 #ifdef LINEAGE
-	idx_t in_start;
+	idx_t in_start = 0;
+	idx_t in_end = 0;
 #endif
 };
 

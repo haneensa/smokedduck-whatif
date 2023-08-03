@@ -224,6 +224,9 @@ public:
 	bool initialized = false;
 	//! Whether or not the chunk can be cached
 	bool can_cache_chunk = false;
+#ifdef LINEAGE
+	shared_ptr<vector<shared_ptr<LogRecord>>> cached_lineage;
+#endif
 };
 
 //! Base class that caches output from child Operator class. Note that Operators inheriting from this class should also

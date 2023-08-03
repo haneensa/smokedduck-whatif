@@ -38,6 +38,12 @@ public:
 		log[stage_idx].push_back(log_record);
 	}
 
+	void Append(shared_ptr<vector<shared_ptr<LogRecord>>> log_record_vec, idx_t stage_idx) {
+		D_ASSERT(stage_idx < 4);
+		if (!log_record_vec) return;
+		log[stage_idx].insert(log[stage_idx].end(), log_record_vec->begin(), log_record_vec->end());
+	}
+
 	idx_t GetLogSize(idx_t stage_idx) {
 		D_ASSERT(stage_idx < 4);
 		return log[stage_idx].size();

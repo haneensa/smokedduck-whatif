@@ -243,7 +243,7 @@ OperatorResultType CachingPhysicalOperator::Execute(ExecutionContext &context, D
 #if STANDARD_VECTOR_SIZE >= 128
 	if (!state.initialized) {
 		state.initialized = true;
-		state.can_cache_chunk = false;
+		state.can_cache_chunk = true;
 
 		if (!context.client.config.enable_caching_operators) {
 			state.can_cache_chunk = false;
@@ -260,7 +260,7 @@ OperatorResultType CachingPhysicalOperator::Execute(ExecutionContext &context, D
 	}
 	if (!state.can_cache_chunk) {
 #ifdef LINEAGE
-		if (chunk.log_record) {
+		if (ClientConfig::GetConfig(context.client).trace_lineage && chunk.log_record) {
 			lineage_op->Capture(move(chunk.log_record), LINEAGE_SOURCE, 0);
 			chunk.log_record = nullptr;
 		}
@@ -276,15 +276,19 @@ OperatorResultType CachingPhysicalOperator::Execute(ExecutionContext &context, D
 			state.cached_chunk = make_uniq<DataChunk>();
 			state.cached_chunk->Initialize(Allocator::Get(context.client), chunk.GetTypes());
 #ifdef LINEAGE
-			//state.cached_lineage = make_shared<CacheLineage>(LineageNested());
+			if (ClientConfig::GetConfig(context.client).trace_lineage) {
+				state.cached_lineage = make_shared<vector<shared_ptr<LogRecord>>>();
+			}
 #endif
 		}
 
 		state.cached_chunk->Append(chunk);
 #ifdef LINEAGE
-		// TODO: accumelate lineage
-		//state.cached_lineage.AddLineage();
-
+		if (ClientConfig::GetConfig(context.client).trace_lineage && chunk.log_record) {
+			// accumelate lineage
+			state.cached_lineage->push_back(std::move(chunk.log_record));
+			chunk.log_record = nullptr;
+		}
 #endif
 		if (state.cached_chunk->size() >= (STANDARD_VECTOR_SIZE - CACHE_THRESHOLD) ||
 		    child_result == OperatorResultType::FINISHED) {
@@ -292,13 +296,21 @@ OperatorResultType CachingPhysicalOperator::Execute(ExecutionContext &context, D
 			chunk.Move(*state.cached_chunk);
 			state.cached_chunk->Initialize(Allocator::Get(context.client), chunk.GetTypes());
 #ifdef LINEAGE
-			//lineage_op->Capture(move(state.cached_lineage), LINEAGE_SOURCE, 0);
-			//state.cached_lineage = make_shared<CacheLineage>(LineageNested());
+			if (ClientConfig::GetConfig(context.client).trace_lineage && state.cached_lineage->size() > 0) {
+				lineage_op->Capture(std::move(state.cached_lineage), LINEAGE_SOURCE, 0);
+				state.cached_lineage = make_shared<vector<shared_ptr<LogRecord>>>();
+			}
 #endif
 			return child_result;
 		} else {
 			// chunk cache not full return empty result
 			chunk.Reset();
+		}
+	} else {
+		// no cache, return chunk's lineage
+		if (ClientConfig::GetConfig(context.client).trace_lineage && chunk.log_record) {
+			lineage_op->Capture(move(chunk.log_record), LINEAGE_SOURCE, 0);
+			chunk.log_record = nullptr;
 		}
 	}
 #endif
@@ -312,6 +324,12 @@ OperatorFinalizeResultType CachingPhysicalOperator::FinalExecute(ExecutionContex
 	if (state.cached_chunk) {
 		chunk.Move(*state.cached_chunk);
 		state.cached_chunk.reset();
+#ifdef LINEAGE
+		if (ClientConfig::GetConfig(context.client).trace_lineage && state.cached_lineage->size() > 0) {
+			lineage_op->Capture(std::move(state.cached_lineage), LINEAGE_SOURCE, 0);
+			state.cached_lineage = make_shared<vector<shared_ptr<LogRecord>>>();
+		}
+#endif
 	} else {
 		chunk.SetCardinality(0);
 	}

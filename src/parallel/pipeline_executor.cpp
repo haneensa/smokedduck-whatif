@@ -25,7 +25,6 @@ PipelineExecutor::PipelineExecutor(ClientContext &context_p, Pipeline &pipeline_
 		}
 	}
 	local_source_state = pipeline.source->GetLocalSourceState(context, *pipeline.source_state);
-
 	intermediate_chunks.reserve(pipeline.operators.size());
 	intermediate_states.reserve(pipeline.operators.size());
 	for (idx_t i = 0; i < pipeline.operators.size(); i++) {
@@ -228,7 +227,8 @@ OperatorResultType PipelineExecutor::ExecutePushInternal(DataChunk &input, idx_t
 		auto &sink_chunk = final_chunk;
 		if (context.client.client_data->lineage_manager->trace_lineage) {
 			// Add virtual read
-			local_sink_state->in_start =  local_source_state->out_start;
+			local_sink_state->in_start =  local_sink_state->in_end;
+			local_sink_state->in_end += sink_chunk.size();
 		}
 		if (sink_chunk.size() > 0) {
 			StartOperator(*pipeline.sink);
