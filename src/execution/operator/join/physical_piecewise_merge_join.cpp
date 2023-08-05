@@ -593,12 +593,15 @@ OperatorResultType PhysicalPiecewiseMergeJoin::ResolveComplexJoin(ExecutionConte
 					tail_count =
 					    SelectJoinTail(conditions[cmp_idx].comparison, left, right, sel, tail_count, &state.sel);
 					sel = &state.sel;
+					// SD: This path modifies the result too
 				}
 				chunk.Fuse(state.rhs_input);
 
 				if (tail_count < result_count) {
 					result_count = tail_count;
 					chunk.Slice(*sel, result_count);
+					// SD: applies sel on both sides --> need to persist this
+					std::cout << "tail count " << tail_count << " result count " << result_count << std::endl;
 				}
 			}
 

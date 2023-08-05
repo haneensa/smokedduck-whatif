@@ -197,16 +197,22 @@ idx_t OperatorLineage::GetLineageAsChunk(idx_t count_so_far, DataChunk &insert_c
 			if (stage_idx == LINEAGE_SINK) {
 				// in_index | LogicalType::INTEGER, out_index|LogicalType::BIGINT, thread_id|LogicalType::INTEGER
 				//  data_woffset->data is CollectionLineage
+				idx_t res_count  = 0;
+				if (type == PhysicalOperatorType::HASH_GROUP_BY) {
+					// encode grouping set in the table name
+					//dynamic_cast<CollectionLineage &>(*data_woffset->data).Debug();
+					auto lineage_vec = dynamic_cast<CollectionLineage &>(*data_woffset->data).lineage_vec;
+					res_count =  lineage_vec->at(0)->Count();
+					Vector out_index(types[1], lineage_vec->at(0)->Process(0));
+					insert_chunk.data[1].Reference(out_index);
+				} else {
+					Vector out_index =  data_woffset->data->GetVecRef(types[1], 0);
+					res_count = data_woffset->data->Count();
+					insert_chunk.data[1].Reference(out_index);
+				}
 
-				// encode grouping set in the table name
-				//dynamic_cast<CollectionLineage &>(*data_woffset->data).Debug();
-				auto lineage_vec = dynamic_cast<CollectionLineage &>(*data_woffset->data).lineage_vec;
-				idx_t res_count =  lineage_vec->at(0)->Count();
-
-				Vector out_index(types[1], lineage_vec->at(0)->Process(0));
 				insert_chunk.SetCardinality(res_count);
 				insert_chunk.data[0].Sequence(count_so_far, 1, res_count);
-				insert_chunk.data[1].Reference(out_index);
 				insert_chunk.data[2].Reference(thread_id_vec);
 			} else if (stage_idx == LINEAGE_FINALIZE) {
 				//dynamic_cast<CollectionLineage &>(*data_woffset->data).Debug();

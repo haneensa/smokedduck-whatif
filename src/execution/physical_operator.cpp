@@ -284,7 +284,7 @@ OperatorResultType CachingPhysicalOperator::Execute(ExecutionContext &context, D
 
 		state.cached_chunk->Append(chunk);
 #ifdef LINEAGE
-		if (ClientConfig::GetConfig(context.client).trace_lineage && chunk.log_record) {
+		if (chunk.size() > 0 && ClientConfig::GetConfig(context.client).trace_lineage && chunk.log_record) {
 			// accumelate lineage
 			state.cached_lineage->push_back(std::move(chunk.log_record));
 			chunk.log_record = nullptr;

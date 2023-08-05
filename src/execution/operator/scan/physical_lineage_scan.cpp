@@ -12,7 +12,7 @@ PhysicalLineageScan::PhysicalLineageScan(shared_ptr<OperatorLineage> lineage_op,
                                      unique_ptr<FunctionData> bind_data_p, vector<column_t> column_ids_p,
                                      vector<string> names_p, unique_ptr<TableFilterSet> table_filters_p,
                                      idx_t estimated_cardinality, idx_t stage_idx)
-    : PhysicalOperator(PhysicalOperatorType::TABLE_SCAN, std::move(types), estimated_cardinality),
+    : PhysicalOperator(PhysicalOperatorType::LINEAGE_SCAN, std::move(types), estimated_cardinality),
       bind_data(std::move(bind_data_p)), column_ids(std::move(column_ids_p)),
       names(std::move(names_p)), table_filters(std::move(table_filters_p)), stage_idx(stage_idx), lineage_op(lineage_op) {}
 
@@ -21,7 +21,7 @@ PhysicalLineageScan::PhysicalLineageScan(shared_ptr<OperatorLineage> lineage_op,
                                          vector<column_t> column_ids_p, vector<idx_t> projection_ids_p,
                                          vector<string> names_p, unique_ptr<TableFilterSet> table_filters_p,
                                          idx_t estimated_cardinality, idx_t stage_idx)
-    : PhysicalOperator(PhysicalOperatorType::TABLE_SCAN, std::move(types), estimated_cardinality),
+    : PhysicalOperator(PhysicalOperatorType::LINEAGE_SCAN, std::move(types), estimated_cardinality),
       bind_data(std::move(bind_data_p)), column_ids(std::move(column_ids_p)),
       projection_ids(std::move(projection_ids_p)),
       names(std::move(names_p)), table_filters(std::move(table_filters_p)), stage_idx(stage_idx), lineage_op(lineage_op) {}

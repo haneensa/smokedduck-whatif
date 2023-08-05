@@ -210,7 +210,7 @@ OperatorResultType PerfectHashJoinExecutor::ProbePerfectHashTable(ExecutionConte
 	}
 #ifdef LINEAGE
 	// copy
-	if (result.trace_lineage) {
+	if (result.size() > 0 && result.trace_lineage) {
 			unique_ptr<sel_t []> copy_build_sel_vec(new sel_t[probe_sel_count]);
 			std::copy(state.build_sel_vec.data(), state.build_sel_vec.data() + probe_sel_count, copy_build_sel_vec.get());
 			auto rhs_lineage = make_uniq<LineageDataArray<sel_t>>(move(copy_build_sel_vec),  probe_sel_count);

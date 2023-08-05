@@ -15,17 +15,17 @@ INSERT INTO t1 SELECT i FROM range(0,4000) tbl(i);
 statement ok
 PRAGMA enable_lineage;
 
-query I
-select * from t1 where 2 > i  OR i > 3998
+query II
+select rowid, * from t1 where 2 > i  OR i > 3998
 ----
-0
-1
-3999
+0	0
+1	1
+3999	3999
 
-query I
-select * from t1 where i > 4000 OR i > 3998
+query II
+select rowid, * from t1 where i > 4000 OR i > 3998
 ----
-3999
+3999	3999
 
 statement ok
 PRAGMA disable_lineage;
@@ -34,8 +34,8 @@ query II
 SELECT query_id, query from duckdb_queries_list()
 ----
 0	PRAGMA enable_lineage;
-1	select * from t1 where 2 > i  OR i > 3998
-2	select * from t1 where i > 4000 OR i > 3998
+1	select rowid, * from t1 where 2 > i  OR i > 3998
+2	select rowid, * from t1 where i > 4000 OR i > 3998
 
 query I
 pragma show_tables;
