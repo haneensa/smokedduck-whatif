@@ -57,6 +57,7 @@ SourceResultType PhysicalLineageScan::GetData(ExecutionContext &context, DataChu
 
 	DataChunk result;
 	idx_t res_count = 0;
+	bool cache_on = false;
 	if (stage_idx == 100) {
 		result.InitializeEmpty(lineage_op->chunk_collection.Types());
 
@@ -83,9 +84,8 @@ SourceResultType PhysicalLineageScan::GetData(ExecutionContext &context, DataChu
 		}
 
 		idx_t thread_id = thread_ids[state.current_thread];
-
 		res_count =
-		    lineage_op->GetLineageAsChunk(state.thread_count, result, thread_id, state.log_id, stage_idx);
+		    lineage_op->GetLineageAsChunk(state.thread_count, result, thread_id, state.log_id, stage_idx, cache_on);
 	}
 
  	// Apply projection list
@@ -114,9 +114,12 @@ SourceResultType PhysicalLineageScan::GetData(ExecutionContext &context, DataChu
 		state.log_id = 0;
 		state.thread_count = 0;
 		return SourceResultType::HAVE_MORE_OUTPUT;
-	} else {
-		state.log_id++;
+	} else if (cache_on) {
+		// add flag if there is a cache, don't make progress
 		return SourceResultType::HAVE_MORE_OUTPUT;
+	} else {
+			state.log_id++;
+			return SourceResultType::HAVE_MORE_OUTPUT;
 	}
 }
 

@@ -32,7 +32,7 @@ class LineageData;
 class OperatorLineage {
 public:
 	OperatorLineage(Allocator &allocator, PhysicalOperatorType type, bool trace_lineage) :
-	      trace_lineage(trace_lineage), type(type), chunk_collection(allocator), use_perfect_hash(false) {
+	      trace_lineage(trace_lineage), type(type), chunk_collection(allocator), use_perfect_hash(false), cache_offset(0), cache_size(0) {
 	}
 
 	void Capture(const shared_ptr<LineageData>& datum, idx_t in_start, idx_t state_idx, idx_t thread_id);
@@ -40,7 +40,7 @@ public:
 	void Capture(shared_ptr<vector<shared_ptr<LogRecord>>> log_record, idx_t stage_idx, idx_t thread_id);
 
 	vector<vector<ColumnDefinition>> GetTableColumnTypes();
-	idx_t GetLineageAsChunk(idx_t count_so_far, DataChunk &insert_chunk, idx_t thread_id, idx_t data_idx, idx_t stage_idx);
+	idx_t GetLineageAsChunk(idx_t count_so_far, DataChunk &insert_chunk, idx_t thread_id, idx_t data_idx, idx_t stage_idx, bool &cache);
 	idx_t Size();
 
 public:
@@ -53,6 +53,8 @@ public:
 	ChunkCollection chunk_collection;
 	//! if the join hash table uses perfect hash
 	bool use_perfect_hash;
+	idx_t cache_offset;
+	idx_t cache_size;
 };
 
 } // namespace duckdb

@@ -82,7 +82,7 @@ bool PerfectHashJoinExecutor::FullScanHashTable(LogicalType &key_type) {
 	}
 #ifdef LINEAGE
 	if (trace_lineage) {
-			auto lhs_lineage = make_uniq<LineageSelVec>(sel_build, key_count);
+			auto lhs_lineage = make_uniq<LineageSelVec>(std::move(sel_build), key_count);
 			auto ptrs = FlatVector::GetData<uintptr_t>( tuples_addresses);
 			unique_ptr<uintptr_t[]> key_locations_lineage(new uintptr_t[key_count]);
 			for (idx_t i = 0; i < key_count; i++) {

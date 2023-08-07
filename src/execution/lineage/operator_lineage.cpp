@@ -42,6 +42,8 @@ idx_t Log::GetLogSizeBytes() {
 vector<vector<ColumnDefinition>> OperatorLineage::GetTableColumnTypes() {
     vector<vector<ColumnDefinition>> res;
     switch (type) {
+	case PhysicalOperatorType::COLUMN_DATA_SCAN:
+	case PhysicalOperatorType::STREAMING_LIMIT:
     case PhysicalOperatorType::LIMIT:
     case PhysicalOperatorType::FILTER:
     case PhysicalOperatorType::TABLE_SCAN:
@@ -158,7 +160,7 @@ void fillBaseChunk(DataChunk &insert_chunk, idx_t res_count, Vector &lhs_payload
 	insert_chunk.data[3].Reference(thread_id_vec);
 }
 
-idx_t OperatorLineage::GetLineageAsChunk(idx_t count_so_far, DataChunk &insert_chunk, idx_t thread_id, idx_t data_idx, idx_t stage_idx) {
+idx_t OperatorLineage::GetLineageAsChunk(idx_t count_so_far, DataChunk &insert_chunk, idx_t thread_id, idx_t data_idx, idx_t stage_idx, bool &cache) {
 	idx_t log_size = log_per_thead[thread_id].GetLogSize(stage_idx);
 	if (log_size > data_idx) {
 		LogRecord* data_woffset = log_per_thead[thread_id].GetLogRecord(stage_idx, data_idx).get();
@@ -175,9 +177,11 @@ idx_t OperatorLineage::GetLineageAsChunk(idx_t count_so_far, DataChunk &insert_c
 		insert_chunk.InitializeEmpty(types);
 
 		switch (this->type) {
+		case PhysicalOperatorType::COLUMN_DATA_SCAN:
 		case PhysicalOperatorType::ORDER_BY:
 		case PhysicalOperatorType::FILTER:
 		case PhysicalOperatorType::LIMIT:
+		case PhysicalOperatorType::STREAMING_LIMIT:
 		case PhysicalOperatorType::TABLE_SCAN: {
 			D_ASSERT(stage_idx == LINEAGE_SOURCE);
 			// Seq Scan, Filter, Limit, Order By, TopN, etc...
@@ -336,19 +340,64 @@ idx_t OperatorLineage::GetLineageAsChunk(idx_t count_so_far, DataChunk &insert_c
 				insert_chunk.data[2].Reference(thread_id_vec);
 				count_so_far += res_count;
 			} else if (stage_idx == LINEAGE_FINALIZE) {
-				idx_t res_count = data_woffset->data->Count();
+				if (cache_offset < cache_size) {
+					idx_t diff = (cache_size - cache_offset);
+					if (diff / STANDARD_VECTOR_SIZE >= 1) {
+						diff = STANDARD_VECTOR_SIZE;
+						cache = true;
+					} else {
+						// last batch
+						cache = false;
+						cache_offset = 0;
+						cache_size = 0;
+					}
 
-				Vector lhs_payload(types[0],  data_woffset->data->Process(0));
-				Vector rhs_payload(types[1], data_woffset->data->Process(0));
+					Vector lhs_payload(types[0],  data_woffset->data->Process(0));
+					Vector rhs_payload(types[1], data_woffset->data->Process(0));
+					SelectionVector remaining_sel(diff);
+					idx_t remaining_count = 0;
+					for (idx_t i = 0; i < diff; i++) {
+						remaining_sel.set_index(remaining_count++, cache_offset + i);
+					}
 
-				insert_chunk.SetCardinality(res_count);
-				insert_chunk.data[0].Reference(lhs_payload);
-				insert_chunk.data[1].Reference(rhs_payload);
+					// adjust the offset
+					insert_chunk.Slice(remaining_sel, remaining_count);
+					insert_chunk.data[0].Reference(lhs_payload);
+					insert_chunk.data[1].Reference(rhs_payload);
+					//insert_chunk.data[1].Sequence(count_so_far, 1, res_count);
+					insert_chunk.data[2].Reference(thread_id_vec);
+					insert_chunk.SetCardinality(remaining_count);
+					count_so_far += remaining_count;
+					if (cache) {
+						cache_offset += remaining_count;
+					}
+				} else {
+					idx_t res_count = data_woffset->data->Count();
 
-				//insert_chunk.data[1].Sequence(count_so_far, 1, res_count);
-				insert_chunk.data[2].Reference(thread_id_vec);
+					Vector lhs_payload(types[0],  data_woffset->data->Process(0));
+					Vector rhs_payload(types[1], data_woffset->data->Process(0));
 
-				count_so_far += res_count;
+					if (res_count > STANDARD_VECTOR_SIZE) {
+						cache = true;
+						SelectionVector remaining_sel(STANDARD_VECTOR_SIZE);
+						idx_t remaining_count = 0;
+						for (idx_t i = 0; i < STANDARD_VECTOR_SIZE; i++) {
+							remaining_sel.set_index(remaining_count++, cache_offset + i);
+						}
+						cache_offset = remaining_count;
+						cache_size = res_count;
+						// adjust the offset
+						insert_chunk.Slice(remaining_sel, remaining_count);
+						res_count = remaining_count;
+					}
+
+					insert_chunk.data[0].Reference(lhs_payload);
+					insert_chunk.data[1].Reference(rhs_payload);
+					//insert_chunk.data[1].Sequence(count_so_far, 1, res_count);
+					insert_chunk.data[2].Reference(thread_id_vec);
+					insert_chunk.SetCardinality(res_count);
+					count_so_far += res_count;
+				}
 			} else if (stage_idx == LINEAGE_SOURCE) {
 					// schema: [INTEGER lhs_index, BIGINT rhs_index, INTEGER out_index]
 
