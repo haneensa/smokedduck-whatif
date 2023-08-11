@@ -55,6 +55,8 @@ public:
 	bool use_perfect_hash;
 	idx_t cache_offset;
 	idx_t cache_size;
+	//! Name of the scanned table if a scan
+	string table_name;
 };
 
 } // namespace duckdb

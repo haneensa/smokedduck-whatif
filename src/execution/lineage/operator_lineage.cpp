@@ -47,6 +47,7 @@ vector<vector<ColumnDefinition>> OperatorLineage::GetTableColumnTypes() {
     case PhysicalOperatorType::LIMIT:
     case PhysicalOperatorType::FILTER:
     case PhysicalOperatorType::TABLE_SCAN:
+	case PhysicalOperatorType::PROJECTION:
     case PhysicalOperatorType::ORDER_BY: {
         vector<ColumnDefinition> source;
         source.emplace_back("in_index", LogicalType::INTEGER);
@@ -193,6 +194,17 @@ idx_t OperatorLineage::GetLineageAsChunk(idx_t count_so_far, DataChunk &insert_c
 			insert_chunk.data[1].Sequence(count_so_far, 1, res_count); // out_index
 			insert_chunk.data[2].Reference(thread_id_vec);  // thread_id
 			count_so_far += res_count;
+			break;
+		}
+		case PhysicalOperatorType::PROJECTION: {
+			D_ASSERT(stage_idx == LINEAGE_SOURCE);
+			// schema: [INTEGER in_index, INTEGER out_index, INTEGER thread_id]
+			idx_t res_count = data_woffset->data->Count();
+			insert_chunk.SetCardinality(res_count);
+			Vector in_index = data_woffset->data->GetVecRef(types[0], count_so_far);
+			insert_chunk.data[0].Reference(in_index);
+			insert_chunk.data[1].Sequence(count_so_far, 1, res_count); // out_index
+			insert_chunk.data[2].Reference(thread_id_vec);  // thread_id
 			break;
 		}
 		case PhysicalOperatorType::HASH_GROUP_BY:
