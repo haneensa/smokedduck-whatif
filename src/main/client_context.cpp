@@ -344,7 +344,13 @@ shared_ptr<PreparedStatementData> ClientContext::CreatePreparedStatement(ClientC
 #ifdef DEBUG
 	plan->Verify(*this);
 #endif
+#ifdef LINEAGE
+	// TODO: remove this once we figure out lineage table stats
+	bool is_lineage_query = StringUtil::Lower(query).find("lineage") != -1;
+	if (config.enable_optimizer && plan->RequireOptimizer() && !is_lineage_query) {
+#else
 	if (config.enable_optimizer && plan->RequireOptimizer()) {
+#endif
 		profiler.StartPhase("optimizer");
 		Optimizer optimizer(*planner.binder, *this);
 		plan = optimizer.Optimize(std::move(plan));

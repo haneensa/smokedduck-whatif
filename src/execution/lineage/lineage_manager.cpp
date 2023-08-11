@@ -1,9 +1,9 @@
 #ifdef LINEAGE
 #include "duckdb/execution/lineage/lineage_manager.hpp"
 
+#include "duckdb/execution/operator/scan/physical_table_scan.hpp"
 #include "duckdb/main/client_context.hpp"
 #include "duckdb/parser/parsed_data/create_table_info.hpp"
-
 #include "duckdb/parser/statement/create_statement.hpp"
 #include "duckdb/planner/parsed_data/bound_create_table_info.hpp"
 #include "duckdb/catalog/catalog_entry/duck_table_entry.hpp"
@@ -28,6 +28,11 @@ void LineageManager::CreateOperatorLineage(ClientContext &context, PhysicalOpera
 		CreateOperatorLineage(context, op->children[i].get(), trace_lineage);
 	}
 	op->lineage_op = make_shared<OperatorLineage>(Allocator::Get(context), op->type, trace_lineage);
+	if (op->type == PhysicalOperatorType::TABLE_SCAN) {
+		string table_str = dynamic_cast<PhysicalTableScan *>(op)->ParamsToString();
+		// TODO there's probably a better way to do this...
+		op->lineage_op->table_name = table_str.substr(0, table_str.find('\n'));
+	}
 }
 
 // Iterate through in Postorder to ensure that children have PipelineLineageNodes set before parents
