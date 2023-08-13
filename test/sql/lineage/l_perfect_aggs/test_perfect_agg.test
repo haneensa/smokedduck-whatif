@@ -1,0 +1,41 @@
+# name: test/sql/lineage/l_perfect_aggs/test_perfect_agg.test
+# description: Test Perfect Hash Aggregate Lineage
+# group: [l_perfect_aggs]
+
+statement ok
+CREATE TABLE t1(i INTEGER, j INTEGER);
+
+statement ok
+INSERT INTO t1 VALUES (1, 2),  (5, 2), (1, 4), (2, 1), (1, 3),(2, 2), (4, 1), (5, 1);
+
+statement ok
+PRAGMA enable_profiling;
+PRAGMA enable_lineage;
+
+query II
+select t1.i, avg(t1.j) from t1 GROUP BY t1.i
+----
+1	3.000000
+2	1.500000
+4	1.000000
+5	1.500000
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_profiling;
+PRAGMA disable_optimizer;
+
+query II
+select sink.in_index, scan.out_index from LINEAGE_1_PERFECT_HASH_GROUP_BY_2_0 as scan,
+LINEAGE_1_PERFECT_HASH_GROUP_BY_2_1 as sink
+where sink.out_index=scan.in_index
+order by sink.in_index
+----
+0	0
+1	3
+2	0
+3	1
+4	0
+5	1
+6	2
+7	3

@@ -914,6 +914,17 @@ void JoinHashTable::ScanFullOuter(JoinHTScanState &state, Vector &addresses, Dat
 		const auto col_no = condition_types.size() + i;
 		data_collection->Gather(addresses, sel_vector, found_entries, col_no, vector, sel_vector);
 	}
+#ifdef LINEAGE
+	if (result.trace_lineage) {
+		unique_ptr<uintptr_t[]> key_locations_lineage(new uintptr_t[found_entries]);
+		for (idx_t i = 0; i < found_entries; i++) {
+			key_locations_lineage[i] = (uintptr_t)key_locations[i];
+		}
+		auto rhs_lineage = make_uniq<LineageDataArray<uintptr_t>>(std::move(key_locations_lineage), found_entries);
+		auto lineage_probe_data = make_uniq<LineageBinary>(nullptr, std::move(rhs_lineage));
+		result.log_record = make_shared<LogRecord>(std::move(lineage_probe_data), 0);
+	}
+#endif
 }
 
 idx_t JoinHashTable::FillWithHTOffsets(JoinHTScanState &state, Vector &addresses) {

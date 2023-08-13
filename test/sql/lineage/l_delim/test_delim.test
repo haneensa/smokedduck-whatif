@@ -1,0 +1,50 @@
+# name: test/sql/lineage_v2/l_delim/test_delim.test
+# description: Delim join
+# group: [l_delim]
+# plan_joinref.cpp has details on when this physical operator is used
+
+statement ok
+CREATE TABLE t1(i INTEGER, j INTEGER);
+
+statement ok
+CREATE TABLE t2(i INTEGER);
+
+statement ok
+INSERT INTO t1 SELECT i+1, i FROM range(0,100) tbl(i);
+INSERT INTO t1 VALUES (2, 1), (1026, 1025), (3071, 3070);
+INSERT INTO t2 VALUES (1), (1025), (3070);
+
+
+statement ok
+PRAGMA enable_profiling;
+PRAGMA enable_lineage;
+
+
+# DELIM JOIN!
+query III
+select t1.rowid, t1.i, t1.j from t1 where EXISTS(select * from t2 where t1.j == t2.i or t1.i == t2.i)
+----
+0	1	0
+1	2	1
+100	2	1
+101	1026	1025
+102	3071	3070
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_profiling;
+PRAGMA disable_optimizer;
+
+query III
+select lhs_index,  in_index as rhs_index, src.out_index from LINEAGE_1_HASH_JOIN_5_0 src, LINEAGE_1_HASH_JOIN_5_1 sink
+where sink.out_index=src.rhs_index
+----
+
+
+query II
+select sink.in_index, scan.out_index from LINEAGE_1_HASH_GROUP_BY_6_0 as scan,
+LINEAGE_1_HASH_GROUP_BY_6_1 as sink, LINEAGE_1_HASH_GROUP_BY_6_3 as finalize
+where sink.out_index=finalize.in_index and scan.in_index=finalize.out_index
+order by sink.in_index
+----
+

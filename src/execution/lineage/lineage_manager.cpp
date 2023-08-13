@@ -7,12 +7,23 @@
 #include "duckdb/parser/statement/create_statement.hpp"
 #include "duckdb/planner/parsed_data/bound_create_table_info.hpp"
 #include "duckdb/catalog/catalog_entry/duck_table_entry.hpp"
+#include "duckdb/execution/operator/join/physical_delim_join.hpp"
 
 #include <utility>
 
 namespace duckdb {
+class PhysicalDelimJoin;
 
 void LineageManager::CreateOperatorLineage(ClientContext &context, PhysicalOperator *op, bool trace_lineage) {
+	if (op->type == PhysicalOperatorType::DELIM_JOIN) {
+		auto distinct = (PhysicalOperator*)dynamic_cast<PhysicalDelimJoin *>(op)->distinct.get();
+		CreateOperatorLineage(context, distinct, trace_lineage);
+		for (idx_t i = 0; i < dynamic_cast<PhysicalDelimJoin *>(op)->delim_scans.size(); ++i) {
+			// dynamic_cast<PhysicalDelimJoin *>(op)->delim_scans[i]->lineage_op = distinct->lineage_op;
+		}
+		CreateOperatorLineage(context, dynamic_cast<PhysicalDelimJoin *>(op)->join.get(), trace_lineage);
+	}
+
 	for (idx_t i = 0; i < op->children.size(); i++) {
 		CreateOperatorLineage(context, op->children[i].get(), trace_lineage);
 	}
@@ -21,6 +32,10 @@ void LineageManager::CreateOperatorLineage(ClientContext &context, PhysicalOpera
 
 // Iterate through in Postorder to ensure that children have PipelineLineageNodes set before parents
 idx_t PlanAnnotator(PhysicalOperator *op, idx_t counter) {
+	if (op->type == PhysicalOperatorType::DELIM_JOIN) {
+		counter = PlanAnnotator( dynamic_cast<PhysicalDelimJoin *>(op)->join.get(), counter);
+		counter = PlanAnnotator((PhysicalOperator*) dynamic_cast<PhysicalDelimJoin *>(op)->distinct.get(), counter);
+	}
 	for (idx_t i = 0; i < op->children.size(); i++) {
 		counter = PlanAnnotator(op->children[i].get(), counter);
 	}
@@ -34,6 +49,11 @@ void LineageManager::InitOperatorPlan(ClientContext &context, PhysicalOperator *
 }
 
 void LineageManager::CreateLineageTables(ClientContext &context, PhysicalOperator *op, idx_t query_id) {
+	if (op->type == PhysicalOperatorType::DELIM_JOIN) {
+		CreateLineageTables( context, dynamic_cast<PhysicalDelimJoin *>(op)->join.get(), query_id);
+		CreateLineageTables(context, (PhysicalOperator*) dynamic_cast<PhysicalDelimJoin *>(op)->distinct.get(), query_id);
+	}
+
 	for (idx_t i = 0; i < op->children.size(); i++) {
 		CreateLineageTables(context, op->children[i].get(), query_id);
 	}

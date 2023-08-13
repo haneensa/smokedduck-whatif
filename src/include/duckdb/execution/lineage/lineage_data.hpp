@@ -108,7 +108,7 @@ public:
 	}
 	idx_t At(idx_t) override;
 
-private:
+public:
 	SelectionVector vec;
 	idx_t in_offset;
 };
@@ -190,7 +190,7 @@ private:
 // Captures two lineage data of the same side - used for Joins
 class LineageBinary : public LineageData {
 public:
-	LineageBinary(unique_ptr<LineageData> lhs, unique_ptr<LineageData> rhs) :
+	LineageBinary(shared_ptr<LineageData> lhs, shared_ptr<LineageData> rhs) :
 	      LineageData(0), left(move(lhs)), right(move(rhs)) {
 #ifdef LINEAGE_DEBUG
 		Debug();
@@ -205,8 +205,8 @@ public:
 		throw std::logic_error("Can't call backward directly on LineageBinary");
 	}
 
-	unique_ptr<LineageData> left;
-	unique_ptr<LineageData> right;
+	shared_ptr<LineageData> left;
+	shared_ptr<LineageData> right;
 private:
 	bool switch_on_left = true;
 };

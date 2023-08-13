@@ -247,7 +247,7 @@ idx_t OperatorLineage::GetLineageAsChunk(idx_t count_so_far, DataChunk &insert_c
 			}
 			break;
 		}
-		case PhysicalOperatorType::PIECEWISE_MERGE_JOIN:
+		case PhysicalOperatorType::CROSS_PRODUCT:
 		case PhysicalOperatorType::BLOCKWISE_NL_JOIN: {
 			if (stage_idx == LINEAGE_SOURCE) {
 				// schema: [INTEGER lhs_index, BIGINT rhs_index, INTEGER out_index]
@@ -264,7 +264,7 @@ idx_t OperatorLineage::GetLineageAsChunk(idx_t count_so_far, DataChunk &insert_c
 					lhs_payload.SetVectorType(VectorType::CONSTANT_VECTOR);
 					ConstantVector::SetNull(lhs_payload, true);
 				} else {
-					Vector temp(types[0], data_woffset->data->Process(data_woffset->in_start));
+					Vector temp = dynamic_cast<LineageBinary&>(*data_woffset->data).left->GetVecRef(types[0], data_woffset->in_start);
 					lhs_payload.Reference(temp);
 				}
 
@@ -273,9 +273,8 @@ idx_t OperatorLineage::GetLineageAsChunk(idx_t count_so_far, DataChunk &insert_c
 					rhs_payload.SetVectorType(VectorType::CONSTANT_VECTOR);
 					ConstantVector::SetNull(rhs_payload, true);
 				} else {
-					rhs_payload.SetVectorType(VectorType::CONSTANT_VECTOR);
-					rhs_payload.Reference(
-					    Value::INTEGER(dynamic_cast<LineageBinary &>(*data_woffset->data).right->At(0)));
+					Vector temp = dynamic_cast<LineageBinary&>(*data_woffset->data).right->GetVecRef(types[1], 0);
+					rhs_payload.Reference(temp);
 				}
 
 				fillBaseChunk(insert_chunk, res_count, lhs_payload, rhs_payload, count_so_far, thread_id_vec);
@@ -283,6 +282,7 @@ idx_t OperatorLineage::GetLineageAsChunk(idx_t count_so_far, DataChunk &insert_c
 			}
 			break;
 		}
+		case PhysicalOperatorType::PIECEWISE_MERGE_JOIN:
 		case PhysicalOperatorType::NESTED_LOOP_JOIN: {
 			if (stage_idx == LINEAGE_SOURCE) {
 				// schema: [INTEGER lhs_index, BIGINT rhs_index, INTEGER out_index]
@@ -299,8 +299,20 @@ idx_t OperatorLineage::GetLineageAsChunk(idx_t count_so_far, DataChunk &insert_c
 					lhs_payload.SetVectorType(VectorType::CONSTANT_VECTOR);
 					ConstantVector::SetNull(lhs_payload, true);
 				} else {
-					Vector temp(types[0],  data_woffset->data->Process(data_woffset->in_start));
-					lhs_payload.Reference(temp);
+					if (type == PhysicalOperatorType::PIECEWISE_MERGE_JOIN &&
+					    typeid(* dynamic_cast<LineageBinary&>(*data_woffset->data).left) == typeid(LineageBinary)) {
+							auto left = dynamic_cast<LineageBinary&>(*data_woffset->data).left;
+							auto order_data = dynamic_cast<LineageBinary&>(*left).left;
+							auto sel_data = dynamic_cast<LineageBinary&>(*left).right;
+
+							auto temp = order_data->GetVecRef(types[0], data_woffset->in_start);
+							temp.Slice(dynamic_cast<LineageSelVec&>(*sel_data).vec, dynamic_cast<LineageSelVec&>(*sel_data).count);
+							lhs_payload.Reference(temp);
+							res_count = dynamic_cast<LineageSelVec&>(*sel_data).count;
+					} else {
+						Vector temp(types[0], data_woffset->data->Process(data_woffset->in_start));
+						lhs_payload.Reference(temp);
+					}
 				}
 
 				// Right side / build side
@@ -308,12 +320,20 @@ idx_t OperatorLineage::GetLineageAsChunk(idx_t count_so_far, DataChunk &insert_c
 					rhs_payload.SetVectorType(VectorType::CONSTANT_VECTOR);
 					ConstantVector::SetNull(rhs_payload, true);
 				} else {
-					Vector temp(types[1], data_woffset->data->Process(0));
+					Vector temp(types[1], dynamic_cast<LineageBinary&>(*data_woffset->data).right->Process(0));
 					rhs_payload.Reference(temp);
 				}
 
 				fillBaseChunk(insert_chunk, res_count, lhs_payload, rhs_payload, count_so_far, thread_id_vec);
 				count_so_far += res_count;
+			} else 	if (stage_idx == LINEAGE_SINK) {
+				// schema: [INTEGER in_index, INTEGER out_index, INTEGER thread_id]
+				idx_t res_count = data_woffset->data->Count();
+				insert_chunk.SetCardinality(res_count);
+				Vector in_index = data_woffset->data->GetVecRef(types[0], data_woffset->in_start);
+				insert_chunk.data[0].Reference(in_index);
+				insert_chunk.data[1].Sequence(count_so_far, 1, res_count); // out_index
+				insert_chunk.data[2].Reference(thread_id_vec);  // thread_id
 			}
 			break;
 		} case PhysicalOperatorType::HASH_JOIN: {

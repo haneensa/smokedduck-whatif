@@ -127,8 +127,10 @@ void PerfectAggregateHashTable::AddChunk(DataChunk &groups, DataChunk &payload) 
 		address_data[i] = uintptr_t(data) + group * tuple_size;
 	}
 #ifdef LINEAGE
-	auto lineage_data = make_uniq<LineageDataArray<uint32_t>>(move(tuples_lineage), groups.size());
-	groups.log_record = make_shared<LogRecord>(move(lineage_data), 0);
+	if (groups.trace_lineage) {
+			auto lineage_data = make_uniq<LineageDataArray<uint32_t>>(move(tuples_lineage), groups.size());
+			groups.log_record = make_shared<LogRecord>(move(lineage_data), 0);
+	}
 #endif
 	// after finding the group location we update the aggregates
 	idx_t payload_idx = 0;
@@ -262,8 +264,10 @@ void PerfectAggregateHashTable::Scan(idx_t &scan_position, DataChunk &result) {
 	RowOperations::FinalizeStates(row_state, layout, addresses, result, grouping_columns);
 
 #ifdef LINEAGE
-	auto lineage_data = make_uniq<LineageDataArray<uint32_t>>(move(group_values_ptr), entry_count);
-	result.log_record = make_shared<LogRecord>(move(lineage_data), 0);
+	if (result.trace_lineage) {
+			auto lineage_data = make_uniq<LineageDataArray<uint32_t>>(move(group_values_ptr), entry_count);
+			result.log_record = make_shared<LogRecord>(move(lineage_data), 0);
+	}
 #endif
 }
 

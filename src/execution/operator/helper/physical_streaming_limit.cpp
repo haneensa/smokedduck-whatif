@@ -58,8 +58,10 @@ OperatorResultType PhysicalStreamingLimit::Execute(ExecutionContext &context, Da
 	if (PhysicalLimit::HandleOffset(input, current_offset, offset, limit)) {
 		chunk.Reference(input);
 #ifdef LINEAGE
-		auto lineage_data = make_shared<LineageRange>(current_offset-input.size(), current_offset);
-		lineage_op->Capture(make_shared<LogRecord>(move(lineage_data), state.in_start), LINEAGE_SOURCE, 0);
+		if (ClientConfig::GetConfig(context.client).trace_lineage) {
+			auto lineage_data = make_shared<LineageRange>(current_offset-input.size(), current_offset);
+			lineage_op->Capture(make_shared<LogRecord>(move(lineage_data), state.in_start), LINEAGE_SOURCE, 0);
+		}
 #endif
 	}
 	return OperatorResultType::NEED_MORE_INPUT;
