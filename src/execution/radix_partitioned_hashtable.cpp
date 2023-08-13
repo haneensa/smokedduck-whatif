@@ -152,10 +152,16 @@ void RadixPartitionedHashTable::Sink(ExecutionContext &context, DataChunk &chunk
 		}
 		D_ASSERT(gstate.finalized_hts.size() == 1);
 		D_ASSERT(gstate.finalized_hts[0]);
+#ifdef LINEAGE
+		group_chunk.trace_lineage = chunk.trace_lineage;
+#endif
 		llstate.total_groups +=
 		    gstate.finalized_hts[0]->AddChunk(gstate.append_state, group_chunk, payload_input, filter);
 #ifdef LINEAGE
-		chunk.log_record = move(group_chunk.log_record);
+		if (group_chunk.log_record) {
+			chunk.log_record = move(group_chunk.log_record);
+			group_chunk.log_record = nullptr;
+		}
 #endif
 		return;
 	}
@@ -169,10 +175,16 @@ void RadixPartitionedHashTable::Sink(ExecutionContext &context, DataChunk &chunk
 		    make_uniq<PartitionableHashTable>(context.client, Allocator::Get(context.client), gstate.partition_info,
 		                                      group_types, op.payload_types, op.bindings);
 	}
+#ifdef LINEAGE
+	group_chunk.trace_lineage = chunk.trace_lineage;
+#endif
 	llstate.total_groups += llstate.ht->AddChunk(group_chunk, payload_input,
 	                                             gstate.partitioned && gstate.partition_info.n_partitions > 1, filter);
 #ifdef LINEAGE
-	chunk.log_record = move(group_chunk.log_record);
+	if (group_chunk.trace_lineage && group_chunk.log_record) {
+		chunk.log_record = move(group_chunk.log_record);
+		group_chunk.log_record = nullptr;
+	}
 #endif
 	if (llstate.total_groups >= radix_limit) {
 		gstate.partitioned = true;
@@ -199,6 +211,7 @@ void RadixPartitionedHashTable::Combine(ExecutionContext &context, GlobalSinkSta
 
 	if (!llstate.ht->IsPartitioned() && gstate.partition_info.n_partitions > 1 && gstate.partitioned) {
 		llstate.ht->Partition();
+		// SD: todo: capture this lineage and discard all lineage for sink
 	}
 
 	// we will never add new values to these HTs so we can drop the first part of the HT
@@ -256,22 +269,43 @@ bool RadixPartitionedHashTable::Finalize(ClientContext &context, GlobalSinkState
 	} else { // in the non-partitioned case we immediately combine all the unpartitioned hts created by the threads.
 		     // TODO possible optimization, if total count < limit for 32 bit ht, use that one
 		     // create this ht here so finalize needs no lock on gstate
-
+#ifdef LINEAGE
+		shared_ptr<vector<shared_ptr<LineageData>>> lineage_per_grouping = make_shared<vector<shared_ptr<LineageData>>>();
+#endif
 		gstate.finalized_hts.push_back(make_shared<GroupedAggregateHashTable>(
 		    context, allocator, group_types, op.payload_types, op.bindings, HtEntryType::HT_WIDTH_64));
 		for (auto &pht : gstate.intermediate_hts) {
 			auto unpartitioned = pht->GetUnpartitioned();
 			for (auto &unpartitioned_ht : unpartitioned) {
 				D_ASSERT(unpartitioned_ht);
+#ifdef LINEAGE
+				unpartitioned_ht->trace_lineage = gstate.trace_lineage;
+#endif
 				gstate.finalized_hts[0]->Combine(*unpartitioned_ht);
 #ifdef LINEAGE
-				if (gstate.finalized_hts[0]->log_record)
-					gstate.log_record = move(gstate.finalized_hts[0]->log_record);
+				if (gstate.trace_lineage && gstate.finalized_hts[0]->log_record) {
+					// todo: accumelate them instead of overwriting
+					// need also to know the index of the partition
+					//std::cout << "finalize " << std::endl;
+					//gstate.finalized_hts[0]->log_record->data->Debug();
+					lineage_per_grouping->push_back(move(gstate.finalized_hts[0]->log_record->data));
+					gstate.finalized_hts[0]->log_record = nullptr;
+				}
+
 #endif
 				unpartitioned_ht.reset();
 			}
 			unpartitioned.clear();
 		}
+
+#ifdef LINEAGE
+		if (gstate.trace_lineage) {
+			// need also to know the index of the partition
+ 			gstate.log_record = make_shared<LogRecord>(make_shared<CollectionLineage>(move(lineage_per_grouping), lineage_per_grouping->size()), 0);
+		}
+
+#endif
+
 		D_ASSERT(gstate.finalized_hts[0]);
 		gstate.finalized_hts[0]->Finalize();
 		return false;
@@ -479,9 +513,15 @@ SourceResultType RadixPartitionedHashTable::GetData(ExecutionContext &context, D
 		lstate.ht = gstate.finalized_hts[ht_index];
 		D_ASSERT(lstate.ht);
 		auto &global_scan_state = state.ht_scan_states[ht_index];
+#ifdef LINEAGE
+		lstate.scan_chunk.trace_lineage = chunk.trace_lineage;
+#endif
 		elements_found = lstate.ht->Scan(global_scan_state, local_scan_state, lstate.scan_chunk);
 #ifdef LINEAGE
-		chunk.log_record = move(lstate.ht->log_record);
+		if (lstate.ht->log_record) {
+			chunk.log_record = move(lstate.ht->log_record);
+			lstate.ht->log_record = nullptr;
+		}
 #endif
 		if (elements_found > 0) {
 			break;

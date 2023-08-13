@@ -79,8 +79,21 @@ bool PerfectHashJoinExecutor::FullScanHashTable(LogicalType &key_type) {
 
 		const auto col_no = ht.condition_types.size() + i;
 		data_collection.Gather(tuples_addresses, sel_tuples, key_count, col_no, vector, sel_build);
-	}
 
+	}
+#ifdef LINEAGE
+	if (trace_lineage) {
+			auto lhs_lineage = make_uniq<LineageSelVec>(std::move(sel_build), key_count);
+			auto ptrs = FlatVector::GetData<uintptr_t>( tuples_addresses);
+			unique_ptr<uintptr_t[]> key_locations_lineage(new uintptr_t[key_count]);
+			for (idx_t i = 0; i < key_count; i++) {
+				key_locations_lineage[i] = ptrs[sel_tuples.get_index(i)];
+			}
+			auto rhs_lineage = make_uniq<LineageDataArray<uintptr_t>>(move(key_locations_lineage),  key_count);
+			auto lineage_data = make_shared<LineageBinary>(move(rhs_lineage), move(lhs_lineage));
+			log_record = make_shared<LogRecord>(move(lineage_data),0);
+	}
+#endif
 	return true;
 }
 
@@ -196,6 +209,21 @@ OperatorResultType PerfectHashJoinExecutor::ProbePerfectHashTable(ExecutionConte
 		result_vector.Reference(build_vec);
 		result_vector.Slice(state.build_sel_vec, probe_sel_count);
 	}
+#ifdef LINEAGE
+	// copy
+	if (result.size() > 0 && result.trace_lineage) {
+			unique_ptr<sel_t []> copy_build_sel_vec(new sel_t[probe_sel_count]);
+			std::copy(state.build_sel_vec.data(), state.build_sel_vec.data() + probe_sel_count, copy_build_sel_vec.get());
+			auto rhs_lineage = make_uniq<LineageDataArray<sel_t>>(move(copy_build_sel_vec),  probe_sel_count);
+
+			unique_ptr<sel_t []> copy_probe_sel_vec(new sel_t[probe_sel_count]);
+			std::copy(state.probe_sel_vec.data(), state.probe_sel_vec.data() + probe_sel_count, copy_probe_sel_vec.get());
+			auto lhs_lineage = make_uniq<LineageDataArray<sel_t>>(move(copy_probe_sel_vec),  probe_sel_count);
+
+			auto lineage_probe_data = make_shared<LineageBinary>(move(lhs_lineage), move(rhs_lineage));
+			result.log_record = make_shared<LogRecord>(move(lineage_probe_data), state.in_start);
+	}
+#endif
 	return OperatorResultType::NEED_MORE_INPUT;
 }
 

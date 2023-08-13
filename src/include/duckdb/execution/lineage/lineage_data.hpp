@@ -9,7 +9,6 @@
 #pragma once
 #include "duckdb/catalog/catalog.hpp"
 #include "duckdb/common/common.hpp"
-#include "duckdb/common/types/chunk_collection.hpp"
 #include "duckdb/common/types/value.hpp"
 #include "duckdb/common/unordered_map.hpp"
 #include "lineage_top.h"
@@ -18,6 +17,47 @@
 #include <utility>
 
 namespace duckdb {
+
+struct LogRecord;
+
+
+struct LogRecord {
+	shared_ptr<LineageData> data;
+	idx_t in_start;
+	LogRecord(shared_ptr<LineageData> data, idx_t in_start) :
+	      data(data), in_start(in_start) {
+	}
+};
+
+class Log {
+public:
+	Log() {}
+
+	void Append(shared_ptr<LogRecord> log_record, idx_t stage_idx) {
+		D_ASSERT(stage_idx < 4);
+		log[stage_idx].push_back(log_record);
+	}
+
+	void Append(shared_ptr<vector<shared_ptr<LogRecord>>> log_record_vec, idx_t stage_idx) {
+		D_ASSERT(stage_idx < 4);
+		if (!log_record_vec) return;
+		log[stage_idx].insert(log[stage_idx].end(), log_record_vec->begin(), log_record_vec->end());
+	}
+
+	idx_t GetLogSize(idx_t stage_idx) {
+		D_ASSERT(stage_idx < 4);
+		return log[stage_idx].size();
+	}
+
+	shared_ptr<LogRecord> GetLogRecord(idx_t stage_idx, idx_t data_idx) {
+		D_ASSERT(stage_idx < 4 && data_idx < log[stage_idx].size());
+		return log[stage_idx][data_idx];
+	}
+
+	idx_t GetLogSizeBytes();
+
+	std::vector<shared_ptr<LogRecord>> log[4];
+};
 
 template<typename T>
 class LineageDataArray : public LineageData {
@@ -68,7 +108,7 @@ public:
 	}
 	idx_t At(idx_t) override;
 
-private:
+public:
 	SelectionVector vec;
 	idx_t in_offset;
 };
@@ -150,7 +190,7 @@ private:
 // Captures two lineage data of the same side - used for Joins
 class LineageBinary : public LineageData {
 public:
-	LineageBinary(unique_ptr<LineageData> lhs, unique_ptr<LineageData> rhs) :
+	LineageBinary(shared_ptr<LineageData> lhs, shared_ptr<LineageData> rhs) :
 	      LineageData(0), left(move(lhs)), right(move(rhs)) {
 #ifdef LINEAGE_DEBUG
 		Debug();
@@ -165,11 +205,49 @@ public:
 		throw std::logic_error("Can't call backward directly on LineageBinary");
 	}
 
-	unique_ptr<LineageData> left;
-	unique_ptr<LineageData> right;
+	shared_ptr<LineageData> left;
+	shared_ptr<LineageData> right;
 private:
 	bool switch_on_left = true;
 };
+
+
+class CollectionLineage : public LineageData {
+public:
+	CollectionLineage(shared_ptr<vector<shared_ptr<LineageData>>> lineage_vec, idx_t count) : LineageData(count),
+	      lineage_vec(lineage_vec) {
+	}
+	void Debug() override {
+		if (lineage_vec == nullptr) return;
+	    for (idx_t i = 0; i < lineage_vec->size(); i++) {
+			if (lineage_vec->operator[](i))
+				lineage_vec->operator[](i)->Debug();
+		}
+	};
+
+	data_ptr_t Process(idx_t offset) override {
+		throw std::logic_error("Can't call process on LineageNested");
+	}
+
+	idx_t Size() override {
+		idx_t size = 0;
+		if (lineage_vec == nullptr) return 0;
+		for (idx_t i = 0; i < lineage_vec->size(); i++) {
+			if (lineage_vec->operator[](i))
+				size += lineage_vec->operator[](i)->Size();
+		}
+
+		return size;
+	}
+
+	idx_t At(idx_t) override {
+		throw std::logic_error("Can't call backward directly on LineageNested");
+	}
+
+public:
+	shared_ptr<vector<shared_ptr<LineageData>>> lineage_vec;
+};
+
 
 } // namespace duckdb
 #endif

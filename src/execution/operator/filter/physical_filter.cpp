@@ -49,6 +49,12 @@ OperatorResultType PhysicalFilter::ExecuteInternal(ExecutionContext &context, Da
 	if (result_count == input.size()) {
 		// nothing was filtered: skip adding any selection vectors
 		chunk.Reference(input);
+#ifdef LINEAGE
+		if (lineage_op && lineage_op->trace_lineage) {
+			auto lineage_data = make_uniq<LineageConstant>(state.in_start, input.size());
+			chunk.log_record = make_shared<LogRecord>(move(lineage_data), state.in_start);
+		}
+#endif
 	} else {
 #ifdef LINEAGE
 		//! TODO: figure away to avoid copy
@@ -56,8 +62,7 @@ OperatorResultType PhysicalFilter::ExecuteInternal(ExecutionContext &context, Da
 			unique_ptr<sel_t []> sel_copy(new sel_t[result_count]);
 			std::copy(state.sel.data(), state.sel.data() + result_count, sel_copy.get());
 			auto lineage_data = make_uniq<LineageDataArray<sel_t>>(move(sel_copy),  result_count);
-			//auto lineage_data = make_uniq<LineageSelVec>(chunk.data[0]., result_count);
-			lineage_op->Capture(move(lineage_data), state.in_start, LINEAGE_SOURCE, context.thread.thread_id);
+			chunk.log_record = make_shared<LogRecord>(move(lineage_data), state.in_start);
 		}
 #endif
 		chunk.Slice(input, state.sel, result_count);

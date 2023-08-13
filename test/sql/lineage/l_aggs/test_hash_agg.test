@@ -16,18 +16,15 @@ statement ok
 PRAGMA enable_lineage;
 
 # standalone limit
-query II
-select i, avg(j) from t1 GROUP BY i
+query III
+select i, avg(j),  avg(distinct j) from t1 GROUP BY i
 ----
-Haneen	3.000000
-Omar	1.333333
-Mohammed	1.500000
+Haneen	3.0	3.0
+Omar	1.3333333333333333	1.5
+Mohammed	1.5	1.5
 
 statement ok
 PRAGMA disable_lineage;
-
-
-statement ok
 PRAGMA disable_optimizer;
 
 query II

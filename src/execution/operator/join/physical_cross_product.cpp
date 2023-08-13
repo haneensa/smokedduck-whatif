@@ -129,7 +129,27 @@ unique_ptr<OperatorState> PhysicalCrossProduct::GetOperatorState(ExecutionContex
 OperatorResultType PhysicalCrossProduct::ExecuteInternal(ExecutionContext &context, DataChunk &input, DataChunk &chunk,
                                                          GlobalOperatorState &gstate, OperatorState &state_p) const {
 	auto &state = state_p.Cast<CrossProductOperatorState>();
+#ifdef LINEAGE
+	auto result = state.executor.Execute(input, chunk);
+	if (ClientConfig::GetConfig(context.client).trace_lineage) {
+		if (state.executor.ScanLHS()) {
+			auto lineage_left = make_uniq<LineageConstant>(state.executor.PositionInChunk(), chunk.size());
+			auto lineage_right = make_uniq<LineageRange>(
+			    state.executor.ScanPosition() + state.executor.PositionInChunk(), chunk.size());
+			auto lineage_data = make_uniq<LineageBinary>(std::move(lineage_left), std::move(lineage_right));
+			chunk.log_record = make_shared<LogRecord>(std::move(lineage_data), state.in_start);
+		} else {
+			auto lineage_left = make_uniq<LineageRange>(0, chunk.size());
+			auto lineage_right = make_uniq<LineageConstant>(
+			    state.executor.ScanPosition() + state.executor.PositionInChunk(), chunk.size());
+			auto lineage_data = make_uniq<LineageBinary>(std::move(lineage_left), std::move(lineage_right));
+			chunk.log_record = make_shared<LogRecord>(std::move(lineage_data), state.in_start);
+		}
+	}
+	return result;
+#else
 	return state.executor.Execute(input, chunk);
+#endif
 }
 
 //===--------------------------------------------------------------------===//

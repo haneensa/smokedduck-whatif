@@ -104,7 +104,7 @@ public:
 		return reinterpret_cast<const TARGET &>(*this);
 	}
 #ifdef LINEAGE
-	//shared_ptr<OperatorLineage> lineage_op;
+	bool trace_lineage = false;
 	shared_ptr<LogRecord> log_record;
 #endif
 };
@@ -127,6 +127,10 @@ public:
 		D_ASSERT(dynamic_cast<const TARGET *>(this));
 		return reinterpret_cast<const TARGET &>(*this);
 	}
+#ifdef LINEAGE
+	idx_t in_start = 0;
+	idx_t in_end = 0;
+#endif
 };
 
 class GlobalSourceState {

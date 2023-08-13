@@ -50,12 +50,19 @@ OperatorResultType PhysicalStreamingLimit::Execute(ExecutionContext &context, Da
 	auto &offset = state.offset;
 	idx_t current_offset = gstate.current_offset.fetch_add(input.size());
 	idx_t max_element;
+
 	if (!PhysicalLimit::ComputeOffset(context, input, limit, offset, current_offset, max_element,
 	                                  limit_expression.get(), offset_expression.get())) {
 		return OperatorResultType::FINISHED;
 	}
 	if (PhysicalLimit::HandleOffset(input, current_offset, offset, limit)) {
 		chunk.Reference(input);
+#ifdef LINEAGE
+		if (ClientConfig::GetConfig(context.client).trace_lineage) {
+			auto lineage_data = make_shared<LineageRange>(current_offset-input.size(), current_offset);
+			lineage_op->Capture(make_shared<LogRecord>(move(lineage_data), state.in_start), LINEAGE_SOURCE, 0);
+		}
+#endif
 	}
 	return OperatorResultType::NEED_MORE_INPUT;
 }

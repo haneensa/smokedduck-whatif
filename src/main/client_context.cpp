@@ -410,6 +410,10 @@ unique_ptr<PendingQueryResult> ClientContext::PendingPreparedStatement(ClientCon
 		active_query->progress_bar->Start();
 		query_progress = 0;
 	}
+#ifdef LINEAGE
+	// Always annotate plan with lineage
+	client_data->lineage_manager->InitOperatorPlan(*this, statement.plan.get());
+#endif
 	auto stream_result = parameters.allow_stream_result && statement.properties.allow_stream_result;
 	if (!stream_result && statement.properties.return_type == StatementReturnType::QUERY_RESULT) {
 		unique_ptr<PhysicalResultCollector> collector;
@@ -430,10 +434,6 @@ unique_ptr<PendingQueryResult> ClientContext::PendingPreparedStatement(ClientCon
 	    make_uniq<PendingQueryResult>(shared_from_this(), *statement_p, std::move(types), stream_result);
 	active_query->prepared = std::move(statement_p);
 	active_query->open_result = pending_result.get();
-#ifdef LINEAGE
-	// Always annotate plan with lineage
-	client_data->lineage_manager->InitOperatorPlan(active_query->prepared->plan.get());
-#endif
 	return pending_result;
 }
 

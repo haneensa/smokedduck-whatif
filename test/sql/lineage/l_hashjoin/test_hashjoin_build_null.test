@@ -1,0 +1,56 @@
+# name: test/sql/lineage_v2/l_scan/test_hashjoin.test
+# description: Test Hash Join, build side has null values that result in creating selection vector during hash table construction
+# group: [l_hashjoin]
+
+
+statement ok
+PRAGMA explain_output = PHYSICAL_ONLY;
+PRAGMA enable_profiling;
+
+statement ok
+CREATE TABLE t1(i INTEGER, j INTEGER);
+
+statement ok
+INSERT INTO t1 VALUES (3, 1),  (NULL, 2), (2, 3), (3, 4), (3, 8), (3, 7)
+
+statement ok
+CREATE TABLE t2(i INTEGER, k VARCHAR(10));
+
+statement ok
+INSERT INTO t2 VALUES (NULL, 'V'),   (2, 'B'), (3, 'C'), (1, 'D'), (3, 'A')
+
+statement ok
+PRAGMA enable_lineage
+
+# standalone limit
+query IIII
+select t1.rowid, t2.rowid, t1.j, t2.k from t1 inner join t2 on (t1.i = t2.i)
+----
+0	4	1	A
+2	1	3	B
+3	4	4	A
+4	4	8	A
+5	4	7	A
+0	2	1	C
+3	2	4	C
+4	2	8	C
+5	2	7	C
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_optimizer;
+
+query IIII
+select src.lhs_index, sink.in_index, src.out_index, src.thread_id from LINEAGE_1_HASH_JOIN_2_1 as sink, LINEAGE_1_HASH_JOIN_2_0 as src
+where src.rhs_index=sink.out_index
+order by src.out_index
+----
+0	4	0	0
+2	1	1	0
+3	4	2	0
+4	4	3	0
+5	4	4	0
+0	2	5	0
+3	2	6	0
+4	2	7	0
+5	2	8	0

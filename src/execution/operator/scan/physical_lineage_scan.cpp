@@ -12,7 +12,7 @@ PhysicalLineageScan::PhysicalLineageScan(shared_ptr<OperatorLineage> lineage_op,
                                      unique_ptr<FunctionData> bind_data_p, vector<column_t> column_ids_p,
                                      vector<string> names_p, unique_ptr<TableFilterSet> table_filters_p,
                                      idx_t estimated_cardinality, idx_t stage_idx)
-    : PhysicalOperator(PhysicalOperatorType::TABLE_SCAN, std::move(types), estimated_cardinality),
+    : PhysicalOperator(PhysicalOperatorType::LINEAGE_SCAN, std::move(types), estimated_cardinality),
       bind_data(std::move(bind_data_p)), column_ids(std::move(column_ids_p)),
       names(std::move(names_p)), table_filters(std::move(table_filters_p)), stage_idx(stage_idx), lineage_op(lineage_op) {}
 
@@ -21,7 +21,7 @@ PhysicalLineageScan::PhysicalLineageScan(shared_ptr<OperatorLineage> lineage_op,
                                          vector<column_t> column_ids_p, vector<idx_t> projection_ids_p,
                                          vector<string> names_p, unique_ptr<TableFilterSet> table_filters_p,
                                          idx_t estimated_cardinality, idx_t stage_idx)
-    : PhysicalOperator(PhysicalOperatorType::TABLE_SCAN, std::move(types), estimated_cardinality),
+    : PhysicalOperator(PhysicalOperatorType::LINEAGE_SCAN, std::move(types), estimated_cardinality),
       bind_data(std::move(bind_data_p)), column_ids(std::move(column_ids_p)),
       projection_ids(std::move(projection_ids_p)),
       names(std::move(names_p)), table_filters(std::move(table_filters_p)), stage_idx(stage_idx), lineage_op(lineage_op) {}
@@ -42,6 +42,7 @@ public:
 	idx_t log_id = 0;
 	idx_t current_thread = 0;
 	vector<idx_t> thread_ids;
+	idx_t chunk_index = 0;
 };
 
 
@@ -55,21 +56,37 @@ SourceResultType PhysicalLineageScan::GetData(ExecutionContext &context, DataChu
 	auto& thread_ids = state.thread_ids;
 
 	DataChunk result;
-	while (state.current_thread < thread_ids.size() && lineage_op->log_per_thead[thread_ids[state.current_thread]].GetLogSize(stage_idx) == 0) {
-		state.current_thread++;
-		state.log_id = 0;
-		state.thread_count = 0;
+	idx_t res_count = 0;
+	bool cache_on = false;
+	if (stage_idx == 100) {
+		result.InitializeEmpty(lineage_op->chunk_collection.Types());
+
+		if (lineage_op->chunk_collection.Count() == 0) {
+			return SourceResultType::FINISHED;
+		}
+		D_ASSERT(result.GetTypes() == lineage_op->chunk_collection.Types());
+		if (state.chunk_index >= lineage_op->chunk_collection.ChunkCount()) {
+			return SourceResultType::FINISHED;
+		}
+		auto &collection_chunk = lineage_op->chunk_collection.GetChunk(state.chunk_index);
+		result.Reference(collection_chunk);
+		state.chunk_index++;
+		state.count_so_far += result.size();
+	} else {
+		while (state.current_thread < thread_ids.size() && lineage_op->log_per_thead[thread_ids[state.current_thread]].GetLogSize(stage_idx) == 0) {
+			state.current_thread++;
+			state.log_id = 0;
+			state.thread_count = 0;
+		}
+
+		if (state.current_thread >= thread_ids.size()) {
+			return SourceResultType::FINISHED;
+		}
+
+		idx_t thread_id = thread_ids[state.current_thread];
+		res_count =
+		    lineage_op->GetLineageAsChunk(state.thread_count, result, thread_id, state.log_id, stage_idx, cache_on);
 	}
-
-	if (state.current_thread >= thread_ids.size()) {
-		return SourceResultType::FINISHED;
-	}
-
-	idx_t thread_id = thread_ids[state.current_thread];
-
-	idx_t res_count =
-		    lineage_op->GetLineageAsChunk(state.thread_count, result, thread_id, state.log_id, stage_idx);
-
 
  	// Apply projection list
 	chunk.Reset();
@@ -97,9 +114,12 @@ SourceResultType PhysicalLineageScan::GetData(ExecutionContext &context, DataChu
 		state.log_id = 0;
 		state.thread_count = 0;
 		return SourceResultType::HAVE_MORE_OUTPUT;
-	} else {
-		state.log_id++;
+	} else if (cache_on) {
+		// add flag if there is a cache, don't make progress
 		return SourceResultType::HAVE_MORE_OUTPUT;
+	} else {
+			state.log_id++;
+			return SourceResultType::HAVE_MORE_OUTPUT;
 	}
 }
 

@@ -152,7 +152,16 @@ SinkResultType PhysicalPerfectHashAggregate::Sink(ExecutionContext &context, Dat
 	aggregate_input_chunk.Verify();
 	D_ASSERT(aggregate_input_chunk.ColumnCount() == 0 || group_chunk.size() == aggregate_input_chunk.size());
 
+#ifdef LINEAGE
+	group_chunk.trace_lineage = ClientConfig::GetConfig(context.client).trace_lineage;
+#endif
 	lstate.ht->AddChunk(group_chunk, aggregate_input_chunk);
+#ifdef LINEAGE
+	if (group_chunk.trace_lineage && group_chunk.log_record) {
+		lineage_op->Capture(move(group_chunk.log_record), LINEAGE_SINK, 0);
+		group_chunk.log_record = nullptr;
+	}
+#endif
 	return SinkResultType::NEED_MORE_INPUT;
 }
 
@@ -188,9 +197,19 @@ SourceResultType PhysicalPerfectHashAggregate::GetData(ExecutionContext &context
                                                        OperatorSourceInput &input) const {
 	auto &state = input.global_state.Cast<PerfectHashAggregateState>();
 	auto &gstate = sink_state->Cast<PerfectHashAggregateGlobalState>();
-
+#ifdef LINEAGE
+	chunk.trace_lineage =  ClientConfig::GetConfig(context.client).trace_lineage;
+#endif
 	gstate.ht->Scan(state.ht_scan_position, chunk);
 
+
+#ifdef LINEAGE
+	if (chunk.trace_lineage && chunk.log_record) {
+		chunk.log_record->data->Debug();
+		lineage_op->Capture(move(chunk.log_record), LINEAGE_SOURCE, 0);
+		chunk.log_record = nullptr;
+	}
+#endif
 	if (chunk.size() > 0) {
 		return SourceResultType::HAVE_MORE_OUTPUT;
 	} else {

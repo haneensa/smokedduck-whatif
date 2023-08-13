@@ -82,6 +82,18 @@ bool PipelineExecutor::TryFlushCachingOperators() {
 			StartOperator(current_operator);
 			finalize_result = current_operator.FinalExecute(context, curr_chunk, *current_operator.op_state,
 			                                                *intermediate_states[flushing_idx]);
+#ifdef LINEAGE
+			if (context.client.client_data->lineage_manager->trace_lineage) {
+				// Add virtual write
+				auto op_state = intermediate_states[flushing_idx].get();
+				op_state->out_start = op_state->out_end;
+				op_state->out_end += curr_chunk.size();
+			}
+			if (context.client.client_data->lineage_manager->persist_intermediate && curr_chunk.size() > 0) {
+				// TODO: control for which operator we want to persist its intermediate if any specifics
+				current_operator.lineage_op->chunk_collection.Append(curr_chunk);
+			}
+#endif
 			EndOperator(current_operator, &curr_chunk);
 		} else {
 			// Reset flag and reflush the last chunk we were flushing.
@@ -215,12 +227,16 @@ OperatorResultType PipelineExecutor::ExecutePushInternal(DataChunk &input, idx_t
 			result = OperatorResultType::NEED_MORE_INPUT;
 		}
 		auto &sink_chunk = final_chunk;
+		if (context.client.client_data->lineage_manager->trace_lineage) {
+			// Add virtual read
+			local_sink_state->in_start =  local_sink_state->in_end;
+			local_sink_state->in_end += sink_chunk.size();
+		}
 		if (sink_chunk.size() > 0) {
 			StartOperator(*pipeline.sink);
 			D_ASSERT(pipeline.sink);
 			D_ASSERT(pipeline.sink->sink_state);
 			OperatorSinkInput sink_input {*pipeline.sink->sink_state, *local_sink_state, interrupt_state};
-
 			auto sink_result = Sink(sink_chunk, sink_input);
 
 			EndOperator(*pipeline.sink, nullptr);
@@ -386,7 +402,7 @@ OperatorResultType PipelineExecutor::Execute(DataChunk &input, DataChunk &result
 				if (current_intermediate == initial_idx + 1) {
 					op_state->in_start =  local_source_state->out_start;
 				} else {
-					op_state->in_start =  intermediate_states[current_idx]->out_start;
+					op_state->in_start =  intermediate_states[current_intermediate - 2]->out_start;
 				}
 			}
 #endif
@@ -397,6 +413,9 @@ OperatorResultType PipelineExecutor::Execute(DataChunk &input, DataChunk &result
 				// Add virtual write
 				op_state->out_start = op_state->out_end;
 				op_state->out_end += current_chunk.size();
+			}
+			if (context.client.client_data->lineage_manager->persist_intermediate && current_chunk.size() > 0) {
+				current_operator.lineage_op->chunk_collection.Append(current_chunk);
 			}
 #endif
 			EndOperator(current_operator, &current_chunk);
@@ -485,8 +504,13 @@ SourceResultType PipelineExecutor::FetchFromSource(DataChunk &result) {
 	OperatorSourceInput source_input = {*pipeline.source_state, *local_source_state, interrupt_state};
 	auto res = GetData(result, source_input);
 #ifdef LINEAGE
-	local_source_state->out_start = local_source_state->out_end;
-	local_source_state->out_end += result.size();
+	if (context.client.client_data->lineage_manager->trace_lineage) {
+		local_source_state->out_start = local_source_state->out_end;
+		local_source_state->out_end += result.size();
+	}
+	if (context.client.client_data->lineage_manager->persist_intermediate) {
+		pipeline.source->lineage_op->chunk_collection.Append(result);
+	}
 #endif
 	// Ensures Sinks only return empty results when Blocking or Finished
 	D_ASSERT(res != SourceResultType::BLOCKED || result.size() == 0);

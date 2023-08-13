@@ -152,6 +152,11 @@ static optional_ptr<Index> CanUseIndexJoin(TableScanBindData &tbl, Expression &e
 
 optional_ptr<Index> CheckIndexJoin(ClientContext &context, LogicalComparisonJoin &op, PhysicalOperator &plan,
                                    Expression &condition) {
+#ifdef LINEAGE
+	if (plan.type == PhysicalOperatorType::LINEAGE_SCAN) {
+		return nullptr;
+	}
+#endif
 	if (op.type == LogicalOperatorType::LOGICAL_DELIM_JOIN) {
 		return nullptr;
 	}

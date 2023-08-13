@@ -110,7 +110,11 @@ idx_t PhysicalTableScan::GetBatchIndex(ExecutionContext &context, DataChunk &chu
 }
 
 string PhysicalTableScan::GetName() const {
-	return StringUtil::Upper(function.name + " " + function.extra_info);
+#ifdef LINEAGE
+	return StringUtil::Upper(function.name) + "_" + std::to_string(id);
+#else
+	return StringUtil::Upper(function.name);
+#endif
 }
 
 string PhysicalTableScan::ParamsToString() const {
@@ -128,6 +132,9 @@ string PhysicalTableScan::ParamsToString() const {
 						result += "\n";
 					}
 					result += names[column_id];
+#ifdef LINEAGE
+					result += "#DEL#" +  ( std::to_string(column_id));
+#endif
 				}
 			}
 		} else {
@@ -138,6 +145,9 @@ string PhysicalTableScan::ParamsToString() const {
 						result += "\n";
 					}
 					result += names[column_id];
+#ifdef LINEAGE
+					result += "#DEL#" +  ( std::to_string(column_id));
+#endif
 				}
 			}
 		}

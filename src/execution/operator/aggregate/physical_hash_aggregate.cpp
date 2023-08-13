@@ -325,12 +325,29 @@ void PhysicalHashAggregate::SinkDistinctGrouping(ExecutionContext &context, Data
 			}
 			filtered_input.Slice(sel_vec, count);
 			filtered_input.SetCardinality(count);
-
+#ifdef LINEAGE
+			filtered_input.trace_lineage = false;
+#endif
 			radix_table.Sink(context, filtered_input, sink_input, empty_chunk, empty_filter);
 		} else {
+			// for each i: collect log record
+#ifdef LINEAGE
+			chunk.trace_lineage = false;
+#endif
 			radix_table.Sink(context, chunk, sink_input, empty_chunk, empty_filter);
 		}
+#ifdef LINEAGE
+		/*if (lineage_op && chunk.log_record) {
+			std::cout << "Capture Sink Distinct " << table_idx << std::endl;
+			chunk.log_record->data->Debug();
+			// TODO: construct a map between groupings and log records
+			lineage_op->log_per_thead[context.thread.thread_id].Append(move(chunk.log_record), LINEAGE_SINK);
+			chunk.log_record = nullptr;
+		}*/
+#endif
 	}
+
+	// construct data for distinct
 }
 
 void PhysicalHashAggregate::SinkDistinct(ExecutionContext &context, DataChunk &chunk, OperatorSinkInput &input) const {
@@ -380,7 +397,10 @@ SinkResultType PhysicalHashAggregate::Sink(ExecutionContext &context, DataChunk 
 
 	aggregate_input_chunk.SetCardinality(chunk.size());
 	aggregate_input_chunk.Verify();
-
+#ifdef LINEAGE
+	shared_ptr<vector<shared_ptr<LineageData>>> lineage_per_grouping = make_shared<vector<shared_ptr<LineageData>>>();
+	chunk.trace_lineage = ClientConfig::GetConfig(context.client).trace_lineage;
+#endif
 	// For every grouping set there is one radix_table
 	for (idx_t i = 0; i < groupings.size(); i++) {
 		auto &grouping_gstate = gstate.grouping_states[i];
@@ -391,12 +411,27 @@ SinkResultType PhysicalHashAggregate::Sink(ExecutionContext &context, DataChunk 
 		auto &grouping = groupings[i];
 		auto &table = grouping.table_data;
 		table.Sink(context, chunk, sink_input, aggregate_input_chunk, non_distinct_filter);
-#ifdef LINEAGE
-		if (lineage_op && chunk.log_record) {
-			lineage_op->log_per_thead[context.thread.thread_id].Append(move(chunk.log_record), LINEAGE_SINK);
+		if (chunk.trace_lineage && chunk.log_record) {
+			//chunk.log_record->data->Debug();
+			lineage_per_grouping->push_back(move(chunk.log_record->data));
+			chunk.log_record = nullptr;
 		}
-#endif
 	}
+
+#ifdef LINEAGE
+	if (chunk.trace_lineage && groupings.size() > 0) {
+		// the offset in lineage_per_grouping is the offset into grouping
+		auto lineage_data = make_shared<CollectionLineage>(move(lineage_per_grouping), chunk.size());
+		// create a LineageData: hashmap<string, LineageData>
+
+		// lineage_data.Add("Sink", lineage_data)
+		// lineage_data.Add("Distinct", lineage_data_distinct);
+
+		lineage_op->Capture(make_shared<LogRecord>(lineage_data, 0),LINEAGE_SINK, context.thread.thread_id);
+	}
+#endif
+
+	// call Append here
 
 	return SinkResultType::NEED_MORE_INPUT;
 }
@@ -592,9 +627,11 @@ public:
 
 				InterruptState interrupt_state;
 				OperatorSourceInput source_input {*global_source, *local_source, interrupt_state};
+#ifdef LINEAGE
+				output_chunk.trace_lineage = false;
+#endif
 				auto res = radix_table_p->GetData(temp_exec_context, output_chunk, *state.radix_states[table_idx],
 				                                  source_input);
-
 				if (res == SourceResultType::FINISHED) {
 					D_ASSERT(output_chunk.size() == 0);
 					break;
@@ -621,9 +658,17 @@ public:
 
 				// Sink it into the main ht
 				OperatorSinkInput sink_input {table_state, *temp_local_state, interrupt_state};
+#ifdef LINEAGE
+				group_chunk.trace_lineage = false;
+#endif
 				grouping_data.table_data.Sink(temp_exec_context, group_chunk, sink_input, aggregate_input_chunk, {i});
+
 			}
 		}
+
+		// This read distinct columns, and place them in new locations based on the grouping key to aggregate them
+		// we neeed to capture Gather() from old location and Scatter() to new location
+
 		grouping_data.table_data.Combine(temp_exec_context, table_state, *temp_local_state);
 	}
 
@@ -775,12 +820,17 @@ SinkFinalizeType PhysicalHashAggregate::FinalizeDistinct(Pipeline &pipeline, Eve
 			}
 			auto &radix_table = distinct_data.radix_tables[table_idx];
 			auto &radix_state = *distinct_state.radix_states[table_idx];
+#ifdef LINEAGE
+			radix_state.trace_lineage = false;
+#endif
 			bool partitioned = radix_table->Finalize(context, radix_state);
 			if (partitioned) {
 				any_partitioned = true;
 			}
 		}
 	}
+
+
 	if (any_partitioned) {
 		// If any of the groupings are partitioned then we first need to combine those, then aggregate
 		auto new_event = make_shared<HashDistinctCombineFinalizeEvent>(*this, gstate, pipeline, context);
@@ -804,21 +854,31 @@ SinkFinalizeType PhysicalHashAggregate::FinalizeInternal(Pipeline &pipeline, Eve
 		// Then we Finalize again, skipping this step
 		return FinalizeDistinct(pipeline, event, context, gstate_p);
 	}
-
+#ifdef LINEAGE
+	shared_ptr<vector<shared_ptr<LineageData>>> lineage_per_grouping = make_shared<vector<shared_ptr<LineageData>>>();
+	bool trace_lineage = ClientConfig::GetConfig(context).trace_lineage;
+#endif
 	bool any_partitioned = false;
 	for (idx_t i = 0; i < groupings.size(); i++) {
 		auto &grouping = groupings[i];
 		auto &grouping_gstate = gstate.grouping_states[i];
-		bool is_partitioned = grouping.table_data.Finalize(context, *grouping_gstate.table_state);
 #ifdef LINEAGE
-		if (grouping_gstate.table_state->log_record) {
-			lineage_op->Capture(move(grouping_gstate.table_state->log_record), LINEAGE_FINALIZE, 0);
-		}
+		grouping_gstate.table_state->trace_lineage = trace_lineage;
 #endif
+		bool is_partitioned = grouping.table_data.Finalize(context, *grouping_gstate.table_state);
 		if (is_partitioned) {
 			any_partitioned = true;
 		}
+		if (trace_lineage && grouping_gstate.table_state->log_record) {
+			lineage_per_grouping->push_back(move(grouping_gstate.table_state->log_record->data));
+			grouping_gstate.table_state->log_record = nullptr;
+		}
 	}
+#ifdef LINEAGE
+	if (trace_lineage) {
+		lineage_op->Capture(make_shared<LogRecord>(make_shared<CollectionLineage>(move(lineage_per_grouping), lineage_per_grouping->size()), 0),LINEAGE_FINALIZE, 0);
+	}
+#endif
 	if (any_partitioned) {
 		auto new_event = make_shared<HashAggregateMergeEvent>(*this, gstate, &pipeline);
 		event.InsertEvent(std::move(new_event));
@@ -906,10 +966,14 @@ SourceResultType PhysicalHashAggregate::GetData(ExecutionContext &context, DataC
 		InterruptState interrupt_state;
 		OperatorSourceInput source_input {*gstate.radix_states[radix_idx], *lstate.radix_states[radix_idx],
 		                                  interrupt_state};
+#ifdef LINEAGE
+		chunk.trace_lineage = ClientConfig::GetConfig(context.client).trace_lineage;
+#endif
 		auto res = radix_table.GetData(context, chunk, *grouping_gstate.table_state, source_input);
 #ifdef LINEAGE
 		if (chunk.log_record) {
 			lineage_op->Capture(move(chunk.log_record), LINEAGE_SOURCE, context.thread.thread_id);
+			chunk.log_record = nullptr;
 		}
 #endif
 		if (chunk.size() != 0) {

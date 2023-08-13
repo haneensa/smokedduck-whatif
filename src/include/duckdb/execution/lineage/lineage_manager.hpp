@@ -32,15 +32,15 @@ class PhysicalOperator;
 
 class LineageManager {
 public:
-	LineageManager() :trace_lineage(false)  {};
+	LineageManager() :trace_lineage(false), persist_intermediate(false)  {};
 
 	//! 1. call PlanAnnotator: For each operator in the plan, give it an ID. If there are
 	//! two operators with the same type, give them a unique ID starting
 	//! from the zero and incrementing it for the lowest levels of the tree
 	//! 2.  call CreateOperatorLineage to allocate lineage_op for main thread
 	//! TODO: understand multi-threading and support it
-	void InitOperatorPlan(PhysicalOperator *op);
-	void CreateOperatorLineage(PhysicalOperator *op, bool trace_lineage);
+	void InitOperatorPlan(ClientContext &context, PhysicalOperator *op);
+	void CreateOperatorLineage(ClientContext &context, PhysicalOperator *op, bool trace_lineage);
 	void CreateLineageTables(ClientContext &context, PhysicalOperator *op, idx_t query_id);
 	void StoreQueryLineage(ClientContext &context, PhysicalOperator *op, string query);
 
@@ -59,6 +59,8 @@ private:
 public:
 	//! Whether or not lineage is currently being captured
 	bool trace_lineage;
+	//! if set then Persist all intermediate chunks in a query tree
+	bool persist_intermediate;
 	//! map between lineage relational table name and its in-mem lineage
 	unordered_map<string, shared_ptr<OperatorLineage>> table_lineage_op;
 	vector<string> query_to_id;

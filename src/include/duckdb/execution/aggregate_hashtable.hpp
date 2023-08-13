@@ -151,7 +151,7 @@ public:
 	void Finalize();
 
 #ifdef LINEAGE
-	//shared_ptr<OperatorLineage> lineage_op;
+	bool trace_lineage = false;
 	shared_ptr<LogRecord> log_record;
 #endif
 private:

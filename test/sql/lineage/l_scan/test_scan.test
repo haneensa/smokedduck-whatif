@@ -49,13 +49,13 @@ SELECT query_id, query from duckdb_queries_list()
 3	select * from t1 where i > 199995
 4	select * from t1 where i=6
 
-query IIII
-SELECT rowid, in_index, out_index, thread_id FROM LINEAGE_2_SEQ_SCAN_0_0
+query III
+SELECT rowid, in_index, out_index FROM LINEAGE_2_SEQ_SCAN_0_0
 ----
-0	200000	0	1
-1	200001	1	1
-2	0	0	0
-3	1	1	0
+0	200000	0
+1	200001	1
+2	0	0
+3	1	1
 
 
 query III
