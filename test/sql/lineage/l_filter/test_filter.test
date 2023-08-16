@@ -13,6 +13,7 @@ statement ok
 INSERT INTO t1 SELECT i FROM range(0,4000) tbl(i);
 
 statement ok
+PRAGMA enable_profiling;
 PRAGMA enable_lineage;
 
 query I
@@ -27,20 +28,27 @@ select * from t1 where i > 4000 OR i > 3998
 ----
 3999
 
-statement ok
-PRAGMA disable_lineage;
 
 query II
-SELECT query_id, query from duckdb_queries_list()
+select rowid, * from t1 where 2 > i  OR i > 3998
 ----
-0	PRAGMA enable_lineage;
-1	select * from t1 where 2 > i  OR i > 3998
-2	select * from t1 where i > 4000 OR i > 3998
+0	0
+1	1
+3999	3999
+
+query II
+select rowid, * from t1 where i > 4000 OR i > 3998
+----
+3999	3999
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_profiling;
 
 query III
 SELECT rowid, out_index, in_index FROM LINEAGE_1_FILTER_1_0
 ----
-0	0	1951
+0	0	0
 1	1	1
 2	2	3999
 
@@ -49,12 +57,16 @@ SELECT rowid, out_index, in_index FROM LINEAGE_2_FILTER_1_0
 ----
 0	0	3999
 
-query III
-SELECT rowid, out_index, in_index FROM LINEAGE_1_SEQ_SCAN_0_0 WHERE in_index!=out_index OR in_index!=rowid
-----
-
 
 query III
-SELECT rowid, out_index, in_index FROM LINEAGE_2_SEQ_SCAN_0_0 WHERE in_index!=out_index OR in_index!=rowid
+SELECT rowid, out_index, in_index FROM LINEAGE_3_PROJECTION_2_0
 ----
+0	0	0
+1	1	1
+2	2	3999
+
+query III
+SELECT rowid, out_index, in_index FROM LINEAGE_4_PROJECTION_2_0
+----
+0	0	3999
 

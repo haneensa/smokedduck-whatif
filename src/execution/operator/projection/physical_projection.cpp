@@ -3,6 +3,9 @@
 #include "duckdb/execution/expression_executor.hpp"
 #include "duckdb/planner/expression/bound_reference_expression.hpp"
 
+#ifdef LINEAGE
+#include "duckdb/common/vector_operations/vector_operations.hpp"
+#endif
 namespace duckdb {
 
 class ProjectionState : public OperatorState {
@@ -88,9 +91,13 @@ OperatorResultType PhysicalProjection::Execute(ExecutionContext &context, DataCh
 			input.Fuse(temp1);
 		}
 		annotations_split.data[0].Flatten(input.size());
-		auto annotations = std::move(annotations_split.data[0]);
+		annotations_split.data[0].Verify(input.size());
 
-		/*
+		//auto annotations = std::move(annotations_split.data[0]);
+		Vector annotations(LogicalType::LIST(LogicalType::BIGINT));
+		VectorOperations::Copy(annotations_split.data[0], annotations, input.size(), 0, 0);
+		annotations.Verify(input.size());
+ 		/*
 		Vector annotations = std::move(input.data[left_annotation_index]);
 		std::remove(input.data.begin(), input.data.end(), input.data.begin()+left_annotation_index);
 		//input.data.insert[left_annotation_index] = Vector(annotations.GetType());*/

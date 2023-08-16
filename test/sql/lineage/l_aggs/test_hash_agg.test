@@ -13,9 +13,9 @@ statement ok
 INSERT INTO t1 VALUES ('Haneen', 2),  ('Omar', 2), ('Haneen', 4), ('Mohammed', 1), ('Omar', 1), ('Haneen', 3), ('Mohammed', 2), ('Omar', 1)
 
 statement ok
+PRAGMA enable_profiling;
 PRAGMA enable_lineage;
 
-# standalone limit
 query II
 select i, avg(j) from t1 GROUP BY i
 ----
@@ -23,27 +23,39 @@ Haneen	3.000000
 Omar	1.333333
 Mohammed	1.500000
 
+
+query II
+select i, avg(distinct j) from t1 GROUP BY i
+----
+Haneen	3.0
+Omar	1.5
+Mohammed	1.5
+
+
 statement ok
 PRAGMA disable_lineage;
 
 
 statement ok
 PRAGMA disable_optimizer;
+PRAGMA disable_profiling;
 
-query II
-select * from LINEAGE_1_HASH_GROUP_BY_2_0
+query III
+select in_index, out_index, thread_id from LINEAGE_1_HASH_GROUP_BY_2_0
 ----
-0	0
-1	1
-2	0
-3	2
-4	1
-5	0
-6	2
-7	1
+[0, 2, 5]	0	0
+[1, 4, 7]	1	0
+[3, 6]	2	0
 
 
 ### add distinct
+query III
+select in_index, out_index, thread_id from LINEAGE_2_HASH_GROUP_BY_2_0
+----
+[0, 2, 5]	0	0
+[1, 4, 7]	1	0
+[3, 6]	2	0
+
 ### add grouping set
 ### add having
 
