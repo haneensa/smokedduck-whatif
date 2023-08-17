@@ -140,7 +140,7 @@ idx_t OperatorLineage::GetLineageAsChunk(idx_t count_so_far, DataChunk &insert_c
 			idx_t res_count = data_woffset->data->Count();
 			Vector lhs_payload = dynamic_cast<LineageBinary&>(*data_woffset->data).left->GetVecRef(types[0], 0);
 			Vector rhs_payload = dynamic_cast<LineageBinary&>(*data_woffset->data).right->GetVecRef(types[1], 0);
-			data_woffset->data->Debug();
+			//data_woffset->data->Debug();
 			insert_chunk.SetCardinality(res_count);
 			insert_chunk.data[0].Reference(lhs_payload);
 			insert_chunk.data[1].Reference(rhs_payload);

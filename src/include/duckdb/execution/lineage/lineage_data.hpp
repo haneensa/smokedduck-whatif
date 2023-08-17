@@ -67,7 +67,7 @@ public:
 	}
 
 	Vector GetVecRef(LogicalType type, idx_t offset) override {
-		std::cout << vec.ToString(count) << std::endl;
+		//std::cout << vec.ToString(count) << std::endl;
 		return vec;
 	}
 

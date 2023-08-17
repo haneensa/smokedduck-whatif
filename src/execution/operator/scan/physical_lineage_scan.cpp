@@ -86,7 +86,7 @@ SourceResultType PhysicalLineageScan::GetData(ExecutionContext &context, DataChu
 		}
 	}
 
-	std::cout << chunk.ToString() << std::endl;
+	//std::cout << chunk.ToString() << std::endl;
 
 	state.thread_count += res_count;
 	state.count_so_far += res_count;

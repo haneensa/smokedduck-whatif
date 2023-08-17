@@ -13,6 +13,7 @@
 #include "duckdb/planner/expression/bound_reference_expression.hpp"
 #include "duckdb/execution/operator/join/physical_hash_join.hpp"
 #include "duckdb/execution/operator/aggregate/physical_hash_aggregate.hpp"
+#include "duckdb/execution/operator/aggregate/physical_perfecthash_aggregate.hpp"
 #include "duckdb/catalog/catalog_entry/aggregate_function_catalog_entry.hpp"
 #include "duckdb/planner/expression_binder.hpp"
 #include "duckdb/execution/operator/order/physical_order.hpp"
@@ -184,6 +185,31 @@ vector<idx_t> RecurseAddProvenance(ClientContext &context, PhysicalOperator *op)
 		idx_t left = op->children[0]->types.size();
 		op->types.insert(op->types.begin() + left-1, LogicalTypeId::BIGINT);
 		op->types.push_back(LogicalTypeId::BIGINT);
+
+		// if join type == semi or anti semi, then disable that --> what are the implications?
+
+		return { op->types.size() };
+	}
+	case PhysicalOperatorType::PERFECT_HASH_GROUP_BY: {
+		// output types
+		op->types.push_back(LogicalType::LIST(LogicalType::BIGINT));
+		// input types
+		((PhysicalPerfectHashAggregate* )op)->payload_types.push_back(LogicalTypeId::BIGINT);
+
+		auto list_aggfn = ListFun::GetFunction();
+		list_aggfn.name = "list";
+		auto colref = make_uniq<BoundReferenceExpression>("i", LogicalTypeId::BIGINT, op->children[0]->types.size()-1);
+		vector<unique_ptr<Expression>> aggr_children;
+		aggr_children.push_back(std::move(colref));
+		unique_ptr<FunctionData> bind_info = list_aggfn.bind(context, list_aggfn, aggr_children);
+		auto list_fun =
+		    make_uniq<BoundAggregateExpression>(std::move(list_aggfn), std::move(aggr_children), nullptr,
+		                                        std::move(bind_info), AggregateType::NON_DISTINCT);
+		((PhysicalPerfectHashAggregate* )op)->aggregates.push_back(move(list_fun));
+		auto size = ((PhysicalPerfectHashAggregate* )op)->aggregates.size();
+
+		// bindings
+		((PhysicalPerfectHashAggregate* )op)->aggregate_objects.push_back(AggregateObject(&((PhysicalPerfectHashAggregate* )op)->aggregates[size-1]->Cast<BoundAggregateExpression>()));
 		return { op->types.size() };
 	}
 	case PhysicalOperatorType::HASH_GROUP_BY: {
@@ -207,9 +233,6 @@ vector<idx_t> RecurseAddProvenance(ClientContext &context, PhysicalOperator *op)
 		((PhysicalHashAggregate* )op)->grouped_aggregate_data.bindings.push_back(&((PhysicalHashAggregate* )op)->grouped_aggregate_data.aggregates[size-1]->Cast<BoundAggregateExpression>());
 		((PhysicalHashAggregate* )op)->non_distinct_filter.push_back(size-1);
 		return { op->types.size() };
-	}
-	case PhysicalOperatorType::PERFECT_HASH_GROUP_BY: {
-		break;
 	}
 	case PhysicalOperatorType::BLOCKWISE_NL_JOIN: {
 		// if left/right includes rowid dont add, else include it
