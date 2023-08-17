@@ -1,0 +1,139 @@
+# name: test/sql/lineage/nlj_lineage/test_nlj.test
+# description: Test Nested Loop Join
+# group: [l_nj]
+
+statement ok
+CREATE TABLE t1(i INTEGER);
+
+statement ok
+CREATE TABLE t2(i INTEGER);
+
+statement ok
+INSERT INTO t1 SELECT i FROM range(0,10) tbl(i);
+INSERT INTO t1 VALUES (100);
+INSERT INTO t2 VALUES (99), (100);
+
+statement ok
+PRAGMA enable_profiling;
+PRAGMA enable_lineage;
+
+query IIII
+select t1.rowid, t2.rowid, t1.i, t2.i from t1, t2 where  t1.i > t2.i and t1.i <> t2.i
+----
+10	0	100	99
+
+query IIII
+select t1.rowid, t2.rowid, t1.i, t2.i from t1 right join t2  on t1.i > t2.i and t1.i <> t2.i
+----
+10	0	100	99
+NULL	1	NULL	100
+
+query IIII
+select t1.rowid, t2.rowid, t1.i, t2.i from t1 left join t2 on t1.i > t2.i and t1.i <> t2.i limit 10
+----
+10	0	100	99
+0	NULL	0	NULL
+1	NULL	1	NULL
+2	NULL	2	NULL
+3	NULL	3	NULL
+4	NULL	4	NULL
+5	NULL	5	NULL
+6	NULL	6	NULL
+7	NULL	7	NULL
+8	NULL	8	NULL
+
+query IIII
+select t1.rowid, t2.rowid, t1.i, t2.i from t1 full outer join t2 on t1.i > t2.i and t1.i <> t2.i
+----
+10	0	100	99
+0	NULL	0	NULL
+1	NULL	1	NULL
+2	NULL	2	NULL
+3	NULL	3	NULL
+4	NULL	4	NULL
+5	NULL	5	NULL
+6	NULL	6	NULL
+7	NULL	7	NULL
+8	NULL	8	NULL
+9	NULL	9	NULL
+NULL	1	NULL	100
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_profiling;
+
+query III
+select lhs_index, rhs_index, out_index from LINEAGE_1_NESTED_LOOP_JOIN_2_0;
+----
+0	10	0
+
+query III
+select lhs_index, rhs_index, out_index from LINEAGE_2_NESTED_LOOP_JOIN_2_0;
+----
+0	10	0
+1	NULL	1
+
+query III
+select lhs_index, rhs_index, out_index from LINEAGE_3_NESTED_LOOP_JOIN_2_0;
+----
+0	10	0
+NULL	0	1
+NULL	1	2
+NULL	2	3
+NULL	3	4
+NULL	4	5
+NULL	5	6
+NULL	6	7
+NULL	7	8
+NULL	8	9
+NULL	9	10
+
+query III
+select lhs_index, rhs_index, out_index from LINEAGE_4_NESTED_LOOP_JOIN_2_0;
+----
+0	10	0
+NULL	0	1
+NULL	1	2
+NULL	2	3
+NULL	3	4
+NULL	4	5
+NULL	5	6
+NULL	6	7
+NULL	7	8
+NULL	8	9
+NULL	9	10
+1	NULL	11
+
+
+
+statement ok
+PRAGMA enable_profiling;
+PRAGMA enable_lineage;
+
+## I think there is a bug in semi join implementation with more than two join conditions
+query II
+select t1.rowid, t1.i from t1 semi join t2 on  (t1.i > t2.i)
+----
+10	100
+
+query II
+select t1.rowid, t1.i from t1 anti join t2 on  (t1.i < t2.i)
+----
+10	100
+
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_profiling;
+
+
+
+query III
+select lhs_index, rhs_index, out_index from LINEAGE_2_NESTED_LOOP_JOIN_2_0;
+----
+10	NULL	0
+
+query III
+select lhs_index, rhs_index, out_index from LINEAGE_3_NESTED_LOOP_JOIN_2_0;
+----
+10	NULL	0

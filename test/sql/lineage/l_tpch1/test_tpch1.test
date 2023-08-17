@@ -1,0 +1,60 @@
+# name: test/sql/lineage_v2/l_tpch1/test_tpch1.test
+# description: Test TPCH 1
+# group: [l_tpch1]
+
+require tpch
+
+
+statement ok
+PRAGMA threads=1
+
+statement ok
+CALL dbgen(sf=0.001);
+
+statement ok
+PRAGMA enable_profiling;
+PRAGMA enable_lineage;
+
+statement ok
+SELECT
+    l_returnflag,
+    l_linestatus,
+    sum(l_quantity) AS sum_qty,
+    sum(l_extendedprice) AS sum_base_price,
+    sum(l_extendedprice * (1 - l_discount)) AS sum_disc_price,
+    sum(l_extendedprice * (1 - l_discount) * (1 + l_tax)) AS sum_charge,
+    avg(l_quantity) AS avg_qty,
+    avg(l_extendedprice) AS avg_price,
+    avg(l_discount) AS avg_disc,
+    count(*) AS count_order
+FROM
+    lineitem
+WHERE
+    l_shipdate <= CAST('1998-09-02' AS date)
+GROUP BY
+    l_returnflag,
+    l_linestatus
+ORDER BY
+    l_returnflag,
+    l_linestatus
+
+statement ok
+PRAGMA disable_lineage;
+
+query IIII
+select * from LINEAGE_1_HASH_JOIN_5_0
+----
+17	742	0	0
+22	994	1	0
+22	996	2	0
+36	1631	3	0
+36	1634	4	0
+36	1635	5	0
+36	1636	6	0
+36	1637	7	0
+64	2918	8	0
+72	3470	9	0
+75	3529	10	0
+89	4466	11	0
+101	5246	12	0
+101	5248	13	0

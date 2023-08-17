@@ -1,0 +1,37 @@
+# name: test/sql/lineage_v2/l_cross/test_cross.test
+# description: Test Cross Product Lineage
+# group: [l_cross]
+
+statement ok
+CREATE TABLE t1(i INTEGER);
+
+statement ok
+CREATE TABLE t2(i INTEGER);
+
+statement ok
+INSERT INTO t1 SELECT i FROM range(0,1072) tbl(i);
+INSERT INTO t2 SELECT i FROM range(0,10) tbl(i);
+
+
+statement ok
+PRAGMA enable_profiling;
+PRAGMA enable_lineage;
+
+# standalone limit
+statement ok
+select t1.i, t2.i from t1, t2
+
+statement ok
+select t1.i, t2.i from t1, t2 where (t1.i<2 or t1.i=1024 or t1.i>3069) and (t2.i<3 or t2.i=1025 or t2.i>3070)
+
+
+statement ok
+PRAGMA disable_lineage;
+
+
+query IIII
+SELECT * FROM LINEAGE_1_CROSS_PRODUCT_2_0
+----
+
+statement ok
+SELECT * FROM LINEAGE_2_CROSS_PRODUCT_4_0

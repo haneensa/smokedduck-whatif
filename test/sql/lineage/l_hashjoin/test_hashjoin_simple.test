@@ -1,0 +1,62 @@
+# name: test/sql/lineage_v2/l_scan/test_hashjoin.test
+# description: Test Hash Join
+# group: [l_hashjoin]
+
+
+statement ok
+PRAGMA explain_output = PHYSICAL_ONLY;
+PRAGMA enable_profiling;
+
+statement ok
+CREATE TABLE t1(i INTEGER, j INTEGER);
+
+statement ok
+INSERT INTO t1 VALUES (3, 1),  (NULL, 2), (2, 3), (3, 4), (3, 8), (3, 7)
+
+statement ok
+CREATE TABLE t2(i INTEGER, k VARCHAR(10));
+#CREATE TABLE t2(i VARCHAR(10), k INTEGER);
+
+statement ok
+INSERT INTO t2 VALUES (3, 'A'),   (2, 'B'), (3, 'C'), (1, 'D'), (3, 'A')
+
+statement ok
+PRAGMA enable_lineage
+
+query IIII
+select t1.rowid, t2.rowid, t1.j, t2.k from t1 inner join t2 on (t1.i = t2.i)
+----
+0	4	1	A
+2	1	3	B
+3	4	4	A
+4	4	8	A
+5	4	7	A
+0	2	1	C
+3	2	4	C
+4	2	8	C
+5	2	7	C
+0	0	1	A
+3	0	4	A
+4	0	8	A
+5	0	7	A
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_profiling;
+
+query III
+select lhs_index, rhs_index, out_index from LINEAGE_1_HASH_JOIN_2_0
+----
+4	0	0
+1	2	1
+4	3	2
+4	4	3
+4	5	4
+2	0	5
+2	3	6
+2	4	7
+2	5	8
+0	0	9
+0	3	10
+0	4	11
+0	5	12

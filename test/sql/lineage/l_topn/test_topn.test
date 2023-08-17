@@ -1,0 +1,69 @@
+# name: test/sql/lineage/l_topn/test_topn.test
+# description: Test order by
+# group: [l_topn]
+
+
+statement ok
+PRAGMA explain_output = PHYSICAL_ONLY;
+
+statement ok
+CREATE TABLE t1(i INTEGER);
+
+statement ok
+INSERT INTO t1 SELECT i FROM range(0,200000) tbl(i);
+INSERT INTO t1 SELECT i FROM range(0,5) tabl(i);
+
+
+statement ok
+PRAGMA threads=1
+
+statement ok
+PRAGMA enable_profiling;
+
+statement ok
+PRAGMA enable_lineage;
+
+# No filter
+statement ok
+select * from t1 order by i limit 2
+
+# filter from different chunks
+statement ok
+select * from t1 where i < 2 order by i limit 2
+
+# filter from end chunks
+statement ok
+select * from t1 where i > 199995 order by i limit 2
+
+# filter from first chunk
+statement ok
+select * from t1 where i=6 order by i limit 2
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_profiling;
+
+
+query IIII
+SELECT rowid, in_index, out_index, thread_id FROM LINEAGE_1_TOP_N_1_0
+----
+0	0	0	0
+1	200000	1	0
+
+query IIII
+SELECT rowid, in_index, out_index, thread_id FROM LINEAGE_2_TOP_N_1_0
+----
+0	0	0	0
+1	200000	1	0
+
+
+query IIII
+SELECT rowid, in_index, out_index, thread_id FROM LINEAGE_3_TOP_N_1_0
+----
+0	199996	0	0
+1	199997	1	0
+
+query IIII
+SELECT rowid, in_index, out_index, thread_id FROM LINEAGE_4_TOP_N_1_0
+----
+0	6	0	0
