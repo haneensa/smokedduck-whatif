@@ -1,0 +1,85 @@
+import duckdb
+import json
+import lineage_query
+import provenance_models
+import sql_statements
+
+
+def connect(database=':memory:', read_only=False, config=None):
+    return SmokedDuck(duckdb.connect(database, read_only, config if config is not None else {}))
+
+
+class SmokedDuck:
+
+    def __init__(self, duckdb_conn):
+        self.duckdb_conn = duckdb_conn
+        self.query_id = -1
+        self.query_plan = None
+        self.captured_lineage_model = None
+        self.latest_relation = None
+        self._conform_to_duckdb_interface()
+
+    def _conform_to_duckdb_interface(self):
+        smokedduck_methods = set([name for name in SmokedDuck.__dict__.keys()])
+        for name, method in duckdb.DuckDBPyConnection.__dict__.items():
+            if callable(method) and name not in smokedduck_methods:
+                setattr(self, name, getattr(self.duckdb_conn, name))
+
+    def cursor(self):
+        return SmokedDuck(self.duckdb_conn)
+
+    def execute(self, query, capture_lineage=None, parameters=None, multiple_parameter_sets=None):
+        prov_model = None
+        if capture_lineage is not None:
+            prov_model = provenance_models.get_prov_model(capture_lineage)
+            prov_model.consider_query(query)
+            for pragma_str in prov_model.pre_capture_pragmas():
+                self.duckdb_conn.execute(pragma_str)
+        df = self.duckdb_conn.execute(query, parameters, multiple_parameter_sets).df()
+        if capture_lineage is not None:
+            for pragma_str in prov_model.post_capture_pragmas():
+                self.duckdb_conn.execute(pragma_str)
+            metadata = self.duckdb_conn.execute(sql_statements.get_query_id_and_plan(query)).df()
+            self.query_id = metadata['query_id'][0]
+            self.query_plan = json.loads(metadata['plan'][0])
+            self.captured_lineage_model = prov_model
+        else:
+            self.query_id = -1
+            self.query_plan = None
+        # Convert result dataframe back into a DuckDBPyRelation so caller can return relation in whatever
+        # format they want. TODO: optimize this to avoid conversion overhead
+        return self.duckdb_conn.from_df(df)
+
+    def _lineage_query(self, model, backward_ids=None, forward_table=None, forward_ids=None):
+        if self.query_id == -1:
+            print('No captured lineage to query')
+            return None
+        else:
+            prov_model = provenance_models.get_prov_model(model)
+            prov_model.consider_capture_model(self.captured_lineage_model)
+            return self.duckdb_conn.execute(lineage_query.get_query(
+                self.query_id,
+                self.query_plan,
+                prov_model,
+                backward_ids,
+                forward_table,
+                forward_ids
+            ))
+
+    def lineage(self):
+        return self._lineage_query('lineage')
+
+    def why(self):
+        return self._lineage_query('why')
+
+    def polynomial(self):
+        return self._lineage_query('polynomial')
+
+    def ksemimodule(self):
+        return self._lineage_query('ksemimodule')
+
+    def backward(self, backward_ids, model='lineage'):
+        return self._lineage_query(model, backward_ids)
+
+    def forward(self, forward_table, forward_ids, model='lineage'):
+        return self._lineage_query(model, None, forward_table, forward_ids)
