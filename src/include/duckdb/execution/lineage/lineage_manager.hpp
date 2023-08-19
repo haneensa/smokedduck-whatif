@@ -32,7 +32,8 @@ class PhysicalOperator;
 
 class LineageManager {
 public:
-	LineageManager() :trace_lineage(false), persist_intermediate(false)  {};
+	LineageManager() :trace_lineage(false), persist_intermediate(false), persist_k_semimodule(false)  {};
+//	~LineageManager() {}
 
 	//! 1. call PlanAnnotator: For each operator in the plan, give it an ID. If there are
 	//! two operators with the same type, give them a unique ID starting
@@ -42,7 +43,8 @@ public:
 	void InitOperatorPlan(ClientContext &context, PhysicalOperator *op);
 	void CreateOperatorLineage(ClientContext &context, PhysicalOperator *op, bool trace_lineage);
 	void CreateLineageTables(ClientContext &context, PhysicalOperator *op, idx_t query_id);
-	void StoreQueryLineage(ClientContext &context, PhysicalOperator *op, string query);
+	void StoreQueryLineage(ClientContext &context, unique_ptr<PhysicalOperator> op, string query);
+	bool CheckIfShouldPersistForKSemimodule(PhysicalOperator *op);
 
 	void SetCurrentLineageOp(shared_ptr<OperatorLineage> lop) {
 		current_lop = lop;
@@ -61,11 +63,13 @@ public:
 	bool trace_lineage;
 	//! if set then Persist all intermediate chunks in a query tree
 	bool persist_intermediate;
+	//! if set then persist intermediate chunks just for aggregates (K-Semimodule data)
+	bool persist_k_semimodule;
 	//! map between lineage relational table name and its in-mem lineage
 	unordered_map<string, shared_ptr<OperatorLineage>> table_lineage_op;
 	vector<string> query_to_id;
 	//! in_memory storage of physical query plan per query
-	std::unordered_map<idx_t, PhysicalOperator *> queryid_to_plan;
+	std::unordered_map<idx_t, unique_ptr<PhysicalOperator>> queryid_to_plan;
 };
 
 } // namespace duckdb

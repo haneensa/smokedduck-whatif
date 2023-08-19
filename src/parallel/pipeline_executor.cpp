@@ -88,7 +88,9 @@ bool PipelineExecutor::TryFlushCachingOperators() {
 				op_state->out_start = op_state->out_end;
 				op_state->out_end += curr_chunk.size();
 			}
-			if (context.client.client_data->lineage_manager->persist_intermediate && curr_chunk.size() > 0) {
+			if ((context.client.client_data->lineage_manager->persist_intermediate ||
+			     context.client.client_data->lineage_manager->CheckIfShouldPersistForKSemimodule(&current_operator)
+			     ) && curr_chunk.size() > 0) {
 				current_operator.lineage_op->chunk_collection.Append(curr_chunk);
 			}
 #endif
@@ -412,7 +414,9 @@ OperatorResultType PipelineExecutor::Execute(DataChunk &input, DataChunk &result
 				op_state->out_start = op_state->out_end;
 				op_state->out_end += current_chunk.size();
 			}
-			if (context.client.client_data->lineage_manager->persist_intermediate && current_chunk.size() > 0) {
+			if ((context.client.client_data->lineage_manager->persist_intermediate ||
+			     context.client.client_data->lineage_manager->CheckIfShouldPersistForKSemimodule(&current_operator)
+			         ) && current_chunk.size() > 0) {
 				current_operator.lineage_op->chunk_collection.Append(current_chunk);
 			}
 #endif
@@ -506,7 +510,9 @@ SourceResultType PipelineExecutor::FetchFromSource(DataChunk &result) {
 		local_source_state->out_start = local_source_state->out_end;
 		local_source_state->out_end += result.size();
 	}
-	if (context.client.client_data->lineage_manager->persist_intermediate) {
+	if (context.client.client_data->lineage_manager->persist_intermediate ||
+	     context.client.client_data->lineage_manager->CheckIfShouldPersistForKSemimodule(pipeline.source.get())
+	         ) {
 		pipeline.source->lineage_op->chunk_collection.Append(result);
 	}
 #endif

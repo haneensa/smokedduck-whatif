@@ -157,6 +157,9 @@ unique_ptr<PhysicalOperator> PhysicalPlanGenerator::CreatePlan(LogicalAggregate 
 			    std::move(op.grouping_functions), op.estimated_cardinality);
 		}
 	}
+#ifdef LINEAGE
+	plan->child_of_aggregate = true;
+#endif
 	groupby->children.push_back(std::move(plan));
 	return groupby;
 }

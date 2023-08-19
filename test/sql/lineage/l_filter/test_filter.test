@@ -30,12 +30,12 @@ select rowid, * from t1 where i > 4000 OR i > 3998
 statement ok
 PRAGMA disable_lineage;
 
-query II
-SELECT query_id, query from duckdb_queries_list()
+query III
+SELECT query_id, query, plan from duckdb_queries_list()
 ----
-0	PRAGMA enable_lineage;
-1	select rowid, * from t1 where 2 > i  OR i > 3998
-2	select rowid, * from t1 where i > 4000 OR i > 3998
+0	PRAGMA enable_lineage;	{"name": "PRAGMA_0","children": [],"table": ""}
+1	select rowid, * from t1 where 2 > i  OR i > 3998	{"name": "PROJECTION_2","children": [{"name": "FILTER_1","children": [{"name": "SEQ_SCAN_0","children": [],"table": "t1"}],"table": ""}],"table": ""}
+2	select rowid, * from t1 where i > 4000 OR i > 3998	{"name": "PROJECTION_2","children": [{"name": "FILTER_1","children": [{"name": "SEQ_SCAN_0","children": [],"table": "t1"}],"table": ""}],"table": ""}
 
 query I
 pragma show_tables;

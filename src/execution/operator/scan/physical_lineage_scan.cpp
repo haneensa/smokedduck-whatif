@@ -59,16 +59,25 @@ SourceResultType PhysicalLineageScan::GetData(ExecutionContext &context, DataChu
 	idx_t res_count = 0;
 	bool cache_on = false;
 	if (stage_idx == 100) {
-		result.InitializeEmpty(lineage_op->chunk_collection.Types());
+		bool must_add_rowid = state.chunk_index == lineage_op->intermediate_chunk_processed_counter;
+
+		vector<LogicalType> types = lineage_op->chunk_collection.Types();
+		types.push_back(LogicalType::INTEGER);
+		result.InitializeEmpty(types);
 
 		if (lineage_op->chunk_collection.Count() == 0) {
 			return SourceResultType::FINISHED;
 		}
-		D_ASSERT(result.GetTypes() == lineage_op->chunk_collection.Types());
 		if (state.chunk_index >= lineage_op->chunk_collection.ChunkCount()) {
 			return SourceResultType::FINISHED;
 		}
-		auto &collection_chunk = lineage_op->chunk_collection.GetChunk(state.chunk_index);
+		DataChunk &collection_chunk = lineage_op->chunk_collection.GetChunk(state.chunk_index);
+		if (must_add_rowid) {
+			collection_chunk.data.push_back(Vector(LogicalType::INTEGER));
+			collection_chunk.data[collection_chunk.ColumnCount() - 1].Sequence(state.count_so_far, 1,
+			                                                                   collection_chunk.size());
+			lineage_op->intermediate_chunk_processed_counter++;
+		}
 		result.Reference(collection_chunk);
 		state.chunk_index++;
 		state.count_so_far += result.size();
