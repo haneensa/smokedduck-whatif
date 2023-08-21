@@ -1,5 +1,5 @@
 from collections import namedtuple
-import operators
+from operators import Op, OperatorFactory
 from provenance_models import ProvenanceModel
 
 Projection = namedtuple('Projection', ['in_index', 'alias', 'orig_table_name'])
@@ -8,6 +8,7 @@ Projection = namedtuple('Projection', ['in_index', 'alias', 'orig_table_name'])
 def get_query(
         id: int,
         plan: dict,
+        operator_factory: OperatorFactory,
         prov_model: ProvenanceModel,
         backward_ids: list,
         forward_table: str,
@@ -16,7 +17,7 @@ def get_query(
     # Check that both forward table and forward ids are set together
     assert forward_table is None or (forward_table is not None and forward_ids is not None)
 
-    topmost_op, _, projections, froms = _generate_lineage_query(plan, id, prov_model, None)
+    topmost_op, _, projections, froms = _generate_lineage_query(plan, id, prov_model, None, operator_factory)
 
     ret = "SELECT "
     ret += prov_model.from_prefix()
@@ -68,15 +69,16 @@ def _generate_lineage_query(
         plan_node: dict,
         query_id: int,
         prov_model: ProvenanceModel,
-        parent_join_cond: str
-) -> (operators.Op, list, list, list):
+        parent_join_cond: str,
+        operator_factory: OperatorFactory
+) -> (Op, list, list, list):
     children = plan_node['children']
     projections = []
     froms = []
     found_names = []
     name_set = set()
 
-    op = operators.get_op(plan_node['name'], query_id, parent_join_cond)
+    op = operator_factory.get_op(plan_node['name'], query_id, parent_join_cond)
     child_join_conds = op.get_child_join_conds()
     assert len(children) == len(child_join_conds) or op.get_name() == 'SEQ_SCAN'
 
@@ -84,7 +86,7 @@ def _generate_lineage_query(
 
     for i in range(len(children)):
         _, child_names, child_projections, child_froms = _generate_lineage_query(children[i], query_id,
-                                                                                 prov_model, child_join_conds[i])
+                                                                                 prov_model, child_join_conds[i], operator_factory)
 
         projections.extend(child_projections)
         froms.extend(child_froms)

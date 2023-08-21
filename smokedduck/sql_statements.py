@@ -1,6 +1,6 @@
 # Not resilient to multiple users of this connection, but should be good enough for now
 def get_query_id_and_plan() -> str:
-    return f'''
+    return '''
     select
         query_id,
         plan
@@ -24,3 +24,6 @@ def get_lineage_tables(query_id: int, only_names: bool = False) -> str:
     where contains(lower(table_name), 'lineage{"" if query_id == -1 else f"_{query_id}_"}')
     order by table_name asc
     '''
+
+def check_finalize(finalize_table_name) -> str:
+    return f'select count(*) as cnt from {finalize_table_name}'

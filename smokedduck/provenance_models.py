@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
-from operators import Op
-import operators
+from operators import Op, OperatorFactory
 
 
 class ProvenanceModel(ABC):
@@ -182,8 +181,8 @@ class KSemimodule(ProvenanceModel):
         if self.aggregate != "count" and op.get_name() in ["HASH_GROUP_BY", "PERFECT_HASH_GROUP_BY"]:
             assert len(plan['children']) == 1
             assert self.agg_table is None, "Currently only queries with single group bys are supported" # TODO this
-            # We only build the operator to get single_op_table_name, so safe to pass None here
-            child = operators.get_op(plan["children"][0]["name"], query_id, None)
+            # We only build the operator to get single_op_table_name, so safe to pass Nones here
+            child = OperatorFactory(None).get_op(plan["children"][0]["name"], query_id, None)
             agg_table = "agg_" + op.id
             self.agg_table = agg_table
             k_semimodule_from_string = "JOIN " + child.single_op_table_name + "_100 AS " + agg_table \
