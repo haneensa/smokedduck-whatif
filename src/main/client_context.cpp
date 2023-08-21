@@ -157,7 +157,7 @@ PreservedError ClientContext::EndQueryInternal(ClientContextLock &lock, bool suc
 	client_data->profiler->EndQuery();
 #ifdef LINEAGE
 	if (client_data->lineage_manager->trace_lineage && active_query->prepared->plan ) {
-		client_data->lineage_manager->StoreQueryLineage(*this, active_query->prepared->plan.get(),  active_query->query);
+		client_data->lineage_manager->StoreQueryLineage(*this, move(active_query->prepared->plan),  active_query->query);
 	}
 	current_thread_id = 0;
 #endif
@@ -344,7 +344,13 @@ shared_ptr<PreparedStatementData> ClientContext::CreatePreparedStatement(ClientC
 #ifdef DEBUG
 	plan->Verify(*this);
 #endif
+#ifdef LINEAGE
+	// TODO: remove this once we figure out lineage table stats
+	bool is_lineage_query = StringUtil::Lower(query).find("lineage") != -1;
+	if (config.enable_optimizer && plan->RequireOptimizer() && !is_lineage_query) {
+#else
 	if (config.enable_optimizer && plan->RequireOptimizer()) {
+#endif
 		profiler.StartPhase("optimizer");
 		Optimizer optimizer(*planner.binder, *this);
 		plan = optimizer.Optimize(std::move(plan));

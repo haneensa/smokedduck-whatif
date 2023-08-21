@@ -454,7 +454,8 @@ void RowGroup::TemplatedScan(TransactionData transaction, CollectionScanState &s
 				}
 			}
 #ifdef LINEAGE
-			//! TODO: capture the range this scan read
+			auto lineage = make_uniq<LineageIdentity>(count);
+			result.log_record = make_shared<LogRecord>(move(lineage), this->start + current_row);
 #endif
 		} else {
 			// TODO: table_filters, we need to capture data movement

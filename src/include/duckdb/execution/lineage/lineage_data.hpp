@@ -226,7 +226,7 @@ public:
 	};
 
 	data_ptr_t Process(idx_t offset) override {
-		throw std::logic_error("Can't call process on LineageNested");
+		throw std::logic_error("Can't call process on CollectionLineage");
 	}
 
 	idx_t Size() override {
@@ -241,11 +241,42 @@ public:
 	}
 
 	idx_t At(idx_t) override {
-		throw std::logic_error("Can't call backward directly on LineageNested");
+		throw std::logic_error("Can't call At directly on LineageNested");
 	}
 
 public:
 	shared_ptr<vector<shared_ptr<LineageData>>> lineage_vec;
+};
+
+class LineageIdentity : public LineageData {
+public:
+	LineageIdentity(idx_t count) : LineageData(count) {
+	}
+
+	Vector GetVecRef(LogicalType t, idx_t offset) override {
+		Vector vec(t, count);
+		vec.Sequence(offset, 1, count);
+		return vec;
+	}
+
+	void Debug() override {
+		std::cout << "LineageIdentity of size: " << count << std::endl;
+	}
+
+	data_ptr_t Process(idx_t offset) override {
+		throw std::logic_error("Can't call process on LineageIdentity");
+	}
+
+	idx_t Size() override {
+		return sizeof(idx_t);
+	}
+
+	idx_t At(idx_t source) override {
+		if (source >= count) {
+			throw std::logic_error("Value does not exist within this Identity");
+		}
+		return source;
+	}
 };
 
 

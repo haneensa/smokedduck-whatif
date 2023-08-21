@@ -140,6 +140,17 @@ static void PragmaDisableIntermediateTables(ClientContext &context, const Functi
 	context.client_data->lineage_manager->persist_intermediate = false;
 	std::cout << "\nDisable Intermediate Tables Capture: " << std::endl;
 }
+
+static void PragmaEnableKSemimoduleTables(ClientContext &context, const FunctionParameters &parameters) {
+	context.client_data->lineage_manager->persist_k_semimodule = true;
+	std::cout << "\nEnable K Semimodule Tables Capture: " << std::endl;
+}
+
+static void PragmaDisableKSemimoduleTables(ClientContext &context, const FunctionParameters &parameters) {
+	context.client_data->lineage_manager->persist_k_semimodule = false;
+	std::cout << "\nDisable K Semimodule Tables Capture: " << std::endl;
+}
+
 static void PragmaClearLineage(ClientContext &context, const FunctionParameters &parameters) {
 	context.client_data->lineage_manager->queryid_to_plan.clear();
 	context.client_data->lineage_manager->query_to_id.clear();
@@ -154,6 +165,8 @@ void PragmaFunctions::RegisterFunction(BuiltinFunctions &set) {
 	set.AddFunction(PragmaFunction::PragmaStatement("disable_lineage", PragmaDisableLineage));
 	set.AddFunction(PragmaFunction::PragmaStatement("enable_intermediate_tables", PragmaEnableIntermediateTables));
 	set.AddFunction(PragmaFunction::PragmaStatement("disable_intermediate_tables", PragmaDisableIntermediateTables));
+	set.AddFunction(PragmaFunction::PragmaStatement("enable_k_semimodule_tables", PragmaEnableKSemimoduleTables));
+	set.AddFunction(PragmaFunction::PragmaStatement("disable_k_semimodule_tables", PragmaDisableKSemimoduleTables));
 	set.AddFunction(PragmaFunction::PragmaStatement("clear_lineage", PragmaClearLineage));
 #endif
 	set.AddFunction(PragmaFunction::PragmaStatement("disable_profile", PragmaDisableProfiling));

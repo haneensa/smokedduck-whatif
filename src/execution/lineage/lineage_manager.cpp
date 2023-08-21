@@ -1,9 +1,9 @@
 #ifdef LINEAGE
 #include "duckdb/execution/lineage/lineage_manager.hpp"
 
+#include "duckdb/execution/operator/scan/physical_table_scan.hpp"
 #include "duckdb/main/client_context.hpp"
 #include "duckdb/parser/parsed_data/create_table_info.hpp"
-
 #include "duckdb/parser/statement/create_statement.hpp"
 #include "duckdb/planner/parsed_data/bound_create_table_info.hpp"
 #include "duckdb/catalog/catalog_entry/duck_table_entry.hpp"
@@ -28,6 +28,11 @@ void LineageManager::CreateOperatorLineage(ClientContext &context, PhysicalOpera
 		CreateOperatorLineage(context, op->children[i].get(), trace_lineage);
 	}
 	op->lineage_op = make_shared<OperatorLineage>(Allocator::Get(context), op->type, trace_lineage);
+	if (op->type == PhysicalOperatorType::TABLE_SCAN) {
+		string table_str = dynamic_cast<PhysicalTableScan *>(op)->ParamsToString();
+		// TODO there's probably a better way to do this...
+		op->lineage_op->table_name = table_str.substr(0, table_str.find('\n'));
+	}
 }
 
 // Iterate through in Postorder to ensure that children have PipelineLineageNodes set before parents
@@ -76,16 +81,18 @@ void LineageManager::CreateLineageTables(ClientContext &context, PhysicalOperato
 		for (idx_t col_i = 0; col_i < table_column_types[i].size(); col_i++) {
 			create_info->columns.AddColumn(move(table_column_types[i][col_i]));
 		}
-		table_lineage_op[table_name] =  op->lineage_op;
+		table_lineage_op[table_name] = op->lineage_op;
 		DuckTableEntry* table = (DuckTableEntry*)catalog.CreateTable(context, move(create_info)).get();
 	}
 
 	// persist intermediate values
-	if (persist_intermediate) {
+	if (persist_intermediate || CheckIfShouldPersistForKSemimodule(op)) {
 		vector<ColumnDefinition> table;
 		for (idx_t col_i = 0; col_i < op->types.size(); col_i++) {
 			table.emplace_back("col_" + to_string(col_i), op->types[col_i]);
 		}
+		// Explictly add rowid column because the auto-included rowid column is incorrect
+		table.emplace_back("rowid", LogicalType::INTEGER);
 
 		string table_name = "LINEAGE_" + to_string(query_id) + "_"  + op->GetName() + "_100";
 		auto create_info = make_uniq<CreateTableInfo>(catalog_name, DEFAULT_SCHEMA, table_name);
@@ -98,14 +105,18 @@ void LineageManager::CreateLineageTables(ClientContext &context, PhysicalOperato
 	}
 }
 
-void LineageManager::StoreQueryLineage(ClientContext &context, PhysicalOperator *op, string query) {
+void LineageManager::StoreQueryLineage(ClientContext &context, unique_ptr<PhysicalOperator> op, string query) {
 	if (!trace_lineage)
 		return;
 
 	idx_t query_id = query_to_id.size();
 	query_to_id.push_back(query);
-	queryid_to_plan[query_id] = op;
-	CreateLineageTables(context, op, query_id);
+	CreateLineageTables(context, op.get(), query_id);
+	queryid_to_plan[query_id] = move(op);
+}
+
+bool LineageManager::CheckIfShouldPersistForKSemimodule(PhysicalOperator *op) {
+	return persist_k_semimodule && op->child_of_aggregate;
 }
 
 } // namespace duckdb

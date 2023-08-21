@@ -51,10 +51,14 @@ public:
 	unordered_map<idx_t, Log> log_per_thead;
 	//! intermediate relation
 	ChunkCollection chunk_collection;
+	//! ensures we add the rowid column just once during the first time we read it and no more
+	idx_t intermediate_chunk_processed_counter = 0;
 	//! if the join hash table uses perfect hash
 	bool use_perfect_hash;
 	idx_t cache_offset;
 	idx_t cache_size;
+	//! Name of the scanned table if a scan
+	string table_name;
 };
 
 } // namespace duckdb
