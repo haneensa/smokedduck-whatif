@@ -1,10 +1,18 @@
 from collections import namedtuple
 import operators
+from provenance_models import ProvenanceModel
 
 Projection = namedtuple('Projection', ['in_index', 'alias', 'orig_table_name'])
 
 
-def get_query(id, plan, prov_model, backward_ids, forward_table, forward_ids):
+def get_query(
+        id: int,
+        plan: dict,
+        prov_model: ProvenanceModel,
+        backward_ids: list,
+        forward_table: str,
+        forward_ids: list
+) -> str:
     # Check that both forward table and forward ids are set together
     assert forward_table is None or (forward_table is not None and forward_ids is not None)
 
@@ -56,7 +64,12 @@ def get_query(id, plan, prov_model, backward_ids, forward_table, forward_ids):
     return ret
 
 
-def _generate_lineage_query(plan_node, query_id, prov_model, parent_join_cond):
+def _generate_lineage_query(
+        plan_node: dict,
+        query_id: int,
+        prov_model: ProvenanceModel,
+        parent_join_cond: str
+) -> (operators.Op, list, list, list):
     children = plan_node['children']
     projections = []
     froms = []
@@ -94,7 +107,7 @@ def _generate_lineage_query(plan_node, query_id, prov_model, parent_join_cond):
     return op, found_names, projections, froms
 
 
-def _find_next_lineage_table_name(so_far, name):
+def _find_next_lineage_table_name(so_far: set, name: str) -> str:
     orig_name = name
     i = 0
     while name in so_far:

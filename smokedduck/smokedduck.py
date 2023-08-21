@@ -5,13 +5,9 @@ import provenance_models
 import sql_statements
 
 
-def connect(database=':memory:', read_only=False, config=None):
-    return SmokedDuck(duckdb.connect(database, read_only, config if config is not None else {}))
-
-
 class SmokedDuck:
 
-    def __init__(self, duckdb_conn):
+    def __init__(self, duckdb_conn: duckdb.DuckDBPyConnection) -> None:
         self.duckdb_conn = duckdb_conn
         self.query_id = -1
         self.query_plan = None
@@ -19,7 +15,7 @@ class SmokedDuck:
         self.latest_relation = None
         self._conform_to_duckdb_interface()
 
-    def _conform_to_duckdb_interface(self):
+    def _conform_to_duckdb_interface(self) -> None:
         smokedduck_methods = set([name for name in SmokedDuck.__dict__.keys()])
         for name, method in duckdb.DuckDBPyConnection.__dict__.items():
             if callable(method) and name not in smokedduck_methods:
@@ -28,7 +24,13 @@ class SmokedDuck:
     def cursor(self):
         return SmokedDuck(self.duckdb_conn)
 
-    def execute(self, query, capture_lineage=None, parameters=None, multiple_parameter_sets=None):
+    def execute(
+            self,
+            query: str,
+            capture_lineage: str = None,
+            parameters: object = None,
+            multiple_parameter_sets: bool = False
+    ) -> duckdb.DuckDBPyRelation:
         prov_model = None
         if capture_lineage is not None:
             prov_model = provenance_models.get_prov_model(capture_lineage)
@@ -39,7 +41,7 @@ class SmokedDuck:
         if capture_lineage is not None:
             for pragma_str in prov_model.post_capture_pragmas():
                 self.duckdb_conn.execute(pragma_str)
-            metadata = self.duckdb_conn.execute(sql_statements.get_query_id_and_plan(query)).df()
+            metadata = self.duckdb_conn.execute(sql_statements.get_query_id_and_plan(), [query]).df()
             self.query_id = metadata['query_id'][0]
             self.query_plan = json.loads(metadata['plan'][0])
             self.captured_lineage_model = prov_model
@@ -50,7 +52,13 @@ class SmokedDuck:
         # format they want. TODO: optimize this to avoid conversion overhead
         return self.duckdb_conn.from_df(df)
 
-    def _lineage_query(self, model, backward_ids=None, forward_table=None, forward_ids=None):
+    def _lineage_query(
+            self,
+            model: str,
+            backward_ids: list = None,
+            forward_table: str = None,
+            forward_ids: list = None
+    ) -> duckdb.DuckDBPyConnection:
         if self.query_id == -1:
             print('No captured lineage to query')
             return None
@@ -66,20 +74,24 @@ class SmokedDuck:
                 forward_ids
             ))
 
-    def lineage(self):
+    def lineage(self) -> duckdb.DuckDBPyConnection:
         return self._lineage_query('lineage')
 
-    def why(self):
+    def why(self) -> duckdb.DuckDBPyConnection:
         return self._lineage_query('why')
 
-    def polynomial(self):
+    def polynomial(self) -> duckdb.DuckDBPyConnection:
         return self._lineage_query('polynomial')
 
-    def ksemimodule(self):
+    def ksemimodule(self) -> duckdb.DuckDBPyConnection:
         return self._lineage_query('ksemimodule')
 
-    def backward(self, backward_ids, model='lineage'):
+    def backward(self, backward_ids: list, model: str = 'lineage') -> duckdb.DuckDBPyConnection:
         return self._lineage_query(model, backward_ids)
 
-    def forward(self, forward_table, forward_ids, model='lineage'):
+    def forward(self, forward_table: str, forward_ids: list, model: str = 'lineage') -> duckdb.DuckDBPyConnection:
         return self._lineage_query(model, None, forward_table, forward_ids)
+
+
+def connect(database: str = ':memory:', read_only: bool = False, config: dict = None) -> SmokedDuck:
+    return SmokedDuck(duckdb.connect(database, read_only, config if config is not None else {}))
