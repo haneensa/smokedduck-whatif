@@ -61,7 +61,7 @@ class StreamingLimit(SingleOp):
         super().__init__(query_id, self.get_name(), op_id, parent_join_cond)
 
     def get_name(self) -> str:
-        return "LIMIT"
+        return "STREAMING_LIMIT"
 
 
 class Filter(SingleOp):
@@ -163,8 +163,9 @@ class HashJoin(Op):
 
     def get_from_string(self) -> str:
         if self.include_finalize:
-            join_build = " JOIN " + self.finalize + " AS " + self.build_name + " ON " + self.probe_name + ".rhs_index = " + \
-                         self.build_name + ".out_index JOIN " + self.build + " ON " + self.build + ".out_index = " + self.build_name +".in_index"
+            join_build = " JOIN " + self.finalize + " ON " + self.probe_name + ".rhs_index = " + \
+                         self.finalize + ".out_index JOIN " + self.build + " AS " + self.build_name + " ON " + \
+                         self.build_name + ".out_index = " + self.finalize +".in_index"
         else:
             join_build = " JOIN " + self.build + " AS " + self.build_name + " ON " + self.probe_name + ".rhs_index = " + \
                          self.build_name + ".out_index"
