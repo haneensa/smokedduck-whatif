@@ -205,7 +205,6 @@ SourceResultType PhysicalPerfectHashAggregate::GetData(ExecutionContext &context
 
 #ifdef LINEAGE
 	if (chunk.trace_lineage && chunk.log_record) {
-		chunk.log_record->data->Debug();
 		lineage_op->Capture(move(chunk.log_record), LINEAGE_SOURCE, 0);
 		chunk.log_record = nullptr;
 	}
