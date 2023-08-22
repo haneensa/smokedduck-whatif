@@ -147,12 +147,14 @@ unique_ptr<LogicalOperator> Optimizer::Optimize(unique_ptr<LogicalOperator> plan
 		column_lifetime.VisitOperator(*plan);
 	});
 
+#ifdef LINEAGE
+#else
 	// transform ORDER BY + LIMIT to TopN
 	RunOptimizer(OptimizerType::TOP_N, [&]() {
 		TopN topn;
 		plan = topn.Optimize(std::move(plan));
 	});
-
+#endif
 	// apply simple expression heuristics to get an initial reordering
 	RunOptimizer(OptimizerType::REORDER_FILTER, [&]() {
 		ExpressionHeuristics expression_heuristics(*this);
