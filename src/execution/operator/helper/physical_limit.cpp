@@ -161,6 +161,12 @@ SourceResultType PhysicalLimit::GetData(ExecutionContext &context, DataChunk &ch
 			break;
 		}
 	}
+#ifdef LINEAGE
+		if (ClientConfig::GetConfig(context.client).trace_lineage) {
+			auto lineage_data = make_shared<LineageRange>(state.current_offset-chunk.size(), state.current_offset);
+			lineage_op->Capture(make_shared<LogRecord>(move(lineage_data), 0), LINEAGE_SOURCE, 0);
+		}
+#endif
 
 	return chunk.size() > 0 ? SourceResultType::HAVE_MORE_OUTPUT : SourceResultType::FINISHED;
 }
