@@ -40,10 +40,10 @@ class SingleOp(Op):
             return self.inner_op_table_name + " AS " + self.single_op_table_name
         else:
             if self.is_agg_child:
-                return " JOIN " + self.inner_op_table_name + " AS " + self.single_op_table_name \
+                return "LEFT JOIN " + self.inner_op_table_name + " AS " + self.single_op_table_name \
                     + " ON " + self.parent_join_cond + " = " + "0"
             else:
-                return " JOIN " + self.inner_op_table_name + " AS " + self.single_op_table_name \
+                return "LEFT JOIN " + self.inner_op_table_name + " AS " + self.single_op_table_name \
                     + " ON " + self.parent_join_cond + " = " + self.single_op_table_name + ".out_index"
 
     def get_child_join_conds(self) -> list:
@@ -68,7 +68,7 @@ class StreamingLimit(SingleOp):
         super().__init__(query_id, self.get_name(), op_id, parent_join_cond)
 
     def get_name(self) -> str:
-        return "LIMIT"
+        return "STREAMING_LIMIT"
 
 
 class Filter(SingleOp):
@@ -118,16 +118,16 @@ class GroupBy(Op):
 
     def get_from_string(self) -> str:
         if self.include_finalize:
-            join_sink = " JOIN " + self.finalize + " ON " + self.source + ".in_index = " + self.finalize + ".out_index" + \
-                        " JOIN " + self.sink + " AS " + self.single_op_table_name + " ON " + self.finalize + ".in_index = " + \
+            join_sink = " LEFT JOIN " + self.finalize + " ON " + self.source + ".in_index = " + self.finalize + ".out_index" + \
+                        " LEFT JOIN " + self.sink + " AS " + self.single_op_table_name + " ON " + self.finalize + ".in_index = " + \
                         self.single_op_table_name + ".out_index"
         else:
-            join_sink = " JOIN " + self.sink + " AS " + self.single_op_table_name + " ON " + self.source + ".in_index = " + \
+            join_sink = " LEFT JOIN " + self.sink + " AS " + self.single_op_table_name + " ON " + self.source + ".in_index = " + \
                         self.single_op_table_name + ".out_index"
         if self.is_root:
             return self.source + join_sink
         else:
-            return "JOIN " + self.source + " ON " + self.parent_join_cond + " = " + self.source + ".out_index" + join_sink
+            return "LEFT JOIN " + self.source + " ON " + self.parent_join_cond + " = " + self.source + ".out_index" + join_sink
 
     def get_child_join_conds(self) -> list:
         return [self.single_op_table_name + ".in_index"]
@@ -170,16 +170,17 @@ class HashJoin(Op):
 
     def get_from_string(self) -> str:
         if self.include_finalize:
-            join_build = " JOIN " + self.finalize + " AS " + self.build_name + " ON " + self.probe_name + ".rhs_index = " + \
-                         self.build_name + ".out_index JOIN " + self.build + " ON " + self.build + ".out_index = " + self.build_name +".in_index"
+            join_build = " LEFT JOIN " + self.finalize + " ON " + self.probe_name + ".rhs_index = " + \
+                         self.finalize + ".out_index JOIN " + self.build + " AS " + self.build_name + " ON " + \
+                         self.build_name + ".out_index = " + self.finalize +".in_index"
         else:
-            join_build = " JOIN " + self.build + " AS " + self.build_name + " ON " + self.probe_name + ".rhs_index = " + \
+            join_build = " LEFT JOIN " + self.build + " AS " + self.build_name + " ON " + self.probe_name + ".rhs_index = " + \
                          self.build_name + ".out_index"
 
         if self.is_root:
             return self.probe + " AS " + self.probe_name + join_build
         else:
-            return "FULL OUTER JOIN " + self.probe + " AS " + self.probe_name + " ON " + self.parent_join_cond + " = " + \
+            return " LEFT JOIN " + self.probe + " AS " + self.probe_name + " ON " + self.parent_join_cond + " = " + \
                 self.probe_name + ".out_index" + join_build
 
     def get_child_join_conds(self) -> list:
