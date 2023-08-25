@@ -164,10 +164,6 @@ public:
 	//! FUNCTION ONLY!
 	DUCKDB_API void Verify();
 
-#ifdef LINEAGE
-	bool trace_lineage = false;
-	shared_ptr<LogRecord> log_record;
-#endif
 private:
 	//! The amount of tuples stored in the data chunk
 	idx_t count;
@@ -175,5 +171,11 @@ private:
 	idx_t capacity;
 	//! Vector caches, used to store data when ::Initialize is called
 	vector<VectorCache> vector_caches;
+
+#ifdef LINEAGE
+public:
+	bool trace_lineage = false;
+	shared_ptr<LogRecord> log_record;
+#endif
 };
 } // namespace duckdb
