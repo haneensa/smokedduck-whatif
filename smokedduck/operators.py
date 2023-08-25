@@ -7,6 +7,7 @@ class Op(ABC):
         self.id = op_id
         self.is_root = parent_join_cond is None
         self.parent_join_cond = parent_join_cond
+        self.is_agg_child = False
 
     @abstractmethod
     def get_name(self) -> str:
@@ -38,13 +39,19 @@ class SingleOp(Op):
         if self.is_root:
             return self.inner_op_table_name + " AS " + self.single_op_table_name
         else:
-            return "JOIN " + self.inner_op_table_name + " AS " + self.single_op_table_name \
-                + " ON " + self.parent_join_cond + " = " + self.single_op_table_name + ".out_index"
+            if self.is_agg_child:
+                return " JOIN " + self.inner_op_table_name + " AS " + self.single_op_table_name \
+                    + " ON " + self.parent_join_cond + " = " + "0"
+            else:
+                return " JOIN " + self.inner_op_table_name + " AS " + self.single_op_table_name \
+                    + " ON " + self.parent_join_cond + " = " + self.single_op_table_name + ".out_index"
 
     def get_child_join_conds(self) -> list:
         return [self.single_op_table_name + ".in_index"]
 
     def get_out_index(self) -> str:
+        if self.is_agg_child:
+            return "0 as out_index"
         return self.single_op_table_name + ".out_index"
 
 
@@ -237,6 +244,15 @@ class NestedLoopJoin(StandardJoin):
     def get_name(self) -> str:
         return "NESTED_LOOP_JOIN"
 
+class UngroupedAggregate(SingleOp):
+    def __init__(self, query_id: int, op_id: int, parent_join_cond: str) -> None:
+        super().__init__(query_id, self.get_name(), op_id, parent_join_cond)
+
+    def get_name(self) -> str:
+        return "UNGROUPED_AGGREGATE"
+
+    def get_from_string(self) -> str:
+        return ""
 
 class OperatorFactory():
     def __init__(self, finalize_checker: Callable[[str], bool]):
@@ -270,5 +286,7 @@ class OperatorFactory():
             return CrossProduct(query_id, op_id, parent_join_cond)
         elif op == 'NESTED_LOOP_JOIN':
             return NestedLoopJoin(query_id, op_id, parent_join_cond)
+        elif op == 'UNGROUPED_AGGREGATE':
+            return UngroupedAggregate(query_id, op_id, parent_join_cond)
         else:
-            raise Exception('Found unhandled operator')
+            raise Exception('Found unhandled operator', op)
