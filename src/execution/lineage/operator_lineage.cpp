@@ -192,6 +192,7 @@ idx_t OperatorLineage::GetLineageAsChunk(idx_t count_so_far, DataChunk &insert_c
 			insert_chunk.data[0].Reference(in_index);
 			insert_chunk.data[1].Sequence(count_so_far, 1, res_count); // out_index
 			insert_chunk.data[2].Reference(thread_id_vec);  // thread_id
+			count_so_far += res_count;
 			break;
 		}
 		case PhysicalOperatorType::HASH_GROUP_BY:
@@ -218,6 +219,7 @@ idx_t OperatorLineage::GetLineageAsChunk(idx_t count_so_far, DataChunk &insert_c
 				insert_chunk.SetCardinality(res_count);
 				insert_chunk.data[0].Sequence(count_so_far, 1, res_count);
 				insert_chunk.data[2].Reference(thread_id_vec);
+				count_so_far += res_count;
 			} else if (stage_idx == LINEAGE_FINALIZE) {
 				//dynamic_cast<CollectionLineage &>(*data_woffset->data).Debug();
 				auto lineage_vec = dynamic_cast<CollectionLineage &>(*data_woffset->data).lineage_vec;
@@ -234,6 +236,7 @@ idx_t OperatorLineage::GetLineageAsChunk(idx_t count_so_far, DataChunk &insert_c
 
 				insert_chunk.SetCardinality(res_count);
 				insert_chunk.data[2].Reference(thread_id_vec);
+				count_so_far += res_count;
 			} else {
 				// in_index|LogicalType::BIGINT, out_index|LogicalType::INTEGER, thread_id| LogicalType::INTEGER
 				idx_t res_count = data_woffset->data->Count();
@@ -244,6 +247,7 @@ idx_t OperatorLineage::GetLineageAsChunk(idx_t count_so_far, DataChunk &insert_c
 				insert_chunk.data[0].Reference(in_index);
 				insert_chunk.data[1].Sequence(count_so_far, 1, res_count); // out_index
 				insert_chunk.data[2].Reference(thread_id_vec);
+				count_so_far += res_count;
 			}
 			break;
 		}
@@ -334,6 +338,7 @@ idx_t OperatorLineage::GetLineageAsChunk(idx_t count_so_far, DataChunk &insert_c
 				insert_chunk.data[0].Reference(in_index);
 				insert_chunk.data[1].Sequence(count_so_far, 1, res_count); // out_index
 				insert_chunk.data[2].Reference(thread_id_vec);  // thread_id
+				count_so_far += res_count;
 			}
 			break;
 		} case PhysicalOperatorType::HASH_JOIN: {
@@ -368,8 +373,6 @@ idx_t OperatorLineage::GetLineageAsChunk(idx_t count_so_far, DataChunk &insert_c
 					} else {
 						// last batch
 						cache = false;
-						cache_offset = 0;
-						cache_size = 0;
 					}
 
 					Vector lhs_payload(types[0],  data_woffset->data->Process(0));
@@ -381,16 +384,20 @@ idx_t OperatorLineage::GetLineageAsChunk(idx_t count_so_far, DataChunk &insert_c
 					}
 
 					// adjust the offset
-					insert_chunk.Slice(remaining_sel, remaining_count);
 					insert_chunk.data[0].Reference(lhs_payload);
 					insert_chunk.data[1].Reference(rhs_payload);
 					//insert_chunk.data[1].Sequence(count_so_far, 1, res_count);
 					insert_chunk.data[2].Reference(thread_id_vec);
+					insert_chunk.Slice(remaining_sel, remaining_count);
 					insert_chunk.SetCardinality(remaining_count);
 					count_so_far += remaining_count;
 					if (cache) {
 						cache_offset += remaining_count;
+					} else {
+						cache_offset = 0;
+						cache_size = 0;
 					}
+
 				} else {
 					idx_t res_count = data_woffset->data->Count();
 

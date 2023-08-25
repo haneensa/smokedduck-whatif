@@ -51,7 +51,7 @@ OperatorResultType PhysicalFilter::ExecuteInternal(ExecutionContext &context, Da
 		chunk.Reference(input);
 #ifdef LINEAGE
 		if (lineage_op && lineage_op->trace_lineage) {
-			auto lineage_data = make_uniq<LineageConstant>(state.in_start, input.size());
+			auto lineage_data = make_uniq<LineageRange>(0, input.size());
 			chunk.log_record = make_shared<LogRecord>(move(lineage_data), state.in_start);
 		}
 #endif
