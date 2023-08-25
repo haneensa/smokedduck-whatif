@@ -60,7 +60,7 @@ OperatorResultType PhysicalStreamingLimit::Execute(ExecutionContext &context, Da
 #ifdef LINEAGE
 		if (ClientConfig::GetConfig(context.client).trace_lineage) {
 			auto lineage_data = make_shared<LineageRange>(current_offset-input.size(), current_offset);
-			lineage_op->Capture(make_shared<LogRecord>(move(lineage_data), state.in_start), LINEAGE_SOURCE, 0);
+			lineage_op->Capture(make_shared<LogRecord>(move(lineage_data), 0), LINEAGE_SOURCE, 0);
 		}
 #endif
 	}

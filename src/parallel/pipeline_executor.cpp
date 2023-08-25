@@ -399,7 +399,7 @@ OperatorResultType PipelineExecutor::Execute(DataChunk &input, DataChunk &result
 			auto op_state = intermediate_states[current_intermediate - 1].get();
 			if (context.client.client_data->lineage_manager->trace_lineage) {
 				// Add virtual read
-				if (current_intermediate == initial_idx + 1) {
+				if ((current_intermediate - 1) == 0) {
 					op_state->in_start =  local_source_state->out_start;
 				} else {
 					op_state->in_start =  intermediate_states[current_intermediate - 2]->out_start;

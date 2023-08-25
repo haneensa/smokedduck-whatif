@@ -261,6 +261,7 @@ OperatorResultType CachingPhysicalOperator::Execute(ExecutionContext &context, D
 	if (!state.can_cache_chunk) {
 #ifdef LINEAGE
 		if (ClientConfig::GetConfig(context.client).trace_lineage && chunk.log_record) {
+			chunk.log_record->in_start = state.in_start;
 			lineage_op->Capture(move(chunk.log_record), LINEAGE_SOURCE, 0);
 			chunk.log_record = nullptr;
 		}
@@ -286,6 +287,7 @@ OperatorResultType CachingPhysicalOperator::Execute(ExecutionContext &context, D
 #ifdef LINEAGE
 		if (chunk.size() > 0 && ClientConfig::GetConfig(context.client).trace_lineage && chunk.log_record) {
 			// accumelate lineage
+			chunk.log_record->in_start = state.in_start;
 			state.cached_lineage->push_back(std::move(chunk.log_record));
 			chunk.log_record = nullptr;
 		}
@@ -309,6 +311,7 @@ OperatorResultType CachingPhysicalOperator::Execute(ExecutionContext &context, D
 	} else {
 		// no cache, return chunk's lineage
 		if (ClientConfig::GetConfig(context.client).trace_lineage && chunk.log_record) {
+			chunk.log_record->in_start = state.in_start;
 			lineage_op->Capture(move(chunk.log_record), LINEAGE_SOURCE, 0);
 			chunk.log_record = nullptr;
 		}
