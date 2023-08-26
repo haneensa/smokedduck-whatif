@@ -179,7 +179,6 @@ idx_t OperatorLineage::GetLineageAsChunk(idx_t count_so_far, DataChunk &insert_c
 
 		switch (this->type) {
 		case PhysicalOperatorType::COLUMN_DATA_SCAN:
-		case PhysicalOperatorType::ORDER_BY:
 		case PhysicalOperatorType::FILTER:
 		case PhysicalOperatorType::LIMIT:
 		case PhysicalOperatorType::STREAMING_LIMIT:
@@ -191,6 +190,56 @@ idx_t OperatorLineage::GetLineageAsChunk(idx_t count_so_far, DataChunk &insert_c
 			insert_chunk.SetCardinality(res_count);
 			Vector in_index = data_woffset->data->GetVecRef(types[0], data_woffset->in_start);
 			insert_chunk.data[0].Reference(in_index);
+			insert_chunk.data[1].Sequence(count_so_far, 1, res_count); // out_index
+			insert_chunk.data[2].Reference(thread_id_vec);  // thread_id
+			count_so_far += res_count;
+			break;
+		}
+		case PhysicalOperatorType::ORDER_BY: {
+			D_ASSERT(stage_idx == LINEAGE_SOURCE);
+			// schema: [INTEGER in_index, INTEGER out_index, INTEGER thread_id]
+			idx_t res_count = data_woffset->data->Count();
+			Vector in_index = data_woffset->data->GetVecRef(types[0], data_woffset->in_start);
+			insert_chunk.data[0].Reference(in_index);
+			if (cache_offset < cache_size) {
+				res_count = (cache_size - cache_offset);
+				if (res_count / STANDARD_VECTOR_SIZE >= 1) {
+					res_count = STANDARD_VECTOR_SIZE;
+					cache = true;
+				} else {
+					// last batch
+					cache = false;
+				}
+				SelectionVector remaining_sel(res_count);
+				idx_t remaining_count = 0;
+				for (idx_t i = 0; i < res_count; i++) {
+					remaining_sel.set_index(remaining_count++, cache_offset + i);
+				}
+				cache_offset += res_count;
+				insert_chunk.Slice(remaining_sel, remaining_count);
+
+				if (!cache) {
+					cache_offset = 0;
+					cache_size = 0;
+				}
+			} else {
+				if (res_count > STANDARD_VECTOR_SIZE) {
+					cache = true;
+					cache_size = res_count;
+					res_count = STANDARD_VECTOR_SIZE;
+					SelectionVector remaining_sel(res_count);
+					idx_t remaining_count = 0;
+					for (idx_t i = 0; i < res_count; i++) {
+						remaining_sel.set_index(remaining_count++,  i);
+					}
+					cache_offset += res_count;
+
+					insert_chunk.Slice(remaining_sel, remaining_count);
+
+				}
+			}
+
+			insert_chunk.SetCardinality(res_count);
 			insert_chunk.data[1].Sequence(count_so_far, 1, res_count); // out_index
 			insert_chunk.data[2].Reference(thread_id_vec);  // thread_id
 			count_so_far += res_count;
