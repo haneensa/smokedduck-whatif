@@ -131,7 +131,7 @@ pip install pandas
 
 # Build SmokedDuck locally
 cd tools/pythonpkg
-python setup.py install
+BUILD_LINEAGE=true python setup.py install
 
 # Run SmokedDuck
 cd ../..
