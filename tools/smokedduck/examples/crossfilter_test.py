@@ -47,3 +47,4 @@ print('Re-calculated a results')
 print(acon.forward('t1', set(selected_b).intersection(selected_c), model='ksemimodule').df())
 print()
 
+con.execute('drop table t1')

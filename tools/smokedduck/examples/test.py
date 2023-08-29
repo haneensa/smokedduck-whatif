@@ -36,4 +36,7 @@ print(con.backward([1, 3], 'polynomial').df())
 print(con.forward('t1', [0, 1]).df())
 print(con.forward('t2', [2, 3]).df())
 
+con.execute('drop table t1')
+con.execute('drop table t2')
+
 con.duckdb_conn.close()

@@ -1,9 +1,10 @@
 import duckdb
 import json
-import lineage_query
-import provenance_models
-from operators import OperatorFactory
-import sql_statements
+
+from . import lineage_query
+from . import provenance_models
+from .operators import OperatorFactory
+from . import sql_statements
 
 
 class SmokedDuck:

@@ -1,6 +1,5 @@
 import pandas as pd
 import smokedduck
-import sql_statements
 
 p1 = pd.DataFrame({'a': [42, 43, 44, 45], 'b': ['a', 'b', 'a', 'b']})
 p2 = pd.DataFrame({'b': ['a', 'a', 'c', 'b'], 'c': [4, 5, 6, 7]})
@@ -14,3 +13,6 @@ print(con.ksemimodule().df())
 
 print(con.backward([0], 'ksemimodule').df())
 print(con.forward('t1', [0], 'ksemimodule').df())
+
+con.execute('drop table t1')
+con.execute('drop table t2')

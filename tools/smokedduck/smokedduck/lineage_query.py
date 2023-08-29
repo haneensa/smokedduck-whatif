@@ -1,6 +1,6 @@
 from collections import namedtuple
-from operators import Op, OperatorFactory
-from provenance_models import ProvenanceModel
+from .operators import Op, OperatorFactory
+from .provenance_models import ProvenanceModel
 
 Projection = namedtuple('Projection', ['in_index', 'alias', 'orig_table_name'])
 

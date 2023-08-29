@@ -15,3 +15,6 @@ con.execute('SELECT t1.b, sum(a + c) FROM t1 join (select b, avg(c) as c from t2
 
 # Printing lineage that was captured from base query
 print(con.lineage().df())
+
+con.execute('drop table t1')
+con.execute('drop table t2')

@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "smokedduck"
+version = "0.1.0"
+description = "Lineage enabled duckdb"
+authors = ["Haneen Mohammed <your@email.com>"]
+
+[tool.poetry.dev-dependencies]
+pytest = "^6.2.4"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+
+[tool.poetry.dependencies]
+python = "^3.8"
+duckdb = {path = "/home/haneenmo/duckdb_lineage/tools/pythonpkg/dist/duckdb-0.1.dev28329+gb9c20ef.d20230828-cp39-cp39-linux_x86_64.whl"}
+numpy = "^1.21.0"
+# Other dependencies

@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from operators import Op, OperatorFactory
+from .operators import Op, OperatorFactory
 
 
 class ProvenanceModel(ABC):
