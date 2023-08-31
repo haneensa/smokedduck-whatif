@@ -24,6 +24,10 @@ class Op(ABC):
     @abstractmethod
     def get_out_index(self) -> str:
         pass
+    
+    @abstractmethod
+    def get_lineage(self) -> str:
+        pass
 
 
 class SingleOp(Op):
@@ -53,6 +57,10 @@ class SingleOp(Op):
         if self.is_agg_child:
             return "0 as out_index"
         return self.single_op_table_name + ".out_index"
+    
+    def get_lineage(self) -> str:
+        self.is_root = True
+        return "select in_index, out_index from " + self.get_from_string()
 
 
 class Limit(SingleOp):
@@ -134,6 +142,10 @@ class GroupBy(Op):
 
     def get_out_index(self) -> str:
         return self.source + ".out_index"
+    
+    def get_lineage(self) -> str:
+        self.is_root = True
+        return f"select {self.single_op_table_name}.in_index, {self.source}.out_index from " + self.get_from_string()
 
 
 class HashGroupBy(GroupBy):
@@ -188,6 +200,10 @@ class HashJoin(Op):
 
     def get_out_index(self) -> str:
         return self.probe_name + ".out_index"
+    
+    def get_lineage(self) -> str:
+        self.is_root = True
+        return f"select {self.probe_name}.lhs_index, {self.build_name}.in_index as rhs_index, {self.probe_name}.out_index from " + self.get_from_string()
 
 
 class StandardJoin(Op):
@@ -211,6 +227,10 @@ class StandardJoin(Op):
 
     def get_out_index(self) -> str:
         return self.single_op_table_name + ".out_index"
+    
+    def get_lineage(self) -> str:
+        self.is_root = True
+        return f"select {self.single_op_table_name}.lhs_index, {self.single_op_table_name}.rhs_index, {self.single_op_table_name}.out_index from " + self.get_from_string()
 
 
 class BlockwiseNLJoin(StandardJoin):
@@ -224,9 +244,32 @@ class BlockwiseNLJoin(StandardJoin):
 class PiecewiseMergeJoin(StandardJoin):
     def __init__(self, query_id: int, op_id: int, parent_join_cond: str) -> None:
         super().__init__(query_id, self.get_name(), op_id, parent_join_cond)
+        self.probe = self.single_op_table_name + "_0"
+        self.build = self.single_op_table_name + "_1"
+        
+        self.probe_name = self.single_op_table_name
+        self.build_name = self.single_op_table_name + "_build"
 
     def get_name(self) -> str:
         return "PIECEWISE_MERGE_JOIN"
+    
+    def get_from_string(self) -> str:
+        join_build = f" LEFT JOIN  {self.build} AS  {self.build_name} ON {self.build_name}.out_index={self.probe_name}.rhs_index"
+        if self.is_root:
+            return f"{self.probe}  AS {self.probe_name} {join_build}"
+        else:
+            return "FULL OUTER JOIN " + self.probe_name + " AS " + self.probe_name \
+                + " ON " + self.parent_join_cond + " = " + self.single_op_table_name + ".out_index" + join_build
+
+    def get_child_join_conds(self) -> list:
+        return [self.probe_name + ".lhs_index", self.build_name + ".in_index"]
+
+    def get_out_index(self) -> str:
+        return self.probe_name + ".out_index"
+    
+    def get_lineage(self) -> str:
+        self.is_root = True
+        return f"select {self.probe_name}.lhs_index, {self.build_name}.in_index as rhs_index, {self.probe_name}.out_index from " + self.get_from_string()
 
 
 class CrossProduct(StandardJoin):

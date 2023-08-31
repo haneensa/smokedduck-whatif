@@ -49,9 +49,7 @@ class SmokedDuck:
         if capture_lineage is not None:
             for pragma_str in prov_model.post_capture_pragmas():
                 self.duckdb_conn.execute(pragma_str)
-            metadata = self.duckdb_conn.execute(sql_statements.get_query_id_and_plan(), [query]).df()
-            self.query_id = metadata['query_id'][0]
-            self.query_plan = json.loads(metadata['plan'][0])
+            self.query_plan, self.query_id = self.get_query_plan(query)
             self.captured_lineage_model = prov_model
         else:
             self.query_id = -1
@@ -60,6 +58,17 @@ class SmokedDuck:
         # format they want. TODO: optimize this to avoid conversion overhead
         return self.duckdb_conn.from_df(df)
 
+    def get_query_plan(self, query: str) -> (dict, int):
+        metadata = self.duckdb_conn.execute(sql_statements.get_query_id_and_plan(), [query]).df()
+        query_id = metadata['query_id'][0]
+        query_plan = json.loads(metadata['plan'][0])
+        return query_plan, query_id
+
+    def get_operator_lineage(self, op_name: str, query_id: int) -> duckdb.DuckDBPyRelation:
+        op = self.operator_factory.get_op(op_name, query_id, None)
+        lq = op.get_lineage()
+        return self.duckdb_conn.from_df(self.duckdb_conn.execute(lq).df())
+        
     def _lineage_query(
             self,
             model: str,
