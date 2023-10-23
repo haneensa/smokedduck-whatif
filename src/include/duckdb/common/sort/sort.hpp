@@ -141,7 +141,7 @@ public:
 	//! Sorted data
 	vector<unique_ptr<SortedBlock>> sorted_blocks;
 #ifdef LINEAGE
-	shared_ptr<LogRecord> log_record;
+	shared_ptr<Log> log_per_thread;
 #endif
 private:
 	//! Selection vector and addresses for scattering the data to rows

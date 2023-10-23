@@ -148,6 +148,9 @@ unique_ptr<GlobalSourceState> PhysicalLimit::GetGlobalSourceState(ClientContext 
 SourceResultType PhysicalLimit::GetData(ExecutionContext &context, DataChunk &chunk, OperatorSourceInput &input) const {
 	auto &gstate = sink_state->Cast<LimitGlobalState>();
 	auto &state = input.global_state.Cast<LimitSourceState>();
+#ifdef LINEAGE
+	idx_t orig_offset = state.current_offset;
+#endif
 	while (state.current_offset < gstate.limit + gstate.offset) {
 		if (!state.initialized) {
 			gstate.data.InitializeScan(state.scan_state);
@@ -163,8 +166,8 @@ SourceResultType PhysicalLimit::GetData(ExecutionContext &context, DataChunk &ch
 	}
 #ifdef LINEAGE
 		if (ClientConfig::GetConfig(context.client).trace_lineage) {
-			auto lineage_data = make_shared<LineageRange>(state.current_offset-chunk.size(), state.current_offset);
-			lineage_op->Capture(make_shared<LogRecord>(move(lineage_data), 0), LINEAGE_SOURCE, 0);
+	    auto lop = reinterpret_cast<LimitLog*>(lineage_op->GetLog(0).get());
+      lop->lineage.push_back({orig_offset, chunk.size(), gstate.offset});
 		}
 #endif
 

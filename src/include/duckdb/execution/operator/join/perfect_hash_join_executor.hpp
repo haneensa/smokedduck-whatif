@@ -47,7 +47,7 @@ public:
 	bool BuildPerfectHashTable(LogicalType &type);
 
 #ifdef LINEAGE
-	shared_ptr<LogRecord> log_record;
+  shared_ptr<Log> log_per_thread;
 	bool trace_lineage = false;
 #endif
 private:

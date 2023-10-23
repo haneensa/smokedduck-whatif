@@ -55,12 +55,15 @@ OperatorResultType PhysicalStreamingLimit::Execute(ExecutionContext &context, Da
 	                                  limit_expression.get(), offset_expression.get())) {
 		return OperatorResultType::FINISHED;
 	}
+#ifdef LINEAGE
+	idx_t orig_offset = current_offset;
+#endif
 	if (PhysicalLimit::HandleOffset(input, current_offset, offset, limit)) {
 		chunk.Reference(input);
 #ifdef LINEAGE
 		if (ClientConfig::GetConfig(context.client).trace_lineage) {
-			auto lineage_data = make_shared<LineageRange>(current_offset-input.size(), current_offset);
-			lineage_op->Capture(make_shared<LogRecord>(move(lineage_data), 0), LINEAGE_SOURCE, 0);
+	    auto lop = reinterpret_cast<LimitLog*>(lineage_op->GetLog(0).get());
+      lop->lineage.push_back({orig_offset, input.size(), offset});
 		}
 #endif
 	}

@@ -105,7 +105,6 @@ public:
 	}
 #ifdef LINEAGE
 	bool trace_lineage = false;
-	shared_ptr<LogRecord> log_record;
 #endif
 };
 

@@ -19,8 +19,7 @@
 #include "duckdb/execution/physical_operator_states.hpp"
 #include "duckdb/common/enums/order_preservation_type.hpp"
 #ifdef LINEAGE
-#include "duckdb/execution/lineage/lineage_manager.hpp"
-//#include "duckdb/parallel/task_context.hpp"
+#include "duckdb/execution/lineage/operator_lineage.hpp"
 #endif
 
 namespace duckdb {
@@ -45,15 +44,6 @@ public:
 
 	virtual ~PhysicalOperator() {
 	}
-
-#ifdef LINEAGE
-	//! ID of this operator within the physical plan
-	idx_t id;
-	//! Lineage captured for this operator
-	shared_ptr<OperatorLineage> lineage_op;
-	// bool delim_handled = false;
-	bool child_of_aggregate = false;
-#endif
 
 	//! The physical operator type
 	PhysicalOperatorType type;
@@ -210,6 +200,17 @@ public:
 		}
 		return reinterpret_cast<const TARGET &>(*this);
 	}
+
+public:
+#ifdef LINEAGE
+	//! ID of this operator within the physical plan
+	idx_t id;
+	//! Lineage captured for this operator
+	shared_ptr<OperatorLineage> lineage_op;
+	// bool delim_handled = false;
+	bool child_of_aggregate = false;
+#endif
+
 };
 
 //! Contains state for the CachingPhysicalOperator
@@ -225,9 +226,6 @@ public:
 	bool initialized = false;
 	//! Whether or not the chunk can be cached
 	bool can_cache_chunk = false;
-#ifdef LINEAGE
-	shared_ptr<vector<shared_ptr<LogRecord>>> cached_lineage;
-#endif
 };
 
 //! Base class that caches output from child Operator class. Note that Operators inheriting from this class should also

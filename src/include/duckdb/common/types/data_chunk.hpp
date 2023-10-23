@@ -15,7 +15,7 @@
 #include "duckdb/common/winapi.hpp"
 
 #ifdef LINEAGE
-#include "duckdb/execution/lineage/lineage_data.hpp"
+#include "duckdb/execution/lineage/operator_lineage.hpp"
 #endif
 struct ArrowArray;
 
@@ -175,7 +175,7 @@ private:
 #ifdef LINEAGE
 public:
 	bool trace_lineage = false;
-	shared_ptr<LogRecord> log_record;
+  shared_ptr<Log> log_per_thread;
 #endif
 };
 } // namespace duckdb

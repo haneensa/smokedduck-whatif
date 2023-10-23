@@ -80,12 +80,14 @@ SourceResultType PhysicalTableScan::GetData(ExecutionContext &context, DataChunk
 	auto &state = input.local_state.Cast<TableScanLocalSourceState>();
 
 	TableFunctionInput data(bind_data.get(), state.local_state.get(), gstate.global_state.get());
+#ifdef LINEAGE
+  if (lineage_op) {
+    chunk.log_per_thread = lineage_op->GetLog(0);
+  }
+#endif
 	function.function(context.client, data, chunk);
 #ifdef LINEAGE
-	// TODO: get from chunk LogRecord
-	if (lineage_op && chunk.log_record) {
-		lineage_op->Capture(move(chunk.log_record), LINEAGE_SOURCE, context.thread.thread_id);
-	}
+  chunk.log_per_thread = nullptr;
 #endif
 	return chunk.size() == 0 ? SourceResultType::FINISHED : SourceResultType::HAVE_MORE_OUTPUT;
 }

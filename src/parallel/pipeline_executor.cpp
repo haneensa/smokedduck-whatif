@@ -92,7 +92,7 @@ bool PipelineExecutor::TryFlushCachingOperators() {
 			if ((context.client.client_data->lineage_manager->persist_intermediate ||
 			     context.client.client_data->lineage_manager->CheckIfShouldPersistForKSemimodule(&current_operator)
 			     ) && curr_chunk.size() > 0) {
-				current_operator.lineage_op->chunk_collection.Append(curr_chunk);
+//				current_operator.lineage_op->chunk_collection.Append(curr_chunk);
 			}
 #endif
 			EndOperator(current_operator, &curr_chunk);
@@ -418,7 +418,7 @@ OperatorResultType PipelineExecutor::Execute(DataChunk &input, DataChunk &result
 			if ((context.client.client_data->lineage_manager->persist_intermediate ||
 			     context.client.client_data->lineage_manager->CheckIfShouldPersistForKSemimodule(&current_operator)
 			         ) && current_chunk.size() > 0) {
-				current_operator.lineage_op->chunk_collection.Append(current_chunk);
+//				current_operator.lineage_op->chunk_collection.Append(current_chunk);
 			}
 #endif
 			EndOperator(current_operator, &current_chunk);
@@ -514,7 +514,7 @@ SourceResultType PipelineExecutor::FetchFromSource(DataChunk &result) {
 	if (context.client.client_data->lineage_manager->persist_intermediate ||
 	     context.client.client_data->lineage_manager->CheckIfShouldPersistForKSemimodule(pipeline.source.get())
 	         ) {
-		pipeline.source->lineage_op->chunk_collection.Append(result);
+//		pipeline.source->lineage_op->chunk_collection.Append(result);
 	}
 #endif
 	// Ensures Sinks only return empty results when Blocking or Finished

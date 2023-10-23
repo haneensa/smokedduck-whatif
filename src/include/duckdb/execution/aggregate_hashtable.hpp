@@ -150,10 +150,6 @@ public:
 
 	void Finalize();
 
-#ifdef LINEAGE
-	bool trace_lineage = false;
-	shared_ptr<LogRecord> log_record;
-#endif
 private:
 	HtEntryType entry_type;
 
@@ -207,6 +203,11 @@ private:
 	template <class ENTRY>
 	idx_t FindOrCreateGroupsInternal(AggregateHTAppendState &state, DataChunk &groups, Vector &group_hashes,
 	                                 Vector &addresses, SelectionVector &new_groups);
+#ifdef LINEAGE
+public:
+	bool trace_lineage = false;
+  shared_ptr<Log> log_per_thread;
+#endif
 };
 
 } // namespace duckdb

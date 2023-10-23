@@ -158,10 +158,10 @@ void RadixPartitionedHashTable::Sink(ExecutionContext &context, DataChunk &chunk
 		llstate.total_groups +=
 		    gstate.finalized_hts[0]->AddChunk(gstate.append_state, group_chunk, payload_input, filter);
 #ifdef LINEAGE
-		if (group_chunk.log_record) {
+		/*if (group_chunk.log_record) {
 			chunk.log_record = move(group_chunk.log_record);
 			group_chunk.log_record = nullptr;
-		}
+		}*/
 #endif
 		return;
 	}
@@ -180,12 +180,6 @@ void RadixPartitionedHashTable::Sink(ExecutionContext &context, DataChunk &chunk
 #endif
 	llstate.total_groups += llstate.ht->AddChunk(group_chunk, payload_input,
 	                                             gstate.partitioned && gstate.partition_info.n_partitions > 1, filter);
-#ifdef LINEAGE
-	if (group_chunk.trace_lineage && group_chunk.log_record) {
-		chunk.log_record = move(group_chunk.log_record);
-		group_chunk.log_record = nullptr;
-	}
-#endif
 	if (llstate.total_groups >= radix_limit) {
 		gstate.partitioned = true;
 	}
@@ -270,7 +264,7 @@ bool RadixPartitionedHashTable::Finalize(ClientContext &context, GlobalSinkState
 		     // TODO possible optimization, if total count < limit for 32 bit ht, use that one
 		     // create this ht here so finalize needs no lock on gstate
 #ifdef LINEAGE
-		shared_ptr<vector<shared_ptr<LineageData>>> lineage_per_grouping = make_shared<vector<shared_ptr<LineageData>>>();
+		//shared_ptr<vector<shared_ptr<LineageData>>> lineage_per_grouping = make_shared<vector<shared_ptr<LineageData>>>();
 #endif
 		gstate.finalized_hts.push_back(make_shared<GroupedAggregateHashTable>(
 		    context, allocator, group_types, op.payload_types, op.bindings, HtEntryType::HT_WIDTH_64));
@@ -283,14 +277,14 @@ bool RadixPartitionedHashTable::Finalize(ClientContext &context, GlobalSinkState
 #endif
 				gstate.finalized_hts[0]->Combine(*unpartitioned_ht);
 #ifdef LINEAGE
-				if (gstate.trace_lineage && gstate.finalized_hts[0]->log_record) {
+			//	if (gstate.trace_lineage && gstate.finalized_hts[0]->log_record) {
 					// todo: accumelate them instead of overwriting
 					// need also to know the index of the partition
 					//std::cout << "finalize " << std::endl;
 					//gstate.finalized_hts[0]->log_record->data->Debug();
-					lineage_per_grouping->push_back(move(gstate.finalized_hts[0]->log_record->data));
-					gstate.finalized_hts[0]->log_record = nullptr;
-				}
+					//lineage_per_grouping->push_back(move(gstate.finalized_hts[0]->log_record->data));
+		//			gstate.finalized_hts[0]->log_record = nullptr;
+			//	}
 
 #endif
 				unpartitioned_ht.reset();
@@ -301,7 +295,7 @@ bool RadixPartitionedHashTable::Finalize(ClientContext &context, GlobalSinkState
 #ifdef LINEAGE
 		if (gstate.trace_lineage) {
 			// need also to know the index of the partition
- 			gstate.log_record = make_shared<LogRecord>(make_shared<CollectionLineage>(move(lineage_per_grouping), lineage_per_grouping->size()), 0);
+ 			//gstate.log_record = make_shared<LogRecord>(make_shared<CollectionLineage>(move(lineage_per_grouping), lineage_per_grouping->size()), 0);
 		}
 
 #endif
@@ -518,10 +512,10 @@ SourceResultType RadixPartitionedHashTable::GetData(ExecutionContext &context, D
 #endif
 		elements_found = lstate.ht->Scan(global_scan_state, local_scan_state, lstate.scan_chunk);
 #ifdef LINEAGE
-		if (lstate.ht->log_record) {
+	/*	if (lstate.ht->log_record) {
 			chunk.log_record = move(lstate.ht->log_record);
 			lstate.ht->log_record = nullptr;
-		}
+		}*/
 #endif
 		if (elements_found > 0) {
 			break;

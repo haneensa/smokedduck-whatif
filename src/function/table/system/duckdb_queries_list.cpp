@@ -24,8 +24,18 @@ static unique_ptr<FunctionData> DuckDBQueriesListBind(ClientContext &context, Ta
 	names.emplace_back("query");
 	return_types.emplace_back(LogicalType::VARCHAR);
 
-	names.emplace_back("plan");
-	return_types.emplace_back(LogicalType::VARCHAR);
+	names.emplace_back("size_bytes_max");
+	return_types.emplace_back(LogicalType::INTEGER);
+
+	names.emplace_back("size_bytes_min");
+	return_types.emplace_back(LogicalType::INTEGER);
+
+	names.emplace_back("nchunks");
+	return_types.emplace_back(LogicalType::INTEGER);
+
+	names.emplace_back("postprocess_time");
+	return_types.emplace_back(LogicalType::FLOAT);
+
 
 
 	return nullptr;
@@ -60,6 +70,7 @@ void DuckDBQueriesListFunction(ClientContext &context, TableFunctionInput &data_
 	// start returning values
 	// either fill up the chunk or return all the remaining columns
 	idx_t count = 0;
+  std::vector<idx_t> stats(3, 0);
 	while (data.offset < query_to_id.size() && count < STANDARD_VECTOR_SIZE) {
 		string query = query_to_id[data.offset];
 		idx_t col = 0;
@@ -67,10 +78,20 @@ void DuckDBQueriesListFunction(ClientContext &context, TableFunctionInput &data_
 		output.SetValue(col++, count,Value::INTEGER(data.offset));
 		// query, VARCHAR
 		output.SetValue(col++, count, query);
-		// plan, VARCHAR
-		output.SetValue(col++, count, PlanToString(
-		                                  context.client_data->lineage_manager->queryid_to_plan[data.offset].get()
-		                                  ));
+
+    // size_byes_max
+		output.SetValue(col++, count,Value::INTEGER(stats[0]));
+
+    // size_bytes_min
+		output.SetValue(col++, count,Value::INTEGER(stats[2]));
+
+    // nchunks
+		output.SetValue(col++, count,Value::INTEGER(stats[1]));
+
+    // postprocess_time
+    float postprocess_time = 0.0;//((float) end - start) / CLOCKS_PER_SEC;
+		output.SetValue(col++, count,Value::FLOAT(postprocess_time));
+
 
 		count++;
 		data.offset++;

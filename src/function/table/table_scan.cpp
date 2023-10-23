@@ -116,6 +116,11 @@ static void TableScanFunc(ClientContext &context, TableFunctionInput &data_p, Da
 	auto &state = data_p.local_state->Cast<TableScanLocalState>();
 	auto &transaction = DuckTransaction::Get(context, bind_data.table.catalog);
 	auto &storage = bind_data.table.GetStorage();
+#ifdef LINEAGE
+  if (output.log_per_thread) {
+    state.all_columns.log_per_thread = output.log_per_thread;
+  }
+#endif
 	do {
 		if (bind_data.is_create_index) {
 			storage.CreateIndexScan(state.scan_state, output,
@@ -123,21 +128,23 @@ static void TableScanFunc(ClientContext &context, TableFunctionInput &data_p, Da
 		} else if (gstate.CanRemoveFilterColumns()) {
 			state.all_columns.Reset();
 			storage.Scan(transaction, state.all_columns, state.scan_state);
-#ifdef LINEAGE
-			if (state.all_columns.log_record) {
-				output.log_record = move(state.all_columns.log_record);
-				state.all_columns.log_record = nullptr;
-			}
-#endif
 			output.ReferenceColumns(state.all_columns, gstate.projection_ids);
 		} else {
 			storage.Scan(transaction, output, state.scan_state);
 		}
 		if (output.size() > 0) {
+#ifdef LINEAGE
+      output.log_per_thread = state.all_columns.log_per_thread;
+      state.all_columns.log_per_thread = nullptr;
+#endif
 			return;
 		}
 		if (!TableScanParallelStateNext(context, data_p.bind_data.get(), data_p.local_state.get(),
 		                                data_p.global_state.get())) {
+#ifdef LINEAGE
+      output.log_per_thread = state.all_columns.log_per_thread;
+      state.all_columns.log_per_thread = nullptr;
+#endif
 			return;
 		}
 	} while (true);

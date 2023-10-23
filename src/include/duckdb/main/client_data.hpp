@@ -13,6 +13,9 @@
 #include "duckdb/common/types/value.hpp"
 #include "duckdb/common/case_insensitive_map.hpp"
 #include "duckdb/common/atomic.hpp"
+#ifdef LINEAGE
+#include "duckdb/execution/lineage/lineage_manager.hpp"
+#endif
 
 namespace duckdb {
 class AttachedDatabase;
@@ -67,12 +70,14 @@ struct ClientData {
 	bool debug_set_max_line_length = false;
 	idx_t debug_max_line_length = 0;
 
+public:
+	DUCKDB_API static ClientData &Get(ClientContext &context);
+
 #ifdef LINEAGE
+public:
 	unique_ptr<LineageManager> lineage_manager;
 #endif
 
-public:
-	DUCKDB_API static ClientData &Get(ClientContext &context);
 };
 
 } // namespace duckdb

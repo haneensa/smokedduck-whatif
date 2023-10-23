@@ -454,8 +454,9 @@ void RowGroup::TemplatedScan(TransactionData transaction, CollectionScanState &s
 				}
 			}
 #ifdef LINEAGE
-			auto lineage = make_uniq<LineageIdentity>(count);
-			result.log_record = make_shared<LogRecord>(move(lineage), this->start + current_row);
+    if (result.log_per_thread) {
+      reinterpret_cast<TableScanLog*>(result.log_per_thread.get())->lineage.push_back({nullptr, count, this->start, current_row});
+    }
 #endif
 		} else {
 			// TODO: table_filters, we need to capture data movement
@@ -503,8 +504,9 @@ void RowGroup::TemplatedScan(TransactionData transaction, CollectionScanState &s
 				continue;
 			}
 #ifdef LINEAGE
-			auto lineage = make_uniq<LineageSelVec>(sel, approved_tuple_count);
-			result.log_record = make_shared<LogRecord>(move(lineage), this->start + current_row);
+    if (result.log_per_thread) {
+      reinterpret_cast<TableScanLog*>(result.log_per_thread.get())->lineage.push_back({sel.sel_data(), approved_tuple_count, this->start, current_row});
+    }
 #endif
 			//! Now we use the selection vector to fetch data for the other columns.
 			for (idx_t i = 0; i < column_ids.size(); i++) {

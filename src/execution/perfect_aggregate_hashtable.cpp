@@ -113,7 +113,10 @@ void PerfectAggregateHashTable::AddChunk(DataChunk &groups, DataChunk &payload) 
 	}
 
 #ifdef LINEAGE
-	unique_ptr<uint32_t[]> tuples_lineage(new uint32_t[groups.size()]);
+  auto lop = reinterpret_cast<PHALog*>(groups.log_per_thread.get());
+  lop->build_lineage.emplace_back();
+  auto cur_lineage = lop->build_lineage.back();
+  cur_lineage.resize(groups.size());
 #endif
 	// now we have the HT entry number for every tuple
 	// compute the actual pointer to the data by adding it to the base HT pointer and multiplying by the tuple size
@@ -121,17 +124,11 @@ void PerfectAggregateHashTable::AddChunk(DataChunk &groups, DataChunk &payload) 
 		const auto group = address_data[i];
 		D_ASSERT(group < total_groups);
 #ifdef LINEAGE
-		tuples_lineage[i] = group;
+    cur_lineage[i] = group;
 #endif
 		group_is_set[group] = true;
 		address_data[i] = uintptr_t(data) + group * tuple_size;
 	}
-#ifdef LINEAGE
-	if (groups.trace_lineage) {
-			auto lineage_data = make_uniq<LineageDataArray<uint32_t>>(move(tuples_lineage), groups.size());
-			groups.log_record = make_shared<LogRecord>(move(lineage_data), 0);
-	}
-#endif
 	// after finding the group location we update the aggregates
 	idx_t payload_idx = 0;
 	auto &aggregates = layout.GetAggregates();
@@ -265,8 +262,8 @@ void PerfectAggregateHashTable::Scan(idx_t &scan_position, DataChunk &result) {
 
 #ifdef LINEAGE
 	if (result.trace_lineage) {
-			auto lineage_data = make_uniq<LineageDataArray<uint32_t>>(move(group_values_ptr), entry_count);
-			result.log_record = make_shared<LogRecord>(move(lineage_data), 0);
+    auto lop = reinterpret_cast<PHALog*>(result.log_per_thread.get());
+    lop->scan_lineage.push_back({move(group_values_ptr), entry_count});
 	}
 #endif
 }

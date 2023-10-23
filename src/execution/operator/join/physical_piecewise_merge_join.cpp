@@ -124,9 +124,8 @@ void PhysicalPiecewiseMergeJoin::Combine(ExecutionContext &context, GlobalSinkSt
 	auto &lstate = lstate_p.Cast<MergeJoinLocalState>();
 	gstate.table->Combine(lstate.table);
 #ifdef LINEAGE
-	if (ClientConfig::GetConfig(context.client).trace_lineage && lstate.table.local_sort_state.log_record) {
-		lineage_op->Capture(std::move(lstate.table.local_sort_state.log_record), LINEAGE_SINK, 0);
-		lstate.table.local_sort_state.log_record = nullptr;
+	if (ClientConfig::GetConfig(context.client).trace_lineage) {
+    // TODO: reference lstate.table.local_sort_state.log_record
 	}
 #endif
 	auto &client_profiler = QueryProfiler::Get(context.client);
@@ -432,11 +431,14 @@ void PhysicalPiecewiseMergeJoin::ResolveSimpleJoin(ExecutionContext &context, Da
 #endif
 		PhysicalJoin::ConstructSemiJoinResult(payload, chunk, found_match);
 #ifdef LINEAGE
-		if (chunk.trace_lineage && chunk.log_record) {
+		if (chunk.trace_lineage) {
+      /*
 			auto lineage_lhs = make_uniq<LineageBinary>( state.lhs_local_table->local_sort_state.log_record->data,
 			                                            std::move( dynamic_cast<LineageBinary&>(*chunk.log_record->data).left));
 			chunk.log_record = make_shared<LogRecord>(make_shared<LineageBinary>(move(lineage_lhs), nullptr), state.in_start);
-			chunk.log_record->in_start = state.in_start;
+			chunk.log_record->in_start = state.in_start;*/
+     // auto lop = reinterpret_cast<MergeLog*>(lineage_op->GetLog(0).get());
+     // lop->lineage.push_back({left, nullptr, result.size(), state.right_outer_position, 0});
 		}
 #endif
 		break;
@@ -447,11 +449,12 @@ void PhysicalPiecewiseMergeJoin::ResolveSimpleJoin(ExecutionContext &context, Da
 #endif
 		PhysicalJoin::ConstructAntiJoinResult(payload, chunk, found_match);
 #ifdef LINEAGE
-		if (chunk.trace_lineage && chunk.log_record) {
+		if (chunk.trace_lineage) {
+      /*
 			auto lineage_lhs = make_uniq<LineageBinary>( state.lhs_local_table->local_sort_state.log_record->data,
 			                                            std::move( dynamic_cast<LineageBinary&>(*chunk.log_record->data).left));
 			chunk.log_record = make_shared<LogRecord>(make_shared<LineageBinary>(move(lineage_lhs), nullptr), state.in_start);
-			chunk.log_record->in_start = state.in_start;
+			chunk.log_record->in_start = state.in_start;*/
 		}
 #endif
 		break;
@@ -564,11 +567,12 @@ OperatorResultType PhysicalPiecewiseMergeJoin::ResolveComplexJoin(ExecutionConte
 #endif
 				state.left_outer.ConstructLeftJoinResult(state.lhs_payload, chunk);
 #ifdef LINEAGE
-				if (chunk.trace_lineage && chunk.log_record) {
+				if (chunk.trace_lineage) {
+          /*
 					auto lineage_lhs = make_uniq<LineageBinary>( state.lhs_local_table->local_sort_state.log_record->data,
 																		std::move( dynamic_cast<LineageBinary&>(*chunk.log_record->data).left));
 					chunk.log_record = make_shared<LogRecord>(make_shared<LineageBinary>(move(lineage_lhs), nullptr), state.in_start);
-					chunk.log_record->in_start = state.in_start;
+					chunk.log_record->in_start = state.in_start;*/
 				}
 #endif
 				state.left_outer.Reset();
@@ -658,11 +662,9 @@ OperatorResultType PhysicalPiecewiseMergeJoin::ResolveComplexJoin(ExecutionConte
 #ifdef LINEAGE
 			if (ClientConfig::GetConfig(context.client).trace_lineage) {
 				left_info.result.Slice(*sel, result_count);
-				auto lineage_lhs = make_uniq<LineageBinary>( state.lhs_local_table->local_sort_state.log_record->data,
-				                                            make_uniq<LineageSelVec>(left_info.result, result_count));
 				right_info.result.Slice(*sel, result_count);
-				auto lineage_rhs = make_uniq<LineageSelVec>(right_info.result, result_count, state.right_base);
-				chunk.log_record = make_shared<LogRecord>(make_shared<LineageBinary>(move(lineage_lhs), move(lineage_rhs)), state.in_start);
+        auto lop = reinterpret_cast<MergeLog*>(lineage_op->GetLog(0).get());
+        lop->lineage.push_back({left_info.result.sel_data(), right_info.result.sel_data(), result_count, state.right_base, state.in_start});
 			}
 #endif
 			chunk.SetCardinality(result_count);
@@ -786,10 +788,8 @@ SourceResultType PhysicalPiecewiseMergeJoin::GetData(ExecutionContext &context, 
 			result.SetCardinality(result_count);
 #ifdef LINEAGE
 			if (ClientConfig::GetConfig(context.client).trace_lineage) {
-				auto rhs_lineage = make_uniq<LineageSelVec>(rsel,  result.size());
-				auto lineage_probe_data = make_uniq<LineageBinary>(nullptr, std::move(rhs_lineage));
-				auto log_record = make_shared<LogRecord>(std::move(lineage_probe_data), state.right_outer_position );
-				lineage_op->Capture(std::move(log_record), LINEAGE_SOURCE, 0);
+        auto lop = reinterpret_cast<MergeLog*>(lineage_op->GetLog(0).get());
+        lop->lineage.push_back({nullptr, rsel.sel_data(), result.size(), state.right_outer_position, 0});
 			}
 #endif
 			break;

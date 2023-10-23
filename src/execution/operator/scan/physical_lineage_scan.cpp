@@ -31,17 +31,13 @@ PhysicalLineageScan::PhysicalLineageScan(shared_ptr<OperatorLineage> lineage_op,
 class PhysicalLineageScanState : public GlobalSourceState {
 public:
 	explicit PhysicalLineageScanState(shared_ptr<OperatorLineage> lineage_op) : initialized(false) {
-		for (auto &log : lineage_op->log_per_thead) {
-			thread_ids.push_back(log.first);
-		}
 	}
 
 	bool initialized;
 	idx_t count_so_far = 0;
-	idx_t thread_count = 0;
 	idx_t log_id = 0;
 	idx_t current_thread = 0;
-	vector<idx_t> thread_ids;
+  idx_t thread_count = 0;
 	idx_t chunk_index = 0;
 };
 
@@ -53,12 +49,12 @@ unique_ptr<GlobalSourceState> PhysicalLineageScan::GetGlobalSourceState(ClientCo
 SourceResultType PhysicalLineageScan::GetData(ExecutionContext &context, DataChunk &chunk,
                                                  OperatorSourceInput &input) const {
 	auto &state = input.global_state.Cast<PhysicalLineageScanState>();
-	auto& thread_ids = state.thread_ids;
 
 	DataChunk result;
 	idx_t res_count = 0;
 	bool cache_on = false;
 	if (stage_idx == 100) {
+    /*
 		bool must_add_rowid = state.chunk_index == lineage_op->intermediate_chunk_processed_counter;
 
 		vector<LogicalType> types = lineage_op->chunk_collection.Types();
@@ -80,21 +76,10 @@ SourceResultType PhysicalLineageScan::GetData(ExecutionContext &context, DataChu
 		}
 		result.Reference(collection_chunk);
 		state.chunk_index++;
-		state.count_so_far += result.size();
+		state.count_so_far += result.size();*/
 	} else {
-		while (state.current_thread < thread_ids.size() && lineage_op->log_per_thead[thread_ids[state.current_thread]].GetLogSize(stage_idx) == 0) {
-			state.current_thread++;
-			state.log_id = 0;
-			state.thread_count = 0;
-		}
-
-		if (state.current_thread >= thread_ids.size()) {
-			return SourceResultType::FINISHED;
-		}
-
-		idx_t thread_id = thread_ids[state.current_thread];
 		res_count =
-		    lineage_op->GetLineageAsChunk(state.thread_count, result, thread_id, state.log_id, stage_idx, cache_on);
+		    lineage_op->GetLineageAsChunk(state.count_so_far, result, state.current_thread, state.log_id, stage_idx, cache_on);
 	}
 
  	// Apply projection list
@@ -116,7 +101,7 @@ SourceResultType PhysicalLineageScan::GetData(ExecutionContext &context, DataChu
 	state.thread_count += res_count;
 	state.count_so_far += res_count;
 
-	if (chunk.size() == 0 && state.current_thread >= thread_ids.size()) {
+	if (chunk.size() == 0) {
 		return SourceResultType::FINISHED;
 	} else if (chunk.size() == 0) {
 		state.current_thread++;
@@ -127,9 +112,10 @@ SourceResultType PhysicalLineageScan::GetData(ExecutionContext &context, DataChu
 		// add flag if there is a cache, don't make progress
 		return SourceResultType::HAVE_MORE_OUTPUT;
 	} else {
-			state.log_id++;
-			return SourceResultType::HAVE_MORE_OUTPUT;
+    state.log_id++;
+    return SourceResultType::HAVE_MORE_OUTPUT;
 	}
+		return SourceResultType::FINISHED;
 }
 
 

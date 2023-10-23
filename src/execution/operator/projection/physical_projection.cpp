@@ -30,8 +30,8 @@ OperatorResultType PhysicalProjection::Execute(ExecutionContext &context, DataCh
 	auto &state = state_p.Cast<ProjectionState>();
 	state.executor.Execute(input, chunk);
 #ifdef LINEAGE
-    auto lineage = make_uniq<LineageIdentity>(chunk.size());
-	lineage_op->Capture(make_shared<LogRecord>(move(lineage), 0), LINEAGE_SOURCE, context.thread.thread_id);
+  //  auto lineage = make_uniq<LineageIdentity>(chunk.size());
+//	lineage_op->Capture(make_shared<LogRecord>(move(lineage), 0), LINEAGE_SOURCE, context.thread.thread_id);
 #endif
 	return OperatorResultType::NEED_MORE_INPUT;
 }

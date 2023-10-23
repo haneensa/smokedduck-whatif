@@ -14,7 +14,9 @@
 namespace duckdb {
 class PhysicalDelimJoin;
 
-void LineageManager::CreateOperatorLineage(ClientContext &context, PhysicalOperator *op, bool trace_lineage) {
+void LineageManager::CreateOperatorLineage(ClientContext &context,
+    PhysicalOperator *op, 
+    bool trace_lineage) {
 	if (op->type == PhysicalOperatorType::DELIM_JOIN) {
 		auto distinct = (PhysicalOperator*)dynamic_cast<PhysicalDelimJoin *>(op)->distinct.get();
 		CreateOperatorLineage(context, distinct, trace_lineage);
@@ -27,7 +29,16 @@ void LineageManager::CreateOperatorLineage(ClientContext &context, PhysicalOpera
 	for (idx_t i = 0; i < op->children.size(); i++) {
 		CreateOperatorLineage(context, op->children[i].get(), trace_lineage);
 	}
-	op->lineage_op = make_shared<OperatorLineage>(Allocator::Get(context), op->type, trace_lineage);
+  if (op->lineage_op == nullptr) {
+	  op->lineage_op = make_shared<OperatorLineage>(
+        op->type, 
+        op->id,
+        trace_lineage);
+    op->lineage_op->InitLog(0); // pass thread_id
+  } else {
+    op->lineage_op->InitLog(0); // pass thread_id
+  }
+
 	if (op->type == PhysicalOperatorType::TABLE_SCAN) {
 		string table_str = dynamic_cast<PhysicalTableScan *>(op)->ParamsToString();
 		// TODO there's probably a better way to do this...

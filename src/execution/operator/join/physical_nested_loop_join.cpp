@@ -54,10 +54,9 @@ static void ConstructSemiOrAntiJoinResult(DataChunk &left, DataChunk &result, bo
 		// reference the columns of the left side from the result
 		result.Slice(left, sel, result_count);
 #ifdef LINEAGE
-		if (result.trace_lineage) {
-			auto semi_data = make_uniq<LineageSelVec>(sel, result_count);
-			auto lineage_data = make_uniq<LineageBinary>(std::move(semi_data), nullptr);
-			result.log_record = make_shared<LogRecord>(move(lineage_data), 0);
+		if (result.log_per_thread) {
+      reinterpret_cast<NLJLog*>(result.log_per_thread.get())->lineage.push_back({
+          sel.sel_data(), nullptr, result_count, 0, 0});
 		}
 #endif
 	} else {
@@ -322,28 +321,32 @@ void PhysicalNestedLoopJoin::ResolveSimpleJoin(ExecutionContext &context, DataCh
 	case JoinType::SEMI:
 #ifdef LINEAGE
 		chunk.trace_lineage = ClientConfig::GetConfig(context.client).trace_lineage;
+    if (chunk.trace_lineage) {
+      chunk.log_per_thread = lineage_op->GetLog(0);
+    }
 #endif
 		// construct the semi join result from the found matches
 		PhysicalJoin::ConstructSemiJoinResult(input, chunk, found_match);
 #ifdef LINEAGE
-		if (chunk.trace_lineage && chunk.log_record) {
-			chunk.log_record->in_start = state.in_start;
-			lineage_op->Capture(std::move(chunk.log_record), LINEAGE_SOURCE, 0);
-			chunk.log_record = nullptr;
+		if (chunk.trace_lineage && chunk.log_per_thread) {
+      reinterpret_cast<NLJLog*>(chunk.log_per_thread.get())->lineage.back().out_start = state.in_start;
+			chunk.log_per_thread = nullptr;
 		}
 #endif
 		break;
 	case JoinType::ANTI:
 #ifdef LINEAGE
 		chunk.trace_lineage = ClientConfig::GetConfig(context.client).trace_lineage;
+    if (chunk.trace_lineage) {
+      chunk.log_per_thread = lineage_op->GetLog(0);
+    }
 #endif
 		// construct the anti join result from the found matches
 		PhysicalJoin::ConstructAntiJoinResult(input, chunk, found_match);
 #ifdef LINEAGE
-		if (chunk.trace_lineage && chunk.log_record) {
-			chunk.log_record->in_start = state.in_start;
-			lineage_op->Capture(std::move(chunk.log_record), LINEAGE_SOURCE, 0);
-			chunk.log_record = nullptr;
+		if (chunk.trace_lineage && chunk.log_per_thread) {
+      reinterpret_cast<NLJLog*>(chunk.log_per_thread.get())->lineage.back().out_start = state.in_start;
+			chunk.log_per_thread = nullptr;
 		}
 #endif
 		break;
@@ -383,9 +386,9 @@ OperatorResultType PhysicalNestedLoopJoin::ResolveComplexJoin(ExecutionContext &
 #endif
 					state.left_outer.ConstructLeftJoinResult(input, chunk);
 #ifdef LINEAGE
-					if (chunk.trace_lineage && chunk.log_record) {
-						chunk.log_record->in_start = state.in_start;
-						lineage_op->Capture(std::move(chunk.log_record), LINEAGE_SOURCE, 0);
+					if (chunk.trace_lineage) {
+					//	chunk.log_record->in_start = state.in_start;
+						//lineage_op->Capture(std::move(chunk.log_record), LINEAGE_SOURCE, 0);
 					}
 #endif
 					state.left_outer.Reset();
@@ -433,9 +436,8 @@ OperatorResultType PhysicalNestedLoopJoin::ResolveComplexJoin(ExecutionContext &
 			chunk.Slice(right_payload, rvector, match_count, input.ColumnCount());
 #ifdef LINEAGE
 			if (ClientConfig::GetConfig(context.client).trace_lineage) {
-				auto lineage_lhs = make_uniq<LineageSelVec>(lvector, match_count);
-				auto lineage_rhs = make_uniq<LineageSelVec>(rvector, match_count, state.condition_scan_state.current_row_index);
-				chunk.log_record = make_shared<LogRecord>(make_shared<LineageBinary>(move(lineage_lhs), move(lineage_rhs)), state.in_start);
+        reinterpret_cast<NLJLog*>(chunk.log_per_thread.get())->lineage.push_back({
+            lvector.sel_data(), rvector.sel_data(), match_count, state.condition_scan_state.current_row_index, state.in_start});
 			}
 #endif
 		}
@@ -502,12 +504,12 @@ SourceResultType PhysicalNestedLoopJoin::GetData(ExecutionContext &context, Data
 
 #ifdef LINEAGE
 	if (ClientConfig::GetConfig(context.client).trace_lineage) {
-		unique_ptr<sel_t []> sel_copy(new sel_t[chunk.size()]);
-		std::copy(lstate.scan_state.match_sel.data(), lstate.scan_state.match_sel.data() + chunk.size(), sel_copy.get());
-		auto rhs_lineage = make_uniq<LineageDataArray<sel_t>>(move(sel_copy),  chunk.size());
-		auto lineage_probe_data = make_uniq<LineageBinary>(nullptr, std::move(rhs_lineage));
-		auto log_record = make_shared<LogRecord>(std::move(lineage_probe_data),  lstate.scan_state.local_scan.current_row_index );
-		lineage_op->Capture(std::move(log_record), LINEAGE_SOURCE, 0);
+    buffer_ptr<SelectionData> sel_copy = make_shared<SelectionData>(chunk.size());
+		std::copy(lstate.scan_state.match_sel.data(),
+        lstate.scan_state.match_sel.data() + chunk.size(),
+        sel_copy->owned_data.get());
+    reinterpret_cast<NLJLog*>(lineage_op->GetLog(0).get())->lineage.push_back({
+        nullptr, sel_copy, chunk.size(), lstate.scan_state.local_scan.current_row_index, 0});
 	}
 #endif
 	return chunk.size() == 0 ? SourceResultType::FINISHED : SourceResultType::HAVE_MORE_OUTPUT;

@@ -154,14 +154,9 @@ SinkResultType PhysicalPerfectHashAggregate::Sink(ExecutionContext &context, Dat
 
 #ifdef LINEAGE
 	group_chunk.trace_lineage = ClientConfig::GetConfig(context.client).trace_lineage;
+  group_chunk.log_per_thread = lineage_op->GetLog(0);
 #endif
 	lstate.ht->AddChunk(group_chunk, aggregate_input_chunk);
-#ifdef LINEAGE
-	if (group_chunk.trace_lineage && group_chunk.log_record) {
-		lineage_op->Capture(move(group_chunk.log_record), LINEAGE_SINK, 0);
-		group_chunk.log_record = nullptr;
-	}
-#endif
 	return SinkResultType::NEED_MORE_INPUT;
 }
 
@@ -199,16 +194,10 @@ SourceResultType PhysicalPerfectHashAggregate::GetData(ExecutionContext &context
 	auto &gstate = sink_state->Cast<PerfectHashAggregateGlobalState>();
 #ifdef LINEAGE
 	chunk.trace_lineage =  ClientConfig::GetConfig(context.client).trace_lineage;
+  chunk.log_per_thread = lineage_op->GetLog(0);
 #endif
 	gstate.ht->Scan(state.ht_scan_position, chunk);
 
-
-#ifdef LINEAGE
-	if (chunk.trace_lineage && chunk.log_record) {
-		lineage_op->Capture(move(chunk.log_record), LINEAGE_SOURCE, 0);
-		chunk.log_record = nullptr;
-	}
-#endif
 	if (chunk.size() > 0) {
 		return SourceResultType::HAVE_MORE_OUTPUT;
 	} else {

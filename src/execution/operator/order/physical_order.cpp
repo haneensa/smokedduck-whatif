@@ -107,11 +107,11 @@ SinkResultType PhysicalOrder::Sink(ExecutionContext &context, DataChunk &chunk, 
 void PhysicalOrder::Combine(ExecutionContext &context, GlobalSinkState &gstate_p, LocalSinkState &lstate_p) const {
 	auto &gstate = gstate_p.Cast<OrderGlobalSinkState>();
 	auto &lstate = lstate_p.Cast<OrderLocalSinkState>();
-	gstate.global_sort_state.AddLocalState(lstate.local_sort_state);
 #ifdef LINEAGE
-	if (ClientConfig::GetConfig(context.client).trace_lineage && lstate.local_sort_state.log_record)
-		lineage_op->Capture(move(lstate.local_sort_state.log_record), LINEAGE_SOURCE, context.thread.thread_id);
+	if (ClientConfig::GetConfig(context.client).trace_lineage)
+		lstate.local_sort_state.log_per_thread = lineage_op->GetLog(0);
 #endif
+	gstate.global_sort_state.AddLocalState(lstate.local_sort_state);
 }
 
 class PhysicalOrderMergeTask : public ExecutorTask {
