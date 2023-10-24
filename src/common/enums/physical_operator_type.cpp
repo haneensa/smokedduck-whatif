@@ -8,6 +8,9 @@ string PhysicalOperatorToString(PhysicalOperatorType type) {
 #ifdef LINEAGE
 	case PhysicalOperatorType::LINEAGE_SCAN:
 		return "LINEAGE_SCAN";
+
+	case PhysicalOperatorType::LINEAGE_ADJUST:
+		return "LINEAGE_ADJUST";
 #endif
 	case PhysicalOperatorType::TABLE_SCAN:
 		return "TABLE_SCAN";

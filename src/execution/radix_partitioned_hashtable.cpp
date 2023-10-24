@@ -509,7 +509,6 @@ SourceResultType RadixPartitionedHashTable::GetData(ExecutionContext &context, D
 	for (idx_t i = 0; i < op.grouping_functions.size(); i++) {
 		chunk.data[op.GroupCount() + op.aggregates.size() + i].Reference(grouping_values[i]);
 	}
-	std::cout << chunk.ToString() << std::endl;
 	return chunk.size() == 0 ? SourceResultType::FINISHED : SourceResultType::HAVE_MORE_OUTPUT;
 }
 

@@ -50,6 +50,7 @@ enum class PhysicalOperatorType : uint8_t {
 	POSITIONAL_SCAN,
 #ifdef LINEAGE
   LINEAGE_SCAN,
+	LINEAGE_ADJUST,
 #endif
 	// -----------------------------
 	// Joins

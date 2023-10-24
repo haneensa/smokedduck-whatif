@@ -51,12 +51,7 @@ public:
 	idx_t id;
 	//! Lineage captured for this operator
 	shared_ptr<OperatorLineage> lineage_op;
-	// bool delim_handled = false;
-	bool special = false;
-	int left_annotation_index = -1;
-	bool drop_left = false;
-	bool drop_annotations = false;
-	bool add_annotations = false;
+	vector<LogicalType> original_types;
 #endif
 
 	//! The physical operator type
