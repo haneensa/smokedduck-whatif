@@ -8,7 +8,6 @@
 #include "duckdb/planner/parsed_data/bound_create_table_info.hpp"
 #include "duckdb/catalog/catalog_entry/duck_table_entry.hpp"
 #include "duckdb/execution/operator/join/physical_delim_join.hpp"
-
 #include <utility>
 
 namespace duckdb {
@@ -30,13 +29,13 @@ void LineageManager::CreateOperatorLineage(ClientContext &context,
 		CreateOperatorLineage(context, op->children[i].get(), trace_lineage);
 	}
   if (op->lineage_op == nullptr) {
-	  op->lineage_op = make_shared<OperatorLineage>(
+	  op->lineage_op = make_shared<OperatorLineage>(Allocator::Get(context),
         op->type, 
         op->id,
         trace_lineage);
-    op->lineage_op->InitLog(0); // pass thread_id
+  //  op->lineage_op->InitLog(0); // pass thread_id
   } else {
-    op->lineage_op->InitLog(0); // pass thread_id
+    //op->lineage_op->InitLog(0); // pass thread_id
   }
 
 	if (op->type == PhysicalOperatorType::TABLE_SCAN) {

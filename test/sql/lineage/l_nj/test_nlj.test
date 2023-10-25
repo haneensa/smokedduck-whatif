@@ -73,6 +73,7 @@ NULL	1	NULL	100
 statement ok
 PRAGMA disable_lineage;
 PRAGMA disable_profiling;
+PRAGMA threads=1;
 
 query III
 select lhs_index, rhs_index, out_index from LINEAGE_1_NESTED_LOOP_JOIN_2_0;

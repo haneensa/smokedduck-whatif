@@ -7,6 +7,9 @@
 #include "duckdb/common/types/batched_data_collection.hpp"
 #include "duckdb/execution/operator/helper/physical_streaming_limit.hpp"
 
+#ifdef LINEAGE
+#include "duckdb/parallel/thread_context.hpp"
+#endif
 namespace duckdb {
 
 PhysicalLimit::PhysicalLimit(vector<LogicalType> types, idx_t limit, idx_t offset,
@@ -166,7 +169,7 @@ SourceResultType PhysicalLimit::GetData(ExecutionContext &context, DataChunk &ch
 	}
 #ifdef LINEAGE
 		if (ClientConfig::GetConfig(context.client).trace_lineage) {
-	    auto lop = reinterpret_cast<LimitLog*>(lineage_op->GetLog(0).get());
+	    auto lop = reinterpret_cast<LimitLog*>(lineage_op->GetLog(context.thread.thread_id).get());
       lop->lineage.push_back({orig_offset, chunk.size(), gstate.offset});
 		}
 #endif

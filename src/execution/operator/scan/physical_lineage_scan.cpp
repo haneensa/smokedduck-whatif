@@ -34,10 +34,10 @@ public:
 	}
 
 	bool initialized;
-	idx_t count_so_far = 0;
+	idx_t global_count = 0;
 	idx_t log_id = 0;
 	idx_t current_thread = 0;
-  idx_t thread_count = 0;
+  idx_t local_count = 0;
 	idx_t chunk_index = 0;
 };
 
@@ -51,8 +51,7 @@ SourceResultType PhysicalLineageScan::GetData(ExecutionContext &context, DataChu
 	auto &state = input.global_state.Cast<PhysicalLineageScanState>();
 
 	DataChunk result;
-	idx_t res_count = 0;
-	bool cache_on = false;
+ 	bool cache_on = false;
 	if (stage_idx == 100) {
     /*
 		bool must_add_rowid = state.chunk_index == lineage_op->intermediate_chunk_processed_counter;
@@ -70,16 +69,16 @@ SourceResultType PhysicalLineageScan::GetData(ExecutionContext &context, DataChu
 		DataChunk &collection_chunk = lineage_op->chunk_collection.GetChunk(state.chunk_index);
 		if (must_add_rowid) {
 			collection_chunk.data.push_back(Vector(LogicalType::INTEGER));
-			collection_chunk.data[collection_chunk.ColumnCount() - 1].Sequence(state.count_so_far, 1,
+			collection_chunk.data[collection_chunk.ColumnCount() - 1].Sequence(state.global_count, 1,
 			                                                                   collection_chunk.size());
 			lineage_op->intermediate_chunk_processed_counter++;
 		}
 		result.Reference(collection_chunk);
 		state.chunk_index++;
-		state.count_so_far += result.size();*/
+		state.global_count += result.size();*/
 	} else {
-		res_count =
-		    lineage_op->GetLineageAsChunk(state.count_so_far, result, state.current_thread, state.log_id, stage_idx, cache_on);
+		lineage_op->GetLineageAsChunk(result, state.global_count, state.local_count,
+		                                  state.current_thread, state.log_id, cache_on);
 	}
 
  	// Apply projection list
@@ -91,31 +90,19 @@ SourceResultType PhysicalLineageScan::GetData(ExecutionContext &context, DataChu
 			if (column == COLUMN_IDENTIFIER_ROW_ID) {
 				// row id column: fill in the row ids
 				D_ASSERT(chunk.data[col_idx].GetType().InternalType() == PhysicalType::INT64);
-				chunk.data[col_idx].Sequence(state.count_so_far , 1, result.size());
+				chunk.data[col_idx].Sequence(state.global_count-result.size(), 1, result.size());
 			}  else {
 				chunk.data[col_idx].Reference(result.data[column]);
 			}
 		}
 	}
 
-	state.thread_count += res_count;
-	state.count_so_far += res_count;
-
-	if (chunk.size() == 0) {
-		return SourceResultType::FINISHED;
-	} else if (chunk.size() == 0) {
-		state.current_thread++;
-		state.log_id = 0;
-		state.thread_count = 0;
-		return SourceResultType::HAVE_MORE_OUTPUT;
-	} else if (cache_on) {
+	if (cache_on || chunk.size() > 0) {
 		// add flag if there is a cache, don't make progress
 		return SourceResultType::HAVE_MORE_OUTPUT;
 	} else {
-    state.log_id++;
-    return SourceResultType::HAVE_MORE_OUTPUT;
-	}
 		return SourceResultType::FINISHED;
+	}
 }
 
 

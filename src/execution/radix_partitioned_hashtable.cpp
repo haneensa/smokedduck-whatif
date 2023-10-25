@@ -152,8 +152,10 @@ void RadixPartitionedHashTable::Sink(ExecutionContext &context, DataChunk &chunk
 		}
 		D_ASSERT(gstate.finalized_hts.size() == 1);
 		D_ASSERT(gstate.finalized_hts[0]);
+
 #ifdef LINEAGE
 		group_chunk.trace_lineage = chunk.trace_lineage;
+		group_chunk.log_per_thread = chunk.log_per_thread;
 #endif
 		llstate.total_groups +=
 		    gstate.finalized_hts[0]->AddChunk(gstate.append_state, group_chunk, payload_input, filter);
@@ -177,6 +179,7 @@ void RadixPartitionedHashTable::Sink(ExecutionContext &context, DataChunk &chunk
 	}
 #ifdef LINEAGE
 	group_chunk.trace_lineage = chunk.trace_lineage;
+	group_chunk.log_per_thread = chunk.log_per_thread;
 #endif
 	llstate.total_groups += llstate.ht->AddChunk(group_chunk, payload_input,
 	                                             gstate.partitioned && gstate.partition_info.n_partitions > 1, filter);
@@ -509,14 +512,9 @@ SourceResultType RadixPartitionedHashTable::GetData(ExecutionContext &context, D
 		auto &global_scan_state = state.ht_scan_states[ht_index];
 #ifdef LINEAGE
 		lstate.scan_chunk.trace_lineage = chunk.trace_lineage;
+		lstate.scan_chunk.log_per_thread = chunk.log_per_thread;
 #endif
 		elements_found = lstate.ht->Scan(global_scan_state, local_scan_state, lstate.scan_chunk);
-#ifdef LINEAGE
-	/*	if (lstate.ht->log_record) {
-			chunk.log_record = move(lstate.ht->log_record);
-			lstate.ht->log_record = nullptr;
-		}*/
-#endif
 		if (elements_found > 0) {
 			break;
 		}

@@ -398,8 +398,8 @@ SinkResultType PhysicalHashAggregate::Sink(ExecutionContext &context, DataChunk 
 	aggregate_input_chunk.SetCardinality(chunk.size());
 	aggregate_input_chunk.Verify();
 #ifdef LINEAGE
-//	shared_ptr<vector<shared_ptr<LineageData>>> lineage_per_grouping = make_shared<vector<shared_ptr<LineageData>>>();
 	chunk.trace_lineage = ClientConfig::GetConfig(context.client).trace_lineage;
+	chunk.log_per_thread = lineage_op->GetLog(0);
 #endif
 	// For every grouping set there is one radix_table
 	for (idx_t i = 0; i < groupings.size(); i++) {
@@ -411,15 +411,11 @@ SinkResultType PhysicalHashAggregate::Sink(ExecutionContext &context, DataChunk 
 		auto &grouping = groupings[i];
 		auto &table = grouping.table_data;
 		table.Sink(context, chunk, sink_input, aggregate_input_chunk, non_distinct_filter);
-	/*	if (chunk.trace_lineage && chunk.log_record) {
-			//chunk.log_record->data->Debug();
-			lineage_per_grouping->push_back(move(chunk.log_record->data));
-			chunk.log_record = nullptr;
-		}*/
 	}
 
 #ifdef LINEAGE
 	if (chunk.trace_lineage && groupings.size() > 0) {
+		chunk.log_per_thread  = nullptr;
 		// the offset in lineage_per_grouping is the offset into grouping
 //		auto lineage_data = make_shared<CollectionLineage>(move(lineage_per_grouping), chunk.size());
 		// create a LineageData: hashmap<string, LineageData>
@@ -968,14 +964,9 @@ SourceResultType PhysicalHashAggregate::GetData(ExecutionContext &context, DataC
 		                                  interrupt_state};
 #ifdef LINEAGE
 		chunk.trace_lineage = ClientConfig::GetConfig(context.client).trace_lineage;
+		chunk.log_per_thread = lineage_op->GetLog(0);
 #endif
 		auto res = radix_table.GetData(context, chunk, *grouping_gstate.table_state, source_input);
-#ifdef LINEAGE
-/*		if (chunk.log_record) {
-			lineage_op->Capture(move(chunk.log_record), LINEAGE_SOURCE, context.thread.thread_id);
-			chunk.log_record = nullptr;
-		}*/
-#endif
 		if (chunk.size() != 0) {
 			return SourceResultType::HAVE_MORE_OUTPUT;
 		} else if (res == SourceResultType::BLOCKED) {

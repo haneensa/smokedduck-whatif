@@ -154,7 +154,7 @@ SinkResultType PhysicalPerfectHashAggregate::Sink(ExecutionContext &context, Dat
 
 #ifdef LINEAGE
 	group_chunk.trace_lineage = ClientConfig::GetConfig(context.client).trace_lineage;
-  group_chunk.log_per_thread = lineage_op->GetLog(0);
+  group_chunk.log_per_thread = lineage_op->GetLog(context.thread.thread_id);
 #endif
 	lstate.ht->AddChunk(group_chunk, aggregate_input_chunk);
 	return SinkResultType::NEED_MORE_INPUT;
@@ -194,7 +194,7 @@ SourceResultType PhysicalPerfectHashAggregate::GetData(ExecutionContext &context
 	auto &gstate = sink_state->Cast<PerfectHashAggregateGlobalState>();
 #ifdef LINEAGE
 	chunk.trace_lineage =  ClientConfig::GetConfig(context.client).trace_lineage;
-  chunk.log_per_thread = lineage_op->GetLog(0);
+  chunk.log_per_thread = lineage_op->GetLog(context.thread.thread_id);
 #endif
 	gstate.ht->Scan(state.ht_scan_position, chunk);
 

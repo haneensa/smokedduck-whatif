@@ -116,27 +116,29 @@ static void TableScanFunc(ClientContext &context, TableFunctionInput &data_p, Da
 	auto &state = data_p.local_state->Cast<TableScanLocalState>();
 	auto &transaction = DuckTransaction::Get(context, bind_data.table.catalog);
 	auto &storage = bind_data.table.GetStorage();
-#ifdef LINEAGE
-  if (output.log_per_thread) {
-    state.all_columns.log_per_thread = output.log_per_thread;
-  }
-#endif
 	do {
 		if (bind_data.is_create_index) {
 			storage.CreateIndexScan(state.scan_state, output,
 			                        TableScanType::TABLE_SCAN_COMMITTED_ROWS_OMIT_PERMANENTLY_DELETED);
 		} else if (gstate.CanRemoveFilterColumns()) {
+#ifdef LINEAGE
+			if (output.log_per_thread && output.trace_lineage) {
+				state.all_columns.log_per_thread = output.log_per_thread;
+				state.all_columns.trace_lineage = true;
+			}
+#endif
 			state.all_columns.Reset();
 			storage.Scan(transaction, state.all_columns, state.scan_state);
+
+#ifdef LINEAGE
+			state.all_columns.log_per_thread = nullptr;
+			state.all_columns.trace_lineage = false;
+#endif
 			output.ReferenceColumns(state.all_columns, gstate.projection_ids);
 		} else {
 			storage.Scan(transaction, output, state.scan_state);
 		}
 		if (output.size() > 0) {
-#ifdef LINEAGE
-      output.log_per_thread = state.all_columns.log_per_thread;
-      state.all_columns.log_per_thread = nullptr;
-#endif
 			return;
 		}
 		if (!TableScanParallelStateNext(context, data_p.bind_data.get(), data_p.local_state.get(),

@@ -10,15 +10,17 @@ vector<vector<ColumnDefinition>> OperatorLineage::GetTableColumnTypes() {
   switch (type) {
   case PhysicalOperatorType::HASH_GROUP_BY:
   case PhysicalOperatorType::PERFECT_HASH_GROUP_BY:
-	case PhysicalOperatorType::COLUMN_DATA_SCAN:
-	case PhysicalOperatorType::STREAMING_LIMIT:
+  case PhysicalOperatorType::COLUMN_DATA_SCAN:
+  case PhysicalOperatorType::STREAMING_LIMIT:
   case PhysicalOperatorType::LIMIT:
   case PhysicalOperatorType::FILTER:
   case PhysicalOperatorType::TABLE_SCAN:
-	case PhysicalOperatorType::PROJECTION:
+  case PhysicalOperatorType::PROJECTION:
   case PhysicalOperatorType::ORDER_BY: {
     vector<ColumnDefinition> source;
-    if (type == PhysicalOperatorType::ORDER_BY)
+    if (type == PhysicalOperatorType::ORDER_BY
+		|| type == PhysicalOperatorType::PERFECT_HASH_GROUP_BY
+		|| type == PhysicalOperatorType::HASH_GROUP_BY)
       source.emplace_back("in_index", LogicalType::BIGINT);
     else
       source.emplace_back("in_index", LogicalType::INTEGER);
@@ -26,127 +28,65 @@ vector<vector<ColumnDefinition>> OperatorLineage::GetTableColumnTypes() {
     res.emplace_back(move(source));
     break;
   }
-	case PhysicalOperatorType::HASH_JOIN:
-	case PhysicalOperatorType::INDEX_JOIN:
-	case PhysicalOperatorType::BLOCKWISE_NL_JOIN:
-	case PhysicalOperatorType::CROSS_PRODUCT:
-	case PhysicalOperatorType::NESTED_LOOP_JOIN:
-	case PhysicalOperatorType::PIECEWISE_MERGE_JOIN: {
-		vector<ColumnDefinition> source;
-		source.emplace_back("lhs_index", LogicalType::INTEGER);
-		source.emplace_back("rhs_index", LogicalType::INTEGER);
-		source.emplace_back("out_index", LogicalType::INTEGER);
-		res.emplace_back(move(source));
-		break;
-	}
+  case PhysicalOperatorType::HASH_JOIN:
+  case PhysicalOperatorType::INDEX_JOIN:
+  case PhysicalOperatorType::BLOCKWISE_NL_JOIN:
+  case PhysicalOperatorType::CROSS_PRODUCT:
+  case PhysicalOperatorType::NESTED_LOOP_JOIN:
+  case PhysicalOperatorType::PIECEWISE_MERGE_JOIN: {
+	vector<ColumnDefinition> source;
+	source.emplace_back("lhs_index", LogicalType::INTEGER);
+	source.emplace_back("rhs_index", LogicalType::INTEGER);
+	source.emplace_back("out_index", LogicalType::INTEGER);
+	res.emplace_back(move(source));
+	break;
+  }
   default: {
     // Lineage unimplemented! TODO all of these :)
   }
-	}
-
-	return res;
+  }
+  return res;
 }
 
-void fillBaseChunk(DataChunk &insert_chunk, idx_t res_count, Vector &lhs_payload,
-    Vector &rhs_payload, idx_t count_so_far) {
-	insert_chunk.SetCardinality(res_count);
-	insert_chunk.data[0].Reference(lhs_payload);
-	insert_chunk.data[1].Reference(rhs_payload);
-	insert_chunk.data[2].Sequence(count_so_far, 1, res_count);
-}
-
-
-idx_t OperatorLineage::GetLineageAsChunk(idx_t count_so_far, DataChunk &insert_chunk,
-  idx_t thread_id, idx_t data_idx, idx_t stage_idx, bool &cache) {
+idx_t OperatorLineage::GetLineageAsChunk(DataChunk &insert_chunk,
+                                         idx_t& global_count, idx_t& local_count,
+                                         idx_t &thread_id, idx_t &data_idx,  bool &cache) {
 
   auto table_types = GetTableColumnTypes();
   vector<LogicalType> types;
 
-  for (const auto& col_def : table_types[stage_idx]) {
+  for (const auto& col_def : table_types[0]) {
     types.push_back(col_def.GetType());
   }
+
   insert_chunk.InitializeEmpty(types);
+  if (thread_vec.size() <= thread_id) {
+	return 0;
+  }
 
-  log_per_thread[0]->GetLineageAsChunk(types, count_so_far, insert_chunk, data_idx, cache_offset, cache_size, cache);
-  /*
-	idx_t log_size = log_per_thread[thread_id].GetLogSize(stage_idx);
-	if (log_size > data_idx) {
-		LogRecord* data_woffset = log_per_thread[thread_id].GetLogRecord(stage_idx, data_idx).get();
-		Vector thread_id_vec(Value::INTEGER(thread_id));
-		// TODO: check if LogRecord is cached, then iterate over the lineage inside the cache
-		switch (this->type) {
-		case PhysicalOperatorType::PROJECTION: {
-			D_ASSERT(stage_idx == LINEAGE_SOURCE);
-			// schema: [INTEGER in_index, INTEGER out_index, INTEGER thread_id]
-			idx_t res_count = data_woffset->data->Count();
-			insert_chunk.SetCardinality(res_count);
-			Vector in_index = data_woffset->data->GetVecRef(types[0], count_so_far);
-			insert_chunk.data[0].Reference(in_index);
-			insert_chunk.data[1].Sequence(count_so_far, 1, res_count); // out_index
-			insert_chunk.data[2].Reference(thread_id_vec);  // thread_id
-			break;
-		}
-		case PhysicalOperatorType::HASH_GROUP_BY:
-		case PhysicalOperatorType::PERFECT_HASH_GROUP_BY: {
-			// Hash Aggregate / Perfect Hash Aggregate
-			// sink schema: [INTEGER in_index, INTEGER out_index, INTEGER thread_id]
-			if (stage_idx == LINEAGE_SINK) {
-				// in_index | LogicalType::INTEGER, out_index|LogicalType::BIGINT, thread_id|LogicalType::INTEGER
-				//  data_woffset->data is CollectionLineage
-				idx_t res_count  = 0;
-				if (type == PhysicalOperatorType::HASH_GROUP_BY) {
-					// encode grouping set in the table name
-					//dynamic_cast<CollectionLineage &>(*data_woffset->data).Debug();
-					auto lineage_vec = dynamic_cast<CollectionLineage &>(*data_woffset->data).lineage_vec;
-					res_count =  lineage_vec->at(0)->Count();
-					Vector out_index(types[1], lineage_vec->at(0)->Process(0));
-					insert_chunk.data[1].Reference(out_index);
-				} else {
-					Vector out_index =  data_woffset->data->GetVecRef(types[1], 0);
-					res_count = data_woffset->data->Count();
-					insert_chunk.data[1].Reference(out_index);
-				}
+  auto thread_val  = thread_vec[thread_id];
+  log_per_thread[thread_val]->GetLineageAsChunk(insert_chunk, global_count, local_count, data_idx, cache_offset, cache_size, cache);
+  global_count += insert_chunk.size();
+  local_count += insert_chunk.size();
 
-				insert_chunk.SetCardinality(res_count);
-				insert_chunk.data[0].Sequence(count_so_far, 1, res_count);
-				insert_chunk.data[2].Reference(thread_id_vec);
-				count_so_far += res_count;
-			} else if (stage_idx == LINEAGE_FINALIZE) {
-				//dynamic_cast<CollectionLineage &>(*data_woffset->data).Debug();
-				auto lineage_vec = dynamic_cast<CollectionLineage &>(*data_woffset->data).lineage_vec;
-				auto nested_lineage_vec =  dynamic_cast<CollectionLineage &>(*lineage_vec->at(0)).lineage_vec;
-				idx_t res_count =  0;
-				for (idx_t i=0; i < nested_lineage_vec->size(); i++) {
-					res_count +=  nested_lineage_vec->at(i)->Count();
-					Vector source_payload(types[0], nested_lineage_vec->at(i)->Process(0));
-					Vector new_payload(types[1], nested_lineage_vec->at(i)->Process(0));
-					insert_chunk.data[0].Reference(source_payload);
-					insert_chunk.data[1].Reference(new_payload);
-					break;
-				}
+  if (insert_chunk.size() == 0) {
+	thread_id++;
+	cache = true;
+	data_idx = 0;
+  }
 
-				insert_chunk.SetCardinality(res_count);
-				insert_chunk.data[2].Reference(thread_id_vec);
-				count_so_far += res_count;
-			} else {
-				// in_index|LogicalType::BIGINT, out_index|LogicalType::INTEGER, thread_id| LogicalType::INTEGER
-				idx_t res_count = data_woffset->data->Count();
-
-				// Vector in_index(types[0], this_data.data->GetLineageAsChunk(0));
-				Vector in_index = data_woffset->data->GetVecRef(types[0], 0);
-				insert_chunk.SetCardinality(res_count);
-				insert_chunk.data[0].Reference(in_index);
-				insert_chunk.data[1].Sequence(count_so_far, 1, res_count); // out_index
-				insert_chunk.data[2].Reference(thread_id_vec);
-				count_so_far += res_count;
-			}
-			break;
-		}
-*/
-	return insert_chunk.size();
+  return insert_chunk.size();
 }
 
-void  getchunk(const vector<LogicalType>& types, idx_t res_count, idx_t count_so_far,
+void fillBaseChunk(DataChunk &insert_chunk, idx_t res_count, Vector &lhs_payload,
+                   Vector &rhs_payload, idx_t count_so_far) {
+  insert_chunk.SetCardinality(res_count);
+  insert_chunk.data[0].Reference(lhs_payload);
+  insert_chunk.data[1].Reference(rhs_payload);
+  insert_chunk.data[2].Sequence(count_so_far, 1, res_count);
+}
+
+void  getchunk(idx_t res_count, idx_t global_count,
               DataChunk &insert_chunk, data_ptr_t ptr, idx_t child_offset) {
   insert_chunk.SetCardinality(res_count);
   if (ptr != nullptr) {
@@ -155,13 +95,14 @@ void  getchunk(const vector<LogicalType>& types, idx_t res_count, idx_t count_so
   } else {
     insert_chunk.data[0].Sequence(child_offset, 1, res_count); // in_index
   }
-  insert_chunk.data[1].Sequence(count_so_far, 1, res_count); // out_index
+  insert_chunk.data[1].Sequence(global_count, 1, res_count); // out_index
 }
 
 // schema: [INTEGER in_index, INTEGER out_index]
-idx_t FilterLog::GetLineageAsChunk(const vector<LogicalType>& types, idx_t count_so_far,
-  DataChunk &insert_chunk, idx_t data_idx,
-  idx_t &cache_offset, idx_t &cache_size, bool &cache) {
+idx_t FilterLog::GetLineageAsChunk(DataChunk &insert_chunk,
+                                   idx_t& global_count, idx_t& local_count,
+                                   idx_t& data_idx,
+                                   idx_t &cache_offset, idx_t &cache_size, bool &cache) {
   
   if (data_idx >= lineage.size()) {
 	  return 0;
@@ -177,15 +118,18 @@ idx_t FilterLog::GetLineageAsChunk(const vector<LogicalType>& types, idx_t count
 		}
     ptr = (data_ptr_t)vec_ptr;
   }
-  getchunk(types, res_count, count_so_far, insert_chunk,  ptr, child_offset);
+  getchunk(res_count, global_count, insert_chunk,  ptr, child_offset);
+
+  data_idx++;
   return res_count;
 }
     
 // TableScan
 // schema: [INTEGER in_index, INTEGER out_index]
-idx_t TableScanLog::GetLineageAsChunk(const vector<LogicalType>& types, idx_t count_so_far,
-  DataChunk &insert_chunk, idx_t data_idx,
-  idx_t &cache_offset, idx_t &cache_size, bool &cache) {
+idx_t TableScanLog::GetLineageAsChunk(DataChunk &insert_chunk,
+                                      idx_t& global_count, idx_t& local_count,
+                                      idx_t& data_idx,
+                                      idx_t &cache_offset, idx_t &cache_size, bool &cache) {
   
   if (data_idx >= lineage.size()) {
 	  return 0;
@@ -201,15 +145,19 @@ idx_t TableScanLog::GetLineageAsChunk(const vector<LogicalType>& types, idx_t co
 		}
     ptr = (data_ptr_t)vec_ptr;
   }
-  getchunk(types, res_count, count_so_far, insert_chunk,  ptr, child_offset);
+  getchunk(res_count, global_count, insert_chunk,  ptr, child_offset);
+
+  data_idx++;
+
   return res_count;
 }
 
 // Limit
 // schema: [INTEGER in_index, INTEGER out_index]
-idx_t LimitLog::GetLineageAsChunk(const vector<LogicalType>& types, idx_t count_so_far,
-  DataChunk &insert_chunk, idx_t data_idx,
-  idx_t &cache_offset, idx_t &cache_size, bool &cache) {
+idx_t LimitLog::GetLineageAsChunk(DataChunk &insert_chunk,
+                                  idx_t& global_count, idx_t& local_count,
+                                  idx_t& data_idx,
+                                  idx_t &cache_offset, idx_t &cache_size, bool &cache) {
   
   if (data_idx >= lineage.size()) {
 	  return 0;
@@ -219,26 +167,27 @@ idx_t LimitLog::GetLineageAsChunk(const vector<LogicalType>& types, idx_t count_
   idx_t res_count = lineage[data_idx].end;
   idx_t offset = lineage[data_idx].child_offset;
 
-	auto start = current_offset == 0 ? offset : current_offset;
-	auto end = start + res_count;
+  auto start = current_offset == 0 ? offset : current_offset;
+  //auto end = start + res_count;
   insert_chunk.SetCardinality(res_count);
   insert_chunk.data[0].Sequence(start, 1, res_count); // in_index
-  insert_chunk.data[1].Sequence(count_so_far, 1, res_count); // out_index
-    
-	return res_count;
+  insert_chunk.data[1].Sequence(global_count, 1, res_count); // out_index
+  data_idx++;
+  return res_count;
 }
     
 // Order By
 // schema: [INTEGER in_index, INTEGER out_index]
-idx_t OrderByLog::GetLineageAsChunk(const vector<LogicalType>& types, idx_t count_so_far,
-  DataChunk &insert_chunk, idx_t data_idx,
-  idx_t &cache_offset, idx_t &cache_size, bool &cache) {
+idx_t OrderByLog::GetLineageAsChunk(DataChunk &insert_chunk,
+                                    idx_t& global_count, idx_t& local_count,
+                                    idx_t& data_idx,
+                                    idx_t &cache_offset, idx_t &cache_size, bool &cache) {
   
   if (data_idx >= lineage.size()) {
     cache = false;
     cache_size = 0;
     cache_offset = 0;
-	  return 0;
+	return 0;
   }
   
   idx_t res_count = lineage[data_idx].size();
@@ -259,6 +208,7 @@ idx_t OrderByLog::GetLineageAsChunk(const vector<LogicalType>& types, idx_t coun
     if (!cache) {
       cache_offset = 0;
       cache_size = 0;
+	  data_idx++;
     }
   } else {
     if (res_count > STANDARD_VECTOR_SIZE) {
@@ -271,24 +221,24 @@ idx_t OrderByLog::GetLineageAsChunk(const vector<LogicalType>& types, idx_t coun
   insert_chunk.SetCardinality(res_count);
   Vector in_index(LogicalType::BIGINT, ptr); // TODO: add offset
   insert_chunk.data[0].Reference(in_index);
-  insert_chunk.data[1].Sequence(count_so_far, 1, res_count); // out_index
-
-	return res_count;
+  insert_chunk.data[1].Sequence(global_count, 1, res_count);
+  return res_count;
 }
     
 // Cross Product
 // schema: [INTEGER lhs_index, INTEGER rhs_index, INTEGER out_index]
-idx_t CrossLog::GetLineageAsChunk(const vector<LogicalType>& types, idx_t count_so_far,
-  DataChunk &insert_chunk, idx_t data_idx,
-  idx_t &cache_offset, idx_t &cache_size, bool &cache) {
+idx_t CrossLog::GetLineageAsChunk(DataChunk &insert_chunk,
+                                  idx_t& global_count, idx_t& local_count,
+                                  idx_t& data_idx,
+                                  idx_t &cache_offset, idx_t &cache_size, bool &cache) {
   
   if (data_idx >= lineage.size()) {
 	  return 0;
   }
-  
+
   idx_t branch_scan_lhs = lineage[data_idx].branch_scan_lhs;
   idx_t res_count = lineage[data_idx].count;
-  idx_t out_start = count_so_far; // lineage[data_idx].out_start;
+  idx_t out_start = global_count; // lineage[data_idx].out_start;
   idx_t position_in_chunk = lineage[data_idx].position_in_chunk;
   idx_t scan_position = lineage[data_idx].scan_position;
 
@@ -298,105 +248,82 @@ idx_t CrossLog::GetLineageAsChunk(const vector<LogicalType>& types, idx_t count_
     Vector rhs_payload(Value::Value::INTEGER(scan_position + position_in_chunk));
     Vector lhs_payload(LogicalType::INTEGER, res_count);
     lhs_payload.Sequence(out_start, 1, res_count);
-    fillBaseChunk(insert_chunk, res_count, lhs_payload, rhs_payload, count_so_far);
+    fillBaseChunk(insert_chunk, res_count, lhs_payload, rhs_payload, global_count);
   } else {
     Vector rhs_payload(LogicalType::INTEGER, res_count);
     Vector lhs_payload(Value::Value::INTEGER(position_in_chunk + out_start));
     lhs_payload.Sequence(scan_position, 1, res_count);
-    fillBaseChunk(insert_chunk, res_count, lhs_payload, rhs_payload, count_so_far);
+    fillBaseChunk(insert_chunk, res_count, lhs_payload, rhs_payload, global_count);
   }
-  
-	return res_count;
+  data_idx++;
+  return res_count;
 }
 
 // NLJ
 // schema: [INTEGER lhs_index, INTEGER rhs_index, INTEGER out_index]
-idx_t NLJLog::GetLineageAsChunk(const vector<LogicalType>& types, idx_t count_so_far,
-  DataChunk &insert_chunk, idx_t data_idx,
-  idx_t &cache_offset, idx_t &cache_size, bool &cache) {
+idx_t NLJLog::GetLineageAsChunk(DataChunk &insert_chunk,
+                                idx_t& global_count, idx_t& local_count,
+                                idx_t& data_idx,
+                                idx_t &cache_offset, idx_t &cache_size, bool &cache) {
   
   if (data_idx >= lineage.size()) {
 	  return 0;
   }
   
   idx_t res_count = lineage[data_idx].count;
-  idx_t out_start = lineage[data_idx].out_start;
-  idx_t current_row_index = lineage[data_idx].current_row_index;
+  //idx_t out_start = lineage[data_idx].out_start;
+  //idx_t current_row_index = lineage[data_idx].current_row_index;
+  Vector lhs_payload(LogicalType::INTEGER);
+  Vector rhs_payload(LogicalType::INTEGER);
+  if (lineage[data_idx].left) {
+	  data_ptr_t left_ptr = (data_ptr_t)lineage[data_idx].left->owned_data.get();
+	  Vector temp(LogicalType::INTEGER, left_ptr);
+	  lhs_payload.Reference(temp);
+  } else {
+	  lhs_payload.SetVectorType(VectorType::CONSTANT_VECTOR);
+	  ConstantVector::SetNull(lhs_payload, true);
+  }
+  if (lineage[data_idx].right) {
+	  data_ptr_t right_ptr = (data_ptr_t)lineage[data_idx].right->owned_data.get();
+	  Vector temp(LogicalType::INTEGER, right_ptr);
+	  rhs_payload.Reference(temp);
+  } else {
+	  rhs_payload.SetVectorType(VectorType::CONSTANT_VECTOR);
+	  ConstantVector::SetNull(rhs_payload, true);
+  }
 
-  data_ptr_t left_ptr = (data_ptr_t)lineage[data_idx].left->owned_data.get();
-  data_ptr_t right_ptr = (data_ptr_t)lineage[data_idx].right->owned_data.get();
-
-  Vector lhs_payload(LogicalType::INTEGER, left_ptr);
-  Vector rhs_payload(LogicalType::INTEGER, right_ptr);
-  
-  fillBaseChunk(insert_chunk, res_count, lhs_payload, rhs_payload, count_so_far);
-  
-	return res_count;
+  fillBaseChunk(insert_chunk, res_count, lhs_payload, rhs_payload, global_count);
+  data_idx++;
+  return res_count;
 }
     
 // BNLJ
 // schema: [INTEGER lhs_index, INTEGER rhs_index, INTEGER out_index]
-idx_t BNLJLog::GetLineageAsChunk(const vector<LogicalType>& types, idx_t count_so_far,
-  DataChunk &insert_chunk, idx_t data_idx,
-  idx_t &cache_offset, idx_t &cache_size, bool &cache) {
+idx_t BNLJLog::GetLineageAsChunk(DataChunk &insert_chunk,
+                                 idx_t& global_count, idx_t& local_count,
+                                 idx_t& data_idx,
+                                 idx_t &cache_offset, idx_t &cache_size, bool &cache) {
   
   if (data_idx >= lineage.size()) {
 	  return 0;
   }
-  
-  /*
-		case PhysicalOperatorType::CROSS_PRODUCT:
-		case PhysicalOperatorType::BLOCKWISE_NL_JOIN: {
-			if (stage_idx == LINEAGE_SOURCE) {
-				// schema: [INTEGER lhs_index, BIGINT rhs_index, INTEGER out_index]
-
-				// This is pretty hacky, but it's fine since we're just validating that we haven't broken HashJoins
-				// when introducing LineageNested
-				Vector lhs_payload(types[0]);
-				Vector rhs_payload(types[1]);
-
-				idx_t res_count = data_woffset->data->Count();
-
-				// Left side / probe side
-				if (dynamic_cast<LineageBinary &>(*data_woffset->data).left == nullptr) {
-					lhs_payload.SetVectorType(VectorType::CONSTANT_VECTOR);
-					ConstantVector::SetNull(lhs_payload, true);
-				} else {
-					Vector temp = dynamic_cast<LineageBinary&>(*data_woffset->data).left->GetVecRef(types[0], data_woffset->in_start);
-					lhs_payload.Reference(temp);
-				}
-
-				// Right side / build side
-				if (dynamic_cast<LineageBinary &>(*data_woffset->data).right == nullptr) {
-					rhs_payload.SetVectorType(VectorType::CONSTANT_VECTOR);
-					ConstantVector::SetNull(rhs_payload, true);
-				} else {
-					Vector temp = dynamic_cast<LineageBinary&>(*data_woffset->data).right->GetVecRef(types[1], 0);
-					rhs_payload.Reference(temp);
-				}
-
-				fillBaseChunk(insert_chunk, res_count, lhs_payload, rhs_payload, count_so_far, thread_id_vec);
-				count_so_far += res_count;
-			}
-			break;
-		}
-
-     */
-	return 0;
+  data_idx++;
+  return 0;
 }
     
 // Merge
 // schema: [INTEGER lhs_index, INTEGER rhs_index, INTEGER out_index]
-idx_t MergeLog::GetLineageAsChunk(const vector<LogicalType>& types, idx_t count_so_far,
-  DataChunk &insert_chunk, idx_t data_idx,
-  idx_t &cache_offset, idx_t &cache_size, bool &cache) {
+idx_t MergeLog::GetLineageAsChunk(DataChunk &insert_chunk,
+                                  idx_t& global_count, idx_t& local_count,
+                                  idx_t& data_idx,
+                                  idx_t &cache_offset, idx_t &cache_size, bool &cache) {
   
   if (data_idx >= lineage.size()) {
 	  return 0;
   }
-  
-  /*
+  data_idx++;
 
+  /*
 		case PhysicalOperatorType::PIECEWISE_MERGE_JOIN:
 		case PhysicalOperatorType::NESTED_LOOP_JOIN: {
 			if (stage_idx == LINEAGE_SOURCE) {
@@ -439,23 +366,23 @@ idx_t MergeLog::GetLineageAsChunk(const vector<LogicalType>& types, idx_t count_
 					rhs_payload.Reference(temp);
 				}
 
-				fillBaseChunk(insert_chunk, res_count, lhs_payload, rhs_payload, count_so_far, thread_id_vec);
-				count_so_far += res_count;
+				fillBaseChunk(insert_chunk, res_count, lhs_payload, rhs_payload, global_count, thread_id_vec);
+				global_count += res_count;
 			} else 	if (stage_idx == LINEAGE_SINK) {
 				// schema: [INTEGER in_index, INTEGER out_index, INTEGER thread_id]
 				idx_t res_count = data_woffset->data->Count();
 				insert_chunk.SetCardinality(res_count);
 				Vector in_index = data_woffset->data->GetVecRef(types[0], data_woffset->in_start);
 				insert_chunk.data[0].Reference(in_index);
-				insert_chunk.data[1].Sequence(count_so_far, 1, res_count); // out_index
+				insert_chunk.data[1].Sequence(global_count, 1, res_count); // out_index
 				insert_chunk.data[2].Reference(thread_id_vec);  // thread_id
-				count_so_far += res_count;
+				global_count += res_count;
 			}
 			break;
    */
 	return 0;
 }
-
+/*
 idx_t HashJoinLog::GetBuildSideIndex(idx_t cur) {
   if (lineage_finalize.size() > 0 && lineage_finalize.back().added_count > cur) {
     // substitute cur with the address it refer to
@@ -464,50 +391,48 @@ idx_t HashJoinLog::GetBuildSideIndex(idx_t cur) {
     auto new_cur = lineage_finalize.back().sel->owned_data[cur];
     std::cout << count << " old cur: " << cur << " New : " << new_cur << std::endl;
     // assert new_cur < count
-    auto addr = ((uint64_t*)lineage_finalize.back().scatter.get())[new_cur];
-    cur = (idx_t)addr;
+    auto addr =  lineage_finalize.back().scatter.get())[new_cur];
+    cur =  addr;
   }
 
-  for (idx_t it = 0; it < hm_range.size(); ++it) {
-    //std::cout << cur << " " << hm_range[it].first << " " << hm_range[it].second << " " << offset << " " << hash_chunk_count[it] <<  std::endl;
-    if (cur >= hm_range[it].first && cur <= hm_range[it].second) {
-      idx_t val = ((cur - hm_range[it].first) / offset) + hash_chunk_count[it];
-      //std::cout << i << " " << val << std::endl;
-      return val;
-    }
-  }
   return 0;
-}
+}*/
 
 // Hash Join
 // schema: [INTEGER lhs_index, INTEGER rhs_index, INTEGER out_index]
-idx_t HashJoinLog::GetLineageAsChunk(const vector<LogicalType>& types, idx_t count_so_far,
-  DataChunk &insert_chunk, idx_t data_idx,
-  idx_t &cache_offset, idx_t &cache_size, bool &cache) {
+idx_t HashJoinLog::GetLineageAsChunk(DataChunk &insert_chunk,
+                                     idx_t& global_count, idx_t& local_count,
+                                     idx_t& data_idx,
+                                     idx_t &cache_offset, idx_t &cache_size, bool &cache) {
   
   if (data_idx >= output_index.size()) {
 	  return 0;
   }
   
-  if (hm_range.size() == 0) {
+  if (hash_index.size() == 0) {
     BuildIndexes();
   }
 
   idx_t lsn = output_index[data_idx].first;
-  
+  if (lsn == 0) { // something is wrong
+	return 0;
+  }
+
+  lsn -= 1;
+
   idx_t res_count = lineage_binary[lsn].count;
-  idx_t out_offset = lineage_binary[lsn].out_offset;
+  //idx_t out_offset = lineage_binary[lsn].out_offset;
   data_ptr_t left_ptr = (data_ptr_t)lineage_binary[lsn].left.get();
   data_ptr_t right_ptr;
-  uint64_t* right_build_ptr = (uint64_t*)lineage_binary[lsn].right.get();
+  data_ptr_t* right_build_ptr = lineage_binary[lsn].right.get();
 
   Vector lhs_payload(LogicalType::INTEGER);
-	Vector rhs_payload(LogicalType::INTEGER);
+  Vector rhs_payload(LogicalType::INTEGER);
   
   // Left side / probe side
   if (left_ptr == nullptr) {
     if (res_count == STANDARD_VECTOR_SIZE) {
-      lhs_payload.Sequence(count_so_far, 1, res_count); // out_index
+      lhs_payload.Sequence(global_count, 1, res_count); // out_index
     } else {
       lhs_payload.SetVectorType(VectorType::CONSTANT_VECTOR);
       ConstantVector::SetNull(lhs_payload, true);
@@ -527,26 +452,167 @@ idx_t HashJoinLog::GetLineageAsChunk(const vector<LogicalType>& types, idx_t cou
     if (right_val_log.size() < (lsn+1)) {
       unique_ptr<sel_t[]>  right_val(new sel_t[res_count]);
       for (idx_t i=0; i < res_count; i++) {
-        idx_t cur = (idx_t)right_build_ptr[i];
-        right_val[i] = GetBuildSideIndex(cur);
+        right_val[i] = hash_index[right_build_ptr[i]];
       }
       right_val_log.push_back(move(right_val));
       right_ptr = (data_ptr_t)right_val_log.back().get();
     } else {
       right_ptr = (data_ptr_t)right_val_log[lsn].get();
-    } 
-
+    }
     Vector temp(LogicalType::INTEGER, (data_ptr_t)right_ptr);
     rhs_payload.Reference(temp);
   }
 
-  fillBaseChunk(insert_chunk, res_count, lhs_payload, rhs_payload, count_so_far);
+  fillBaseChunk(insert_chunk, res_count, lhs_payload, rhs_payload, global_count);
+  data_idx++;
+  return res_count;
+}
 
-  
-	return res_count;
+// Hash Agg
+// schema: [INTEGER in_index, INTEGER out_index]
+idx_t HALog::GetLineageAsChunk(DataChunk &insert_chunk,
+                               idx_t& global_count, idx_t& local_count,
+                               idx_t& data_idx,
+                               idx_t &cache_offset, idx_t &cache_size, bool &cache) {
+
+	if (data_idx >= scan_log.size()) {
+		return 0;
+	}
+
+	if (hash_index.size() == 0) {
+		BuildIndexes();
+	}
+
+	idx_t scan_count = scan_log[data_idx].count;
+	if (current_key >= scan_count) {
+		data_idx++;
+		current_key = 0;
+		return 0;
+	}
+	data_ptr_t* payload = scan_log[data_idx].addchunk_lineage.get();
+	data_ptr_t output_key = payload[current_key];
+	// current scan , current offset into scan, current offset into groups of scan
+	vector<idx_t>& la = hash_index[output_key];
+	// read from offset_within_key to max(1024, la.size());
+	idx_t end_offset = la.size() - offset_within_key;
+	if (end_offset > STANDARD_VECTOR_SIZE) {
+		end_offset = STANDARD_VECTOR_SIZE;
+	}
+	insert_chunk.SetCardinality(end_offset);
+
+	// TODO: only display between offset_within_key to end_offset
+	data_ptr_t ptr = (data_ptr_t)(la.data() + offset_within_key);
+	Vector in_index(LogicalType::BIGINT, ptr);
+	// use in index to loop up hash_map_agg
+	insert_chunk.data[0].Reference(in_index);
+	insert_chunk.data[1].Reference(Value::INTEGER(current_key)); // out_index
+
+ 	offset_within_key += end_offset;
+	if (offset_within_key >= la.size()) {
+		offset_within_key = 0;
+		current_key++;
+	}
+	if (current_key >= scan_log[data_idx].count) {
+		cache = false;
+		current_key = 0;
+		data_idx++;
+	} else {
+		cache = true;
+	}
+
+	return end_offset;
+	/*
+	    case PhysicalOperatorType::HASH_GROUP_BY:
+	    case PhysicalOperatorType::PERFECT_HASH_GROUP_BY: {
+} else if (stage_idx == LINEAGE_FINALIZE) {
+	//dynamic_cast<CollectionLineage &>(*data_woffset->data).Debug();
+	auto lineage_vec = dynamic_cast<CollectionLineage &>(*data_woffset->data).lineage_vec;
+	auto nested_lineage_vec =  dynamic_cast<CollectionLineage &>(*lineage_vec->at(0)).lineage_vec;
+	idx_t res_count =  0;
+	for (idx_t i=0; i < nested_lineage_vec->size(); i++) {
+		res_count +=  nested_lineage_vec->at(i)->Count();
+		Vector source_payload(types[0], nested_lineage_vec->at(i)->Process(0));
+		Vector new_payload(types[1], nested_lineage_vec->at(i)->Process(0));
+		insert_chunk.data[0].Reference(source_payload);
+		insert_chunk.data[1].Reference(new_payload);
+		break;
+	}
+
+	insert_chunk.SetCardinality(res_count);
+	insert_chunk.data[2].Reference(thread_id_vec);
+	global_count += res_count;
+} else {
+}
+break;
+}
+	 */
+}
+
+
+// Perfect Hash Agg
+// schema: [INTEGER in_index, INTEGER out_index]
+idx_t PHALog::GetLineageAsChunk(DataChunk &insert_chunk,
+                                idx_t& global_count, idx_t& local_count,
+                                idx_t& data_idx,
+                                idx_t &cache_offset, idx_t &cache_size, bool &cache) {
+
+	if (data_idx >= scan_lineage.size()) {
+		return 0;
+	}
+
+   	if (hash_index.size() == 0) {
+   		BuildIndexes();
+   	}
+
+	//idx_t scan_count = scan_lineage[data_idx].count;
+	uint32_t* payload = scan_lineage[data_idx].gather.get();
+	uint32_t output_key = payload[current_key];
+	// current scan , current offset into scan, current offset into groups of scan
+	vector<idx_t>& la = hash_index[output_key];
+	// read from offset_within_key to max(1024, la.size());
+	idx_t end_offset = la.size() - offset_within_key;
+	if (end_offset > STANDARD_VECTOR_SIZE) {
+		end_offset = STANDARD_VECTOR_SIZE;
+	}
+	insert_chunk.SetCardinality(end_offset);
+
+	// TODO: only display between offset_within_key to end_offset
+	data_ptr_t ptr = (data_ptr_t)(la.data() + offset_within_key);
+	Vector in_index(LogicalType::BIGINT, ptr);
+	// use in index to loop up hash_map_agg
+	insert_chunk.data[0].Reference(in_index);
+	insert_chunk.data[1].Reference(Value::INTEGER(current_key)); // out_index
+
+	global_count += end_offset;
+	offset_within_key += end_offset;
+	if (offset_within_key >= la.size()) {
+		offset_within_key = 0;
+		current_key++;
+	}
+	if (current_key >= scan_lineage[data_idx].count) {
+		cache = false;
+		current_key = 0;
+		data_idx++;
+	} else {
+		cache = true;
+	}
+
+	return end_offset;
 }
     
-    
+/*
+   case PhysicalOperatorType::PROJECTION: {
+           D_ASSERT(stage_idx == LINEAGE_SOURCE);
+           // schema: [INTEGER in_index, INTEGER out_index, INTEGER thread_id]
+           idx_t res_count = data_woffset->data->Count();
+           insert_chunk.SetCardinality(res_count);
+           Vector in_index = data_woffset->data->GetVecRef(types[0], global_count);
+           insert_chunk.data[0].Reference(in_index);
+           insert_chunk.data[1].Sequence(global_count, 1, res_count); // out_index
+           insert_chunk.data[2].Reference(thread_id_vec);  // thread_id
+           break;
+       }
+*/
 
 } // namespace duckdb
 #endif

@@ -307,7 +307,7 @@ idx_t GroupedAggregateHashTable::AddChunk(AggregateHTAppendState &state, DataChu
 		unique_ptr<data_ptr_t[]> addresses_copy(new data_ptr_t[groups.size()]);
 		std::copy(ptrs, ptrs + groups.size() , addresses_copy.get());
     auto lop = reinterpret_cast<HALog*>(groups.log_per_thread.get());
-    lop->addchunk_log.push_back({move(addresses_copy), groups.size()}); 
+    lop->addchunk_log.push_back({move(addresses_copy), groups.size()});
 	}
 #endif
 	Verify();
@@ -603,10 +603,10 @@ void GroupedAggregateHashTable::Combine(GroupedAggregateHashTable &other) {
 		auto ptrs = FlatVector::GetData<data_ptr_t>( state.scan_state.chunk_state.row_locations);
 		unique_ptr<data_ptr_t[]> src_addresses_copy(new data_ptr_t[state.groups.size()]);
 		std::copy(ptrs, ptrs + state.groups.size(), src_addresses_copy.get());
-		
+
     ptrs = FlatVector::GetData<data_ptr_t>( state.group_addresses);
-		unique_ptr<data_ptr_t[]> dst_addresses_copy(new data_ptr_t[state.groups.size()]);
-		std::copy(ptrs, ptrs + state.groups.size() , dst_addresses_copy.get());
+    unique_ptr<data_ptr_t[]> dst_addresses_copy(new data_ptr_t[state.groups.size()]);
+    std::copy(ptrs, ptrs + state.groups.size() , dst_addresses_copy.get());
 
     auto lop = reinterpret_cast<HALog*>(other.log_per_thread.get());
     lop->flushmove_log.push_back({move(src_addresses_copy), move(dst_addresses_copy), state.groups.size()});
@@ -666,7 +666,6 @@ idx_t GroupedAggregateHashTable::Scan(TupleDataParallelScanState &gstate, TupleD
 		auto ptrs = FlatVector::GetData<data_ptr_t>( lstate.chunk_state.row_locations);
 		unique_ptr<data_ptr_t[]> addresses_copy(new data_ptr_t[result.size()]);
 		std::copy(ptrs, ptrs + result.size() , addresses_copy.get());
-    
     auto lop = reinterpret_cast<HALog*>(result.log_per_thread.get());
     lop->scan_log.push_back({move(addresses_copy), result.size()});
 	}

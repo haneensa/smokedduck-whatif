@@ -251,11 +251,13 @@ void JoinHashTable::Build(PartitionedTupleDataAppendState &append_state, DataChu
 				key_locations_lineage[idx] = ptrs[i];
 			}
 		}
-    auto log = reinterpret_cast<HashJoinLog*>(source_chunk.log_per_thread.get());
+    auto log = reinterpret_cast<HashJoinLog*>(keys.log_per_thread.get());
 		if (added_count < keys.size()) {
-      log->lineage_build.push_back({sel.sel_data(), added_count, keys.size(), move(key_locations_lineage), 0});
+      log->lineage_build.push_back({sel.sel_data(), added_count,
+			                              keys.size(), move(key_locations_lineage), 0});
 		}  else {
-      log->lineage_build.push_back({nullptr, added_count, keys.size(), move(key_locations_lineage), 0});
+      log->lineage_build.push_back({nullptr, added_count,
+			                              keys.size(), move(key_locations_lineage), 0});
 		}
 	}
 #endif
@@ -530,7 +532,7 @@ void ScanStructure::NextInnerJoin(DataChunk &keys, DataChunk &left, DataChunk &r
 			GatherResult(vector, result_vector, result_count, i + ht.condition_types.size());
 		}
 #ifdef LINEAGE
-		if (result.trace_lineage) {
+		if (keys.trace_lineage) {
 			auto ptrs = FlatVector::GetData<data_ptr_t>(pointers);
 			unique_ptr<data_ptr_t[]> key_locations_lineage(new data_ptr_t[result_count]);
 			for (idx_t i = 0; i < result_count; i++) {
@@ -538,13 +540,13 @@ void ScanStructure::NextInnerJoin(DataChunk &keys, DataChunk &left, DataChunk &r
 				key_locations_lineage[i] = ptrs[idx];
 			}
       
-      unique_ptr<sel_t[]> left = nullptr;
-      if (result_count < STANDARD_VECTOR_SIZE) {
-        left = unique_ptr<sel_t[]>(new sel_t[result_count]);
-        std::copy(result_vector.data(), result_vector.data() + result_count, left.get());
-      }  
-      auto log = reinterpret_cast<HashJoinLog*>(keys.log_per_thread.get());
-      log->lineage_binary.push_back({move(left), move(key_locations_lineage), result_count});
+		  unique_ptr<sel_t[]> left = nullptr;
+		  if (result_count < STANDARD_VECTOR_SIZE) {
+			left = unique_ptr<sel_t[]>(new sel_t[result_count]);
+			std::copy(result_vector.data(), result_vector.data() + result_count, left.get());
+		  }
+		  auto log = reinterpret_cast<HashJoinLog*>(keys.log_per_thread.get());
+		  log->lineage_binary.push_back({move(left), move(key_locations_lineage), result_count, 0});
 		}
 #endif
 		AdvancePointers();
@@ -598,14 +600,14 @@ void ScanStructure::NextSemiOrAntiJoin(DataChunk &keys, DataChunk &left, DataChu
 		// reference the columns of the left side from the result
 		result.Slice(left, sel, result_count);
 #ifdef LINEAGE
-		if (result.trace_lineage) {
-      unique_ptr<sel_t[]> left = nullptr;
-      if (result_count < STANDARD_VECTOR_SIZE) {
-        left = unique_ptr<sel_t[]>(new sel_t[result_count]);
-        std::copy(sel.data(), sel.data() + result_count, left.get());
-      }  
-      auto log = reinterpret_cast<HashJoinLog*>(keys.log_per_thread.get());
-      log->lineage_binary.push_back({move(left), move(key_locations_lineage), result_count});
+		if (keys.trace_lineage) {
+		  unique_ptr<sel_t[]> left = nullptr;
+		  if (result_count < STANDARD_VECTOR_SIZE) {
+			left = unique_ptr<sel_t[]>(new sel_t[result_count]);
+			std::copy(sel.data(), sel.data() + result_count, left.get());
+		  }
+		  auto log = reinterpret_cast<HashJoinLog*>(keys.log_per_thread.get());
+		  log->lineage_binary.push_back({move(left), move(key_locations_lineage), result_count, 0});
 		}
 #endif
 	} else {
@@ -672,9 +674,9 @@ void ScanStructure::ConstructMarkJoinResult(DataChunk &join_keys, DataChunk &chi
 		memset(bool_result, 0, sizeof(bool) * child.size());
 	}
 #ifdef LINEAGE
-	if (result.trace_lineage) {
+	if (join_keys.trace_lineage) {
       auto log = reinterpret_cast<HashJoinLog*>(join_keys.log_per_thread.get());
-      log->lineage_binary.push_back({nullptr, move(key_locations_lineage), child.size()});
+      log->lineage_binary.push_back({nullptr, move(key_locations_lineage), child.size(), 0});
 	}
 #endif
 	// if the right side contains NULL values, the result of any FALSE becomes NULL
@@ -788,14 +790,14 @@ void ScanStructure::NextLeftJoin(DataChunk &keys, DataChunk &left, DataChunk &re
 				ConstantVector::SetNull(vec, true);
 			}
 #ifdef LINEAGE
-			if (result.trace_lineage) {
-        unique_ptr<sel_t[]> left = nullptr;
-        if (remaining_count < STANDARD_VECTOR_SIZE) {
-          left = unique_ptr<sel_t[]>(new sel_t[remaining_count]);
-          std::copy(sel.data(), sel.data() + remaining_count, left.get());
-        }  
-        auto log = reinterpret_cast<HashJoinLog*>(keys.log_per_thread.get());
-        log->lineage_binary.push_back({move(left), nullptr, remaining_count});
+			if (keys.trace_lineage) {
+				unique_ptr<sel_t[]> left = nullptr;
+				if (remaining_count < STANDARD_VECTOR_SIZE) {
+				  left = unique_ptr<sel_t[]>(new sel_t[remaining_count]);
+				  std::copy(sel.data(), sel.data() + remaining_count, left.get());
+				}
+				auto log = reinterpret_cast<HashJoinLog*>(keys.log_per_thread.get());
+				log->lineage_binary.push_back({move(left), nullptr, remaining_count, 0});
 			}
 #endif
 		}
@@ -853,9 +855,9 @@ void ScanStructure::NextSingleJoin(DataChunk &keys, DataChunk &input, DataChunk 
 	}
 	result.SetCardinality(input.size());
 #ifdef LINEAGE
-	if (result.trace_lineage) {
+	if (keys.trace_lineage) {
       auto log = reinterpret_cast<HashJoinLog*>(keys.log_per_thread.get());
-      log->lineage_binary.push_back({nullptr, move(key_locations_lineage), result_count});
+      log->lineage_binary.push_back({nullptr, move(key_locations_lineage), result_count, 0});
 	}
 #endif
 	// like the SEMI, ANTI and MARK join types, the SINGLE join only ever does one pass over the HT per input chunk
@@ -919,7 +921,8 @@ void JoinHashTable::ScanFullOuter(JoinHTScanState &state, Vector &addresses, Dat
 			key_locations_lineage[i] = (data_ptr_t)key_locations[i];
 		}
     auto log = reinterpret_cast<HashJoinLog*>(result.log_per_thread.get());
-    log->lineage_binary.push_back({nullptr, move(key_locations_lineage), found_entries});
+    log->lineage_binary.push_back({nullptr, move(key_locations_lineage), found_entries, 0});
+		log->output_index.push_back({log->GetLatestLSN(), 0});
 	}
 #endif
 }

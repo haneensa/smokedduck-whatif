@@ -12,6 +12,9 @@ idx_t OperatorLineage::Size() {
 	return size;
 }
 
+idx_t Log::GetLatestLSN() {
+	return 0;
+}
 
 idx_t Log::GetLogSizeBytes() {
 	idx_t size_bytes = 0;
@@ -23,9 +26,10 @@ idx_t Log::GetLogSizeBytes() {
 	return size_bytes;
 }
 void OperatorLineage::InitLog(idx_t thread_id) {
+  thread_vec.push_back(thread_id);
   if (type ==  PhysicalOperatorType::FILTER) {
     std::cout << "filter init log " << thread_id << std::endl;
-    log_per_thread[thread_id] = make_shared<FilterLog>();
+	log_per_thread[thread_id] = make_shared<FilterLog>();
   } else if (type ==  PhysicalOperatorType::TABLE_SCAN) {
     std::cout << "scan init log " << thread_id << std::endl;
     log_per_thread[thread_id] = make_shared<TableScanLog>();
@@ -50,6 +54,9 @@ void OperatorLineage::InitLog(idx_t thread_id) {
   } else if (type ==  PhysicalOperatorType::PERFECT_HASH_GROUP_BY) {
     std::cout << "pha init log " << thread_id << std::endl;
     log_per_thread[thread_id] = make_shared<PHALog>();
+  } else if (type ==  PhysicalOperatorType::HASH_GROUP_BY) {
+	std::cout << "ha init log " << thread_id << std::endl;
+	log_per_thread[thread_id] = make_shared<HALog>();
   } else if (type ==  PhysicalOperatorType::HASH_JOIN) {
     std::cout << "hj init log " << thread_id << std::endl;
     log_per_thread[thread_id] = make_shared<HashJoinLog>();
@@ -132,85 +139,85 @@ idx_t HashJoinLog::Count() {
 }
 
 idx_t HashJoinLog::ChunksCount() {
-  return 0;
+  return lineage_binary.size();
 }
   
 void HashJoinLog::BuildIndexes() {
-  idx_t size = lineage_build.size();
-  start_base = 0;
-  last_base = 0;
   idx_t count_so_far = 0;
-  offset = 0;
-  // TODO: this ignore selection vector if exists
   // if sel vector exists, create hash map: addr -> id ?
-  if (size > 0) {
-    auto payload = (uint64_t*)(lineage_build[0].scatter.get());
-    idx_t res_count = lineage_build[0].added_count;
-    start_base = payload[0];
-    last_base = payload[res_count - 1];
-    hm_range.emplace_back(start_base, last_base);
-    hash_chunk_count.push_back(0);
-    if (offset == 0 && res_count > 1) {
-      offset = payload[1] - payload[0];
-    }
-    count_so_far += res_count;
+  for (idx_t i = 0; i < lineage_build.size(); i++) {
+	idx_t res_count = lineage_build[i].added_count;
+	auto payload = lineage_build[i].scatter.get();
+	auto sel = lineage_build[i].sel;
+	if (sel) {
+		for (idx_t j = 0; j < res_count; j++) {
+			hash_index[payload[j]] = sel->owned_data[j] + count_so_far;
+		}
+	} else {
+		for (idx_t j = 0; j < res_count; j++) {
+			hash_index[payload[j]] = j + count_so_far;
+		}
+	}
+
+	count_so_far += res_count;
   }
+}
 
-  for (auto i=1; i < size; ++i) {
-    // build hash table with range -> acc
-    // if x in range -> then use range.start and adjust the value using acc
-    auto payload = (uint64_t*)(lineage_build[i].scatter.get());
-    idx_t res_count = lineage_build[i].added_count;
-    if (offset == 0) offset = payload[res_count - 1] - start_base;
-    auto diff = (payload[res_count - 1] - start_base) / offset;
-    if (diff + 1 !=  count_so_far + res_count - hash_chunk_count.back()) {
-      // update the range and log the old one
-      // range -> count
-      // if value fall in this range, then remove the start / offset
-      for (idx_t j = 0; j < res_count; ++j) {
-        auto f = ((payload[j] - start_base) / offset);
-        auto s = count_so_far + j - hash_chunk_count.back();
-        if ( f !=  s) {
-          if (j > 1) {
-            hm_range.back().second = payload[j - 1]; // the previous one
-          }
-          hash_chunk_count.push_back(count_so_far + j);
-          start_base = payload[j];
-          last_base = payload[res_count - 1];
-          hm_range.emplace_back(start_base, last_base);
-          break;
-        }
-      }
-    } else {
-      hm_range.back().second = payload[res_count - 1];
-    }
-    count_so_far += res_count;
+
+// HashAggregateLog
+idx_t HALog::Size() {
+  return 0;
+}
+
+idx_t HALog::Count() {
+  return 0;
+}
+
+idx_t HALog::ChunksCount() {
+  return addchunk_log.size();
+}
+
+// TODO: an issue with multi-threading --  build could run on separate thread from scan
+void HALog::BuildIndexes() {
+  // build side
+  auto size = addchunk_log.size();
+  idx_t count_so_far = 0;
+  for (idx_t i=0; i < size; i++) {
+	//if (sink_log[i].branch == 0) {
+		idx_t res_count = addchunk_log[i].count;
+		auto payload = addchunk_log[i].addchunk_lineage.get();
+		for (idx_t j=0; j < res_count; ++j) {
+			hash_index[payload[j]].push_back(j + count_so_far);
+		}
+		count_so_far += res_count;
+	//}
   }
+}
 
-  /*
-			if (stage_idx == LINEAGE_SINK) {
-				// sink: [BIGINT in_index, INTEGER out_index, INTEGER thread_id]
-				idx_t res_count = data_woffset->data->Count();
-				insert_chunk.SetCardinality(res_count);
-				// if data_woffset->data is Binary, then there is a null in the input build
-				// else it is just a single vector
-				if (typeid(*data_woffset->data) == typeid(LineageBinary)) {
-					// get selection vector
-					Vector payload = dynamic_cast<LineageBinary&>(*data_woffset->data).right->GetVecRef(types[1], 0);
-					insert_chunk.data[1].Reference(payload);
-					// in_index
-					Vector sel = dynamic_cast<LineageBinary&>(*data_woffset->data).left->GetVecRef(types[0], data_woffset->in_start);
-					insert_chunk.data[0].Reference(sel);
-				} else {
-					Vector payload = data_woffset->data->GetVecRef(types[1], 0);
-					insert_chunk.data[1].Reference(payload);
-					// in_index
-					insert_chunk.data[0].Sequence(data_woffset->in_start, 1, res_count);
-				}
-				insert_chunk.data[2].Reference(thread_id_vec);
-				count_so_far += res_count;
 
-     */
+// Perfect HashAggregateLog
+idx_t PHALog::Size() {
+  return 0;
+}
+
+idx_t PHALog::Count() {
+  return 0;
+}
+
+idx_t PHALog::ChunksCount() {
+  return 0;
+}
+
+void PHALog::BuildIndexes() {
+  idx_t count_so_far = 0;
+  for (idx_t i=0; i < build_lineage.size(); i++) {
+	vector<uint32_t> &payload = build_lineage[i];
+	for (idx_t i = 0; i < payload.size(); ++i) {
+		auto val = i + count_so_far;
+		hash_index[payload[i]].push_back(val);
+	}
+	count_so_far += payload.size();
+  }
 }
 
 

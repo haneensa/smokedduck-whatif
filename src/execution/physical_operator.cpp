@@ -4,7 +4,6 @@
 #include "duckdb/common/string_util.hpp"
 #include "duckdb/common/tree_renderer.hpp"
 #include "duckdb/execution/execution_context.hpp"
-#include "duckdb/execution/operator/set/physical_recursive_cte.hpp"
 #include "duckdb/main/client_context.hpp"
 #include "duckdb/parallel/meta_pipeline.hpp"
 #include "duckdb/parallel/pipeline.hpp"
@@ -239,7 +238,7 @@ OperatorResultType CachingPhysicalOperator::Execute(ExecutionContext &context, D
 
 	// Execute child operator
 	auto child_result = ExecuteInternal(context, input, chunk, gstate, state);
-
+	auto thread_id = context.thread.thread_id;
 #if STANDARD_VECTOR_SIZE >= 128
 	if (!state.initialized) {
 		state.initialized = true;
@@ -261,7 +260,7 @@ OperatorResultType CachingPhysicalOperator::Execute(ExecutionContext &context, D
 	if (!state.can_cache_chunk) {
 #ifdef LINEAGE
 		if (ClientConfig::GetConfig(context.client).trace_lineage) {
-      auto log = lineage_op->GetLog(0);
+      auto log = lineage_op->GetLog(thread_id);
       log->output_index.push_back({log->GetLatestLSN(), state.in_start});
 		}
 #endif
@@ -281,8 +280,7 @@ OperatorResultType CachingPhysicalOperator::Execute(ExecutionContext &context, D
 #ifdef LINEAGE
 		if (chunk.size() > 0 && ClientConfig::GetConfig(context.client).trace_lineage) {
 			// accumelate lineage
-      auto log = lineage_op->GetLog(0);
-      log->cached_output_index.push_back({log->GetLatestLSN(), state.in_start});
+			lineage_op->GetLog(thread_id)->cached_output_index.push_back({lineage_op->GetLog(0)->GetLatestLSN(), state.in_start});
 		}
 #endif
 		if (state.cached_chunk->size() >= (STANDARD_VECTOR_SIZE - CACHE_THRESHOLD) ||
@@ -292,12 +290,11 @@ OperatorResultType CachingPhysicalOperator::Execute(ExecutionContext &context, D
 			state.cached_chunk->Initialize(Allocator::Get(context.client), chunk.GetTypes());
 #ifdef LINEAGE
 			if (ClientConfig::GetConfig(context.client).trace_lineage) {
-      std::cout << " 1c caching" << std::endl;
-        auto log = lineage_op->GetLog(0);
-        log->output_index.insert(log->output_index.end(),
-            std::make_move_iterator(log->cached_output_index.begin()),
-            std::make_move_iterator(log->cached_output_index.end()));
-        log->cached_output_index.clear();
+				auto log = lineage_op->GetLog(thread_id);
+				log->output_index.insert(log->output_index.end(),
+					std::make_move_iterator(log->cached_output_index.begin()),
+					std::make_move_iterator(log->cached_output_index.end()));
+				log->cached_output_index.clear();
 			}
 #endif
 			return child_result;
@@ -309,8 +306,8 @@ OperatorResultType CachingPhysicalOperator::Execute(ExecutionContext &context, D
 	} else {
 		// no cache, return chunk's lineage
 		if (ClientConfig::GetConfig(context.client).trace_lineage) {
-      auto log = lineage_op->GetLog(0);
-      log->output_index.push_back({log->GetLatestLSN(), state.in_start});
+		  auto log = lineage_op->GetLog(thread_id);
+		  log->output_index.push_back({log->GetLatestLSN(), state.in_start});
 		}
 	}
 #endif
@@ -327,12 +324,11 @@ OperatorFinalizeResultType CachingPhysicalOperator::FinalExecute(ExecutionContex
 		state.cached_chunk.reset();
 #ifdef LINEAGE
 		if (ClientConfig::GetConfig(context.client).trace_lineage) {
-      std::cout << " 1b caching" << std::endl;
-      auto log = lineage_op->GetLog(0);
-      log->output_index.insert(log->output_index.end(),
-          std::make_move_iterator(log->cached_output_index.begin()),
-          std::make_move_iterator(log->cached_output_index.end()));
-      log->cached_output_index.clear();
+		  auto log = lineage_op->GetLog(context.thread.thread_id);
+		  log->output_index.insert(log->output_index.end(),
+			  std::make_move_iterator(log->cached_output_index.begin()),
+			  std::make_move_iterator(log->cached_output_index.end()));
+		  log->cached_output_index.clear();
 		}
 #endif
 	} else {

@@ -5,6 +5,7 @@
 
 statement ok
 PRAGMA explain_output = PHYSICAL_ONLY;
+PRAGMA threads=2;
 
 statement ok
 CREATE TABLE t1(i INTEGER);
@@ -12,10 +13,6 @@ CREATE TABLE t1(i INTEGER);
 statement ok
 INSERT INTO t1 SELECT i FROM range(0,200000) tbl(i);
 INSERT INTO t1 SELECT i FROM range(0,5) tabl(i);
-
-
-statement ok
-PRAGMA threads=4
 
 statement ok
 PRAGMA enable_lineage;
@@ -25,12 +22,22 @@ statement ok
 select * from t1
 
 # filter from different chunks
-statement ok
-select * from t1 where i < 2
+query II
+select rowid, * from t1 where i < 2
+----
+0	0
+1	1
+200000	0
+200001	1
 
 # filter from end chunks
-statement ok
-select * from t1 where i > 199995
+query II
+select rowid, * from t1 where i > 199995
+----
+199996	199996
+199997	199997
+199998	199998
+199999	199999
 
 # filter from first chunk
 statement ok
@@ -38,24 +45,15 @@ select * from t1 where i=6
 
 statement ok
 PRAGMA disable_lineage;
-
-
-query II
-SELECT query_id, query from duckdb_queries_list()
-----
-0	PRAGMA enable_lineage;
-1	select * from t1
-2	select * from t1 where i < 2
-3	select * from t1 where i > 199995
-4	select * from t1 where i=6
+PRAGMA threads=1;
 
 query III
-SELECT rowid, in_index, out_index FROM LINEAGE_2_SEQ_SCAN_0_0
+SELECT rowid, in_index, out_index FROM LINEAGE_2_SEQ_SCAN_0_0 order by in_index
 ----
-0	200000	0
-1	200001	1
-2	0	0
-3	1	1
+0	0	0
+1	1	1
+2	200000	2
+3	200001	3
 
 
 query III

@@ -12,6 +12,19 @@ namespace duckdb {
 PipelineExecutor::PipelineExecutor(ClientContext &context_p, Pipeline &pipeline_p)
     : pipeline(pipeline_p), thread(context_p), context(context_p, thread, &pipeline_p) {
 	D_ASSERT(pipeline.source_state);
+#ifdef LINEAGE
+	std::cout << "init " << thread.thread_id << std::endl;
+	for (idx_t i = 0; i < pipeline.operators.size(); i++) {
+		pipeline.operators[i].get().lineage_op->InitLog(thread.thread_id);
+	}
+	if (pipeline.source && pipeline.source->lineage_op) {
+		pipeline.source->lineage_op->InitLog(thread.thread_id);
+	}
+	if (pipeline.sink && pipeline.sink->lineage_op) {
+		pipeline.sink->lineage_op->InitLog(thread.thread_id);
+	}
+#endif
+
 	if (pipeline.sink) {
 		local_sink_state = pipeline.sink->GetLocalSinkState(context);
 		requires_batch_index = pipeline.sink->RequiresBatchIndex() && pipeline.source->SupportsBatchIndex();
@@ -92,7 +105,7 @@ bool PipelineExecutor::TryFlushCachingOperators() {
 			if ((context.client.client_data->lineage_manager->persist_intermediate ||
 			     context.client.client_data->lineage_manager->CheckIfShouldPersistForKSemimodule(&current_operator)
 			     ) && curr_chunk.size() > 0) {
-//				current_operator.lineage_op->chunk_collection.Append(curr_chunk);
+				current_operator.lineage_op->chunk_collection.Append(curr_chunk);
 			}
 #endif
 			EndOperator(current_operator, &curr_chunk);
@@ -418,7 +431,7 @@ OperatorResultType PipelineExecutor::Execute(DataChunk &input, DataChunk &result
 			if ((context.client.client_data->lineage_manager->persist_intermediate ||
 			     context.client.client_data->lineage_manager->CheckIfShouldPersistForKSemimodule(&current_operator)
 			         ) && current_chunk.size() > 0) {
-//				current_operator.lineage_op->chunk_collection.Append(current_chunk);
+				current_operator.lineage_op->chunk_collection.Append(current_chunk);
 			}
 #endif
 			EndOperator(current_operator, &current_chunk);
@@ -514,7 +527,7 @@ SourceResultType PipelineExecutor::FetchFromSource(DataChunk &result) {
 	if (context.client.client_data->lineage_manager->persist_intermediate ||
 	     context.client.client_data->lineage_manager->CheckIfShouldPersistForKSemimodule(pipeline.source.get())
 	         ) {
-//		pipeline.source->lineage_op->chunk_collection.Append(result);
+		pipeline.source->lineage_op->chunk_collection.Append(result);
 	}
 #endif
 	// Ensures Sinks only return empty results when Blocking or Finished

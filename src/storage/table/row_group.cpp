@@ -454,8 +454,9 @@ void RowGroup::TemplatedScan(TransactionData transaction, CollectionScanState &s
 				}
 			}
 #ifdef LINEAGE
-    if (result.log_per_thread) {
-      reinterpret_cast<TableScanLog*>(result.log_per_thread.get())->lineage.push_back({nullptr, count, this->start, current_row});
+    if (result.log_per_thread && result.trace_lineage) {
+	  auto log = reinterpret_cast<TableScanLog*>(result.log_per_thread.get());
+	  log->lineage.push_back({nullptr, count, this->start, current_row});
     }
 #endif
 		} else {

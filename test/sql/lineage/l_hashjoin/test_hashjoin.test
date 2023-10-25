@@ -98,9 +98,8 @@ PRAGMA disable_lineage;
 PRAGMA disable_optimizer;
 
 query IIII
-select src.lhs_index, sink.in_index as rhs_index, src.out_index, src.thread_id from LINEAGE_1_HASH_JOIN_2_1 as sink right join LINEAGE_1_HASH_JOIN_2_0 as src
-on(src.rhs_index=sink.out_index)
-order by src.out_index
+select lhs_index, rhs_index as rhs_index, out_index, 0 as thread_id from LINEAGE_1_HASH_JOIN_2_0
+order by out_index
 ----
 0	4	0	0
 2	1	1	0
@@ -115,9 +114,8 @@ order by src.out_index
 
 
 query IIII
-select src.lhs_index, sink.in_index as rhs_index, src.out_index, src.thread_id from LINEAGE_2_HASH_JOIN_2_1 as sink right join LINEAGE_2_HASH_JOIN_2_0 as src
-on(src.rhs_index=sink.out_index)
-order by src.out_index
+select lhs_index, rhs_index, out_index, 0 as thread_id from LINEAGE_2_HASH_JOIN_2_0
+order by out_index
 ----
 1	2	0	0
 2	5	1	0
@@ -133,9 +131,8 @@ order by src.out_index
 
 
 query IIII
-select sink.in_index, src.lhs_index, src.out_index, src.thread_id from LINEAGE_3_HASH_JOIN_2_1 as sink right join LINEAGE_3_HASH_JOIN_2_0 as src
-on(src.rhs_index=sink.out_index)
-order by src.out_index
+select rhs_index, lhs_index, out_index, 0 as thread_id from LINEAGE_3_HASH_JOIN_2_0
+order by out_index
 ----
 4	0	0	0
 1	2	1	0
@@ -151,9 +148,8 @@ NULL	1	9	0
 3	NULL	11	0
 
 query IIII
-select sink.in_index, src.lhs_index, src.out_index, src.thread_id from LINEAGE_4_HASH_JOIN_2_1 as sink, LINEAGE_4_HASH_JOIN_2_0 as src
-where src.rhs_index=sink.out_index
-order by src.out_index
+select rhs_index, lhs_index, out_index, 0 as thread_id from LINEAGE_4_HASH_JOIN_2_0
+order by out_index
 ----
 4	0	0	0
 1	2	1	0

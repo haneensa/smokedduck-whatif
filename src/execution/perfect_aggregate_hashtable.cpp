@@ -115,7 +115,7 @@ void PerfectAggregateHashTable::AddChunk(DataChunk &groups, DataChunk &payload) 
 #ifdef LINEAGE
   auto lop = reinterpret_cast<PHALog*>(groups.log_per_thread.get());
   lop->build_lineage.emplace_back();
-  auto cur_lineage = lop->build_lineage.back();
+  vector<uint32_t>& cur_lineage = lop->build_lineage.back();
   cur_lineage.resize(groups.size());
 #endif
 	// now we have the HT entry number for every tuple

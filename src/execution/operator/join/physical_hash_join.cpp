@@ -957,6 +957,9 @@ SourceResultType PhysicalHashJoin::GetData(ExecutionContext &context, DataChunk 
 
 #ifdef LINEAGE
 	chunk.trace_lineage = ClientConfig::GetConfig(context.client).trace_lineage;
+	if (chunk.trace_lineage) {
+		chunk.log_per_thread = lineage_op->GetLog(0);
+	}
 #endif
 	// Any call to GetData must produce tuples, otherwise the pipeline executor thinks that we're done
 	// Therefore, we loop until we've produced tuples, or until the operator is actually done
@@ -968,11 +971,6 @@ SourceResultType PhysicalHashJoin::GetData(ExecutionContext &context, DataChunk 
 			gstate.TryPrepareNextStage(sink);
 		}
 	}
-#ifdef LINEAGE
-/*	if (chunk.trace_lineage && chunk.log_record) {
-		//lineage_op->Capture(std::move(chunk.log_record), LINEAGE_SOURCE, 0);
-	}*/
-#endif
 	return chunk.size() == 0 ? SourceResultType::FINISHED : SourceResultType::HAVE_MORE_OUTPUT;
 }
 

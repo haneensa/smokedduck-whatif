@@ -132,7 +132,7 @@ OperatorResultType PhysicalCrossProduct::ExecuteInternal(ExecutionContext &conte
 #ifdef LINEAGE
 	auto result = state.executor.Execute(input, chunk);
 	if (ClientConfig::GetConfig(context.client).trace_lineage) {
-    reinterpret_cast<CrossLog*>(lineage_op->GetLog(0).get())->lineage.push_back({
+    reinterpret_cast<CrossLog*>(lineage_op->GetLog(context.thread.thread_id).get())->lineage.push_back({
         state.executor.ScanLHS(),
         state.executor.PositionInChunk(),
         state.executor.ScanPosition(),

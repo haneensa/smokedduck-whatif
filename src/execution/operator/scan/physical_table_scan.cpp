@@ -81,13 +81,15 @@ SourceResultType PhysicalTableScan::GetData(ExecutionContext &context, DataChunk
 
 	TableFunctionInput data(bind_data.get(), state.local_state.get(), gstate.global_state.get());
 #ifdef LINEAGE
-  if (lineage_op) {
-    chunk.log_per_thread = lineage_op->GetLog(0);
+  if (lineage_op && lineage_op->trace_lineage) {
+    chunk.log_per_thread = lineage_op->GetLog(context.thread.thread_id);
+	chunk.trace_lineage = true;
   }
 #endif
 	function.function(context.client, data, chunk);
 #ifdef LINEAGE
   chunk.log_per_thread = nullptr;
+  chunk.trace_lineage = false;
 #endif
 	return chunk.size() == 0 ? SourceResultType::FINISHED : SourceResultType::HAVE_MORE_OUTPUT;
 }

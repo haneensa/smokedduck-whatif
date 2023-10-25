@@ -306,7 +306,7 @@ void PhysicalNestedLoopJoin::ResolveSimpleJoin(ExecutionContext &context, DataCh
                                                OperatorState &state_p) const {
 	auto &state = state_p.Cast<PhysicalNestedLoopJoinState>();
 	auto &gstate = sink_state->Cast<NestedLoopJoinGlobalState>();
-
+	auto thread_id = context.thread.thread_id;
 	// resolve the left join condition for the current chunk
 	state.left_condition.Reset();
 	state.lhs_executor.Execute(input, state.left_condition);
@@ -322,7 +322,7 @@ void PhysicalNestedLoopJoin::ResolveSimpleJoin(ExecutionContext &context, DataCh
 #ifdef LINEAGE
 		chunk.trace_lineage = ClientConfig::GetConfig(context.client).trace_lineage;
     if (chunk.trace_lineage) {
-      chunk.log_per_thread = lineage_op->GetLog(0);
+      chunk.log_per_thread = lineage_op->GetLog(thread_id);
     }
 #endif
 		// construct the semi join result from the found matches
@@ -338,7 +338,7 @@ void PhysicalNestedLoopJoin::ResolveSimpleJoin(ExecutionContext &context, DataCh
 #ifdef LINEAGE
 		chunk.trace_lineage = ClientConfig::GetConfig(context.client).trace_lineage;
     if (chunk.trace_lineage) {
-      chunk.log_per_thread = lineage_op->GetLog(0);
+      chunk.log_per_thread = lineage_op->GetLog(thread_id);
     }
 #endif
 		// construct the anti join result from the found matches
@@ -383,14 +383,9 @@ OperatorResultType PhysicalNestedLoopJoin::ResolveComplexJoin(ExecutionContext &
 					// have a match found
 #ifdef LINEAGE
 					chunk.trace_lineage = ClientConfig::GetConfig(context.client).trace_lineage;
+					chunk.log_per_thread = lineage_op->GetLog(context.thread.thread_id);
 #endif
 					state.left_outer.ConstructLeftJoinResult(input, chunk);
-#ifdef LINEAGE
-					if (chunk.trace_lineage) {
-					//	chunk.log_record->in_start = state.in_start;
-						//lineage_op->Capture(std::move(chunk.log_record), LINEAGE_SOURCE, 0);
-					}
-#endif
 					state.left_outer.Reset();
 				}
 				return OperatorResultType::NEED_MORE_INPUT;
@@ -436,7 +431,8 @@ OperatorResultType PhysicalNestedLoopJoin::ResolveComplexJoin(ExecutionContext &
 			chunk.Slice(right_payload, rvector, match_count, input.ColumnCount());
 #ifdef LINEAGE
 			if (ClientConfig::GetConfig(context.client).trace_lineage) {
-        reinterpret_cast<NLJLog*>(chunk.log_per_thread.get())->lineage.push_back({
+			auto log = reinterpret_cast<NLJLog*>(lineage_op->GetLog(context.thread.thread_id).get());
+			log->lineage.push_back({
             lvector.sel_data(), rvector.sel_data(), match_count, state.condition_scan_state.current_row_index, state.in_start});
 			}
 #endif
@@ -508,7 +504,7 @@ SourceResultType PhysicalNestedLoopJoin::GetData(ExecutionContext &context, Data
 		std::copy(lstate.scan_state.match_sel.data(),
         lstate.scan_state.match_sel.data() + chunk.size(),
         sel_copy->owned_data.get());
-    reinterpret_cast<NLJLog*>(lineage_op->GetLog(0).get())->lineage.push_back({
+    reinterpret_cast<NLJLog*>(lineage_op->GetLog(context.thread.thread_id).get())->lineage.push_back({
         nullptr, sel_copy, chunk.size(), lstate.scan_state.local_scan.current_row_index, 0});
 	}
 #endif

@@ -48,15 +48,15 @@ OperatorResultType PhysicalFilter::ExecuteInternal(ExecutionContext &context, Da
 		chunk.Reference(input);
 #ifdef LINEAGE
 		if (lineage_op && lineage_op->trace_lineage) {
-      reinterpret_cast<FilterLog*>(lineage_op->GetLog(0).get())->lineage.push_back({nullptr, result_count, state.in_start});
+      reinterpret_cast<FilterLog*>(lineage_op->GetLog(context.thread.thread_id).get())->lineage.push_back({nullptr, result_count, state.in_start});
 		}
 #endif
 	} else {
 #ifdef LINEAGE
-		if (lineage_op && lineage_op->trace_lineage) {
+		if (result_count > 0 && lineage_op && lineage_op->trace_lineage) {
 			unique_ptr<sel_t []> sel_copy(new sel_t[result_count]);
 			std::copy(state.sel.data(), state.sel.data() + result_count, sel_copy.get());
-      reinterpret_cast<FilterLog*>(lineage_op->GetLog(0).get())->lineage.push_back({move(sel_copy), result_count, state.in_start});
+      reinterpret_cast<FilterLog*>(lineage_op->GetLog(context.thread.thread_id).get())->lineage.push_back({move(sel_copy), result_count, state.in_start});
 		}
 #endif
 		chunk.Slice(input, state.sel, result_count);
