@@ -1,0 +1,19 @@
+on:
+  schedule:
+    - "*/5 * * * *"
+  workflow_dispatch: # on button click
+jobs:
+
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: tgymnich/fork-sync@v1.8
+        with:
+          repo: duckdb/duckdb
+          token: ${{ secrets.GITHUB_TOKEN }}
+          base: main
+          head: gabe_main-test
+          merge_method: rebase
