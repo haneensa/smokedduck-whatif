@@ -85,13 +85,71 @@ select t1.rowid, * from t1 SEMI JOIN t2 ON t2.i = t1.i order by t1.rowid
 5	3	7
 
 # add test that uses perfect hash join table
+query IIII
+SELECT * FROM t1 INNER JOIN t2 ON t2.i = t1.i
+----
+3	1	3	A
+2	3	2	B
+3	4	3	A
+3	8	3	A
+3	7	3	A
+3	1	3	C
+3	4	3	C
+3	8	3	C
+3	7	3	C
 
-# add test for anti semi join
+# test for anti semi join
+query III
+select t1.rowid, * from t1 ANTI JOIN t2 ON t2.i = t1.i order by t1.rowid
+----
+1	NULL	2
 
-# add test for cache
+# test for left join
+query IIIII
+select t1.rowid, * from t1 LEFT JOIN t2 ON t2.i = t1.i order by t1.rowid
+----
+0	3	1	3	A
+0	3	1	3	C
+1	NULL	2	NULL	NULL
+2	2	3	2	B
+3	3	4	3	A
+3	3	4	3	C
+4	3	8	3	A
+4	3	8	3	C
+5	3	7	3	A
+5	3	7	3	C
 
-# redo all of the above with the cache
+# test for right join
+query IIIII
+select t1.rowid, * from t1 LEFT JOIN t2 ON t2.i = t1.i order by t1.rowid
+----
+0	3	1	3	A
+0	3	1	3	C
+1	NULL	2	NULL	NULL
+2	2	3	2	B
+3	3	4	3	A
+3	3	4	3	C
+4	3	8	3	A
+4	3	8	3	C
+5	3	7	3	A
+5	3	7	3	C
 
+# test for full outer join
+query IIIII
+select t1.rowid, * from t1 FULL OUTER JOIN t2 ON t2.i = t1.i order by t1.rowid
+----
+0	3	1	3	A
+0	3	1	3	C
+1	NULL	2	NULL	NULL
+2	2	3	2	B
+3	3	4	3	A
+3	3	4	3	C
+4	3	8	3	A
+4	3	8	3	C
+5	3	7	3	A
+5	3	7	3	C
+NULL	NULL	NULL	NULL	V
+NULL	NULL	NULL	1	D
 
 statement ok
 PRAGMA disable_lineage;
@@ -156,3 +214,72 @@ order by out_index
 4	3	2	0
 4	4	3	0
 4	5	4	0
+
+query IIII
+select src.lhs_index, sink.in_index as rhs_index, src.out_index, src.thread_id from LINEAGE_5_HASH_JOIN_2_1 as sink right join LINEAGE_5_HASH_JOIN_2_0 as src
+on(src.rhs_index=sink.out_index)
+order by src.out_index
+----
+0	4	0	0
+2	1	1	0
+3	4	2	0
+4	4	3	0
+5	4	4	0
+0	2	5	0
+3	2	6	0
+4	2	7	0
+5	2	8	0
+
+# TODO: fix anti-joins
+query IIII
+select sink.in_index, src.lhs_index, src.out_index, src.thread_id from LINEAGE_6_HASH_JOIN_2_1 as sink, LINEAGE_6_HASH_JOIN_2_0 as src
+where src.rhs_index=sink.out_index
+order by src.out_index
+----
+
+query IIII
+select sink.in_index, src.lhs_index, src.out_index, src.thread_id from LINEAGE_7_HASH_JOIN_2_1 as sink, LINEAGE_7_HASH_JOIN_2_0 as src
+where src.rhs_index=sink.out_index
+order by src.out_index
+----
+4	0	0	0
+1	2	1	0
+4	3	2	0
+4	4	3	0
+4	5	4	0
+2	0	5	0
+2	3	6	0
+2	4	7	0
+2	5	8	0
+
+query IIII
+select sink.in_index, src.lhs_index, src.out_index, src.thread_id from LINEAGE_8_HASH_JOIN_2_1 as sink, LINEAGE_8_HASH_JOIN_2_0 as src
+where src.rhs_index=sink.out_index
+order by src.out_index
+----
+4	0	0	0
+1	2	1	0
+4	3	2	0
+4	4	3	0
+4	5	4	0
+2	0	5	0
+2	3	6	0
+2	4	7	0
+2	5	8	0
+
+query IIII
+select sink.in_index, src.lhs_index, src.out_index, src.thread_id from LINEAGE_9_HASH_JOIN_2_1 as sink, LINEAGE_9_HASH_JOIN_2_0 as src
+where src.rhs_index=sink.out_index
+order by src.out_index
+----
+4	0	0	0
+1	2	1	0
+4	3	2	0
+4	4	3	0
+4	5	4	0
+2	0	5	0
+2	3	6	0
+2	4	7	0
+2	5	8	0
+0	NULL	10	0
+3	NULL	11	0
