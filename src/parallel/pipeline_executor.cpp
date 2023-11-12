@@ -13,7 +13,7 @@ PipelineExecutor::PipelineExecutor(ClientContext &context_p, Pipeline &pipeline_
     : pipeline(pipeline_p), thread(context_p), context(context_p, thread, &pipeline_p) {
 	D_ASSERT(pipeline.source_state);
 #ifdef LINEAGE
-	std::cout << "init " << thread.thread_id << std::endl;
+	//std::cout << "init " << thread.thread_id << std::endl;
 	for (idx_t i = 0; i < pipeline.operators.size(); i++) {
 		pipeline.operators[i].get().lineage_op->InitLog(thread.thread_id);
 	}

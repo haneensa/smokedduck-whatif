@@ -28,37 +28,37 @@ idx_t Log::GetLogSizeBytes() {
 void OperatorLineage::InitLog(idx_t thread_id) {
   thread_vec.push_back(thread_id);
   if (type ==  PhysicalOperatorType::FILTER) {
-    std::cout << "filter init log " << thread_id << std::endl;
+//    std::cout << "filter init log " << thread_id << std::endl;
 	log_per_thread[thread_id] = make_shared<FilterLog>();
   } else if (type ==  PhysicalOperatorType::TABLE_SCAN) {
-    std::cout << "scan init log " << thread_id << std::endl;
+  //  std::cout << "scan init log " << thread_id << std::endl;
     log_per_thread[thread_id] = make_shared<TableScanLog>();
   } else if (type ==  PhysicalOperatorType::LIMIT || type == PhysicalOperatorType::STREAMING_LIMIT) {
-    std::cout << "limit init log " << thread_id << std::endl;
+    //std::cout << "limit init log " << thread_id << std::endl;
     log_per_thread[thread_id] = make_shared<LimitLog>();
   } else if (type ==  PhysicalOperatorType::ORDER_BY) {
-    std::cout << "init log orderby " << thread_id << std::endl;
+    //std::cout << "init log orderby " << thread_id << std::endl;
     log_per_thread[thread_id] = make_shared<OrderByLog>();
   } else if (type ==  PhysicalOperatorType::CROSS_PRODUCT) {
-    std::cout << "cross init log " << thread_id << std::endl;
+    //std::cout << "cross init log " << thread_id << std::endl;
     log_per_thread[thread_id] = make_shared<CrossLog>();
   } else if (type ==  PhysicalOperatorType::PIECEWISE_MERGE_JOIN) {
-    std::cout << "merge init log " << thread_id << std::endl;
+    //std::cout << "merge init log " << thread_id << std::endl;
     log_per_thread[thread_id] = make_shared<MergeLog>();
   } else if (type ==  PhysicalOperatorType::NESTED_LOOP_JOIN) {
-    std::cout << "nlj init log " << thread_id << std::endl;
+    //std::cout << "nlj init log " << thread_id << std::endl;
     log_per_thread[thread_id] = make_shared<NLJLog>();
   } else if (type ==  PhysicalOperatorType::BLOCKWISE_NL_JOIN) {
-    std::cout << "bnlj init log " << thread_id << std::endl;
+    //std::cout << "bnlj init log " << thread_id << std::endl;
     log_per_thread[thread_id] = make_shared<BNLJLog>();
   } else if (type ==  PhysicalOperatorType::PERFECT_HASH_GROUP_BY) {
-    std::cout << "pha init log " << thread_id << std::endl;
+    //std::cout << "pha init log " << thread_id << std::endl;
     log_per_thread[thread_id] = make_shared<PHALog>();
   } else if (type ==  PhysicalOperatorType::HASH_GROUP_BY) {
-	std::cout << "ha init log " << thread_id << std::endl;
-	log_per_thread[thread_id] = make_shared<HALog>();
+	  //std::cout << "ha init log " << thread_id << std::endl;
+	  log_per_thread[thread_id] = make_shared<HALog>();
   } else if (type ==  PhysicalOperatorType::HASH_JOIN) {
-    std::cout << "hj init log " << thread_id << std::endl;
+    //std::cout << "hj init log " << thread_id << std::endl;
     log_per_thread[thread_id] = make_shared<HashJoinLog>();
   } else {
     log_per_thread[thread_id] = make_shared<Log>();

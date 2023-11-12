@@ -207,7 +207,7 @@ SinkResultType PhysicalHashJoin::Sink(ExecutionContext &context, DataChunk &chun
 #ifdef LINEAGE
 	if (ClientConfig::GetConfig(context.client).trace_lineage) {
     lstate.join_keys.trace_lineage = true;
-    lstate.join_keys.log_per_thread = lineage_op->GetLog(0);
+    lstate.join_keys.log_per_thread = lineage_op->GetLog(context.thread.thread_id);
   }
 #endif
 	// build the HT
