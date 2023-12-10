@@ -399,7 +399,7 @@ SinkResultType PhysicalHashAggregate::Sink(ExecutionContext &context, DataChunk 
 	aggregate_input_chunk.Verify();
 #ifdef LINEAGE
 	chunk.trace_lineage = ClientConfig::GetConfig(context.client).trace_lineage;
-	chunk.log_per_thread = lineage_op->GetLog(0);
+	chunk.log_per_thread = lineage_op->GetLog(context.thread.thread_id);
 #endif
 	// For every grouping set there is one radix_table
 	for (idx_t i = 0; i < groupings.size(); i++) {
@@ -964,7 +964,7 @@ SourceResultType PhysicalHashAggregate::GetData(ExecutionContext &context, DataC
 		                                  interrupt_state};
 #ifdef LINEAGE
 		chunk.trace_lineage = ClientConfig::GetConfig(context.client).trace_lineage;
-		chunk.log_per_thread = lineage_op->GetLog(0);
+		chunk.log_per_thread = lineage_op->GetLog(context.thread.thread_id);
 #endif
 		auto res = radix_table.GetData(context, chunk, *grouping_gstate.table_state, source_input);
 		if (chunk.size() != 0) {

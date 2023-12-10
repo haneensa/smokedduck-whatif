@@ -280,7 +280,7 @@ OperatorResultType CachingPhysicalOperator::Execute(ExecutionContext &context, D
 #ifdef LINEAGE
 		if (chunk.size() > 0 && ClientConfig::GetConfig(context.client).trace_lineage) {
 			// accumelate lineage
-			lineage_op->GetLog(thread_id)->cached_output_index.push_back({lineage_op->GetLog(0)->GetLatestLSN(), state.in_start});
+			lineage_op->GetLog(thread_id)->cached_output_index.push_back({lineage_op->GetLog(thread_id)->GetLatestLSN(), state.in_start});
 		}
 #endif
 		if (state.cached_chunk->size() >= (STANDARD_VECTOR_SIZE - CACHE_THRESHOLD) ||

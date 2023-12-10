@@ -40,7 +40,11 @@ public:
 
   	shared_ptr<Log> GetLog(idx_t thread_id) {
     	return log_per_thread[thread_id];
-	}
+	  }
+  	
+    shared_ptr<Log> GetDefaultLog() {
+    	return log_per_thread[thread_vec[0]];
+	  }
 
 public:
   idx_t opid;

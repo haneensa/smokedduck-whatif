@@ -202,21 +202,39 @@ void HashJoinLog::BuildIndexes() {
   idx_t count_so_far = 0;
   // if sel vector exists, create hash map: addr -> id ?
   for (idx_t i = 0; i < lineage_build.size(); i++) {
-	idx_t res_count = lineage_build[i].added_count;
-	auto payload = lineage_build[i].scatter.get();
-	auto sel = lineage_build[i].sel;
-	if (sel) {
-		for (idx_t j = 0; j < res_count; j++) {
-			hash_index[payload[j]] = sel->owned_data[j] + count_so_far;
-		}
-	} else {
-		for (idx_t j = 0; j < res_count; j++) {
-			hash_index[payload[j]] = j + count_so_far;
-		}
-	}
+    idx_t res_count = lineage_build[i].added_count;
+    data_ptr_t* payload = lineage_build[i].scatter.get();
+    auto sel = lineage_build[i].sel;
+    if (sel) {
+      for (idx_t j = 0; j < res_count; j++) {
+        hash_index[payload[j]] = sel->owned_data[j] + count_so_far;
+      }
+    } else {
+      for (idx_t j = 0; j < res_count; j++) {
+        hash_index[payload[j]] = j + count_so_far;
+      }
+    }
 
-	count_so_far += res_count;
+    count_so_far += res_count;
   }
+  
+  for (idx_t i=0; i < output_index.size(); ++i) {
+    idx_t lsn = output_index[i].first;
+    if (lsn == 0) { // something is wrong
+      std::cout << "lsn == 0 for " << i <<  std::endl;
+      break;
+    }
+    lsn -= 1;
+    idx_t child_offset = output_index[i].second;
+    if (lineage_binary[lsn].left != nullptr) {
+      auto vec_ptr = lineage_binary[lsn].left.get();
+      idx_t res_count = lineage_binary[lsn].count;
+      for (idx_t i = 0; i < res_count; i++) {
+        *(vec_ptr + i) += child_offset;
+      }
+    }
+  }
+  processed = true;
 }
 
 

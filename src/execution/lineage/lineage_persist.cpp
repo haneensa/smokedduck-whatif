@@ -61,7 +61,7 @@ idx_t OperatorLineage::GetLineageAsChunk(DataChunk &insert_chunk,
 
   insert_chunk.InitializeEmpty(types);
   if (thread_vec.size() <= thread_id) {
-	return 0;
+	  return 0;
   }
 
   auto thread_val  = thread_vec[thread_id];
@@ -73,7 +73,7 @@ idx_t OperatorLineage::GetLineageAsChunk(DataChunk &insert_chunk,
     thread_id++;
     cache = true;
     data_idx = 0;
-    std::cout << "done " << thread_vec.size() << " " << thread_id << " " << data_idx << std::endl;
+    // std::cout << "done " << thread_vec.size() << " " << thread_id << " " << data_idx << std::endl;
   }
 
   return insert_chunk.size();
@@ -453,6 +453,7 @@ idx_t HashJoinLog::GetLineageAsChunk(DataChunk &insert_chunk,
       unique_ptr<sel_t[]>  right_val(new sel_t[res_count]);
       for (idx_t i=0; i < res_count; i++) {
         right_val[i] = hash_index[right_build_ptr[i]];
+        std::cout << i << " " << right_build_ptr[i] << " " << right_val[i] << std::endl;
       }
       right_val_log.push_back(move(right_val));
       right_ptr = (data_ptr_t)right_val_log.back().get();

@@ -425,7 +425,7 @@ SinkFinalizeType PhysicalHashJoin::Finalize(Pipeline &pipeline, Event &event, Cl
 #ifdef LINEAGE
     if (ClientConfig::GetConfig(context).trace_lineage) {
       sink.perfect_join_executor->trace_lineage = true;
-      sink.perfect_join_executor->log_per_thread = lineage_op->GetLog(0);
+      sink.perfect_join_executor->log_per_thread = lineage_op->GetDefaultLog();
     }
 #endif
 		use_perfect_hash = sink.perfect_join_executor->BuildPerfectHashTable(key_type);
@@ -555,7 +555,7 @@ OperatorResultType PhysicalHashJoin::ExecuteInternal(ExecutionContext &context, 
 
 #ifdef LINEAGE
 	state.join_keys.trace_lineage = ClientConfig::GetConfig(context.client).trace_lineage;
-  state.join_keys.log_per_thread = lineage_op->GetLog(0);
+  state.join_keys.log_per_thread = lineage_op->GetLog(context.thread.thread_id);
 #endif
 
 	// perform the actual probe
@@ -958,7 +958,7 @@ SourceResultType PhysicalHashJoin::GetData(ExecutionContext &context, DataChunk 
 #ifdef LINEAGE
 	chunk.trace_lineage = ClientConfig::GetConfig(context.client).trace_lineage;
 	if (chunk.trace_lineage) {
-		chunk.log_per_thread = lineage_op->GetLog(0);
+		chunk.log_per_thread = lineage_op->GetLog(context.thread.thread_id);
 	}
 #endif
 	// Any call to GetData must produce tuples, otherwise the pipeline executor thinks that we're done
