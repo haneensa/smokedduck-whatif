@@ -26,6 +26,10 @@ idx_t Log::GetLogSizeBytes() {
 	return size_bytes;
 }
 void OperatorLineage::InitLog(idx_t thread_id) {
+  if (log_per_thread.find(thread_id) != log_per_thread.end()) {
+    std::cout << "doublicate " << thread_id << std::endl;
+    return;
+  }
   thread_vec.push_back(thread_id);
   if (type ==  PhysicalOperatorType::FILTER) {
 //    std::cout << "filter init log " << thread_id << std::endl;
@@ -67,47 +71,92 @@ void OperatorLineage::InitLog(idx_t thread_id) {
 
 // FilterLog
 idx_t FilterLog::Size() {
-  return 0;
+  idx_t count = Count();
+  idx_t size_bytes = count * sizeof(sel_t); 
+  size_bytes += lineage.size() * sizeof(filter_artifact);
+
+  return size_bytes;
 }
 
 idx_t FilterLog::Count() {
-  return 0;
+  idx_t count = 0;
+  for (const auto& lineage_data : lineage) {
+    count += lineage_data.count;
+  }
+
+  return count;
 }
 
 idx_t FilterLog::ChunksCount() {
-  return 0;
+  return lineage.size();
 }
   
 void FilterLog::BuildIndexes() {
+  for (const auto& lineage_data : lineage) {
+    if (lineage_data.sel != nullptr) {
+      auto vec_ptr = lineage_data.sel.get();
+      idx_t res_count = lineage_data.count;
+      idx_t child_offset = lineage_data.child_offset;
+      for (idx_t i = 0; i < res_count; i++) {
+        *(vec_ptr + i) += child_offset;
+      }
+    }
+  }
+  processed = true;
 }
 
 // TableScanLog
 idx_t TableScanLog::Size() {
-  return 0;
+  idx_t count = Count();
+  idx_t size_bytes = count * sizeof(sel_t); 
+  size_bytes += lineage.size() * sizeof(scan_artifact);
+
+  return size_bytes;
 }
 
 idx_t TableScanLog::Count() {
-  return 0;
+  idx_t count = 0;
+  for (const auto& lineage_data : lineage) {
+    count += lineage_data.count;
+  }
+
+  return count;
 }
 
 idx_t TableScanLog::ChunksCount() {
-  return 0;
+  return lineage.size();
 }
   
 void TableScanLog::BuildIndexes() {
+  for (const auto& lineage_data : lineage) {
+    if (lineage_data.sel != nullptr) {
+      auto vec_ptr = lineage_data.sel->owned_data.get();
+      idx_t res_count = lineage_data.count;
+      idx_t child_offset = lineage_data.start + lineage_data.vector_index;
+      for (idx_t i = 0; i < res_count; i++) {
+        *(vec_ptr + i) += child_offset;
+      }
+    }
+  }
+  processed = true;
 }
 
 // LimitLog
 idx_t LimitLog::Size() {
-  return 0;
+  return lineage.size() * sizeof(limit_artifact);
 }
 
 idx_t LimitLog::Count() {
-  return 0;
+  idx_t count = 0;
+  for (const auto& lineage_data : lineage) {
+    count += lineage_data.end - lineage_data.start;
+  }
+
+  return count;
 }
 
 idx_t LimitLog::ChunksCount() {
-  return 0;
+  return lineage.size();
 }
   
 void LimitLog::BuildIndexes() {
@@ -115,15 +164,22 @@ void LimitLog::BuildIndexes() {
 
 // OrderByLog
 idx_t OrderByLog::Size() {
-  return 0;
+  idx_t count = Count();
+  idx_t size_bytes = count * sizeof(idx_t); 
+  return size_bytes;
 }
 
 idx_t OrderByLog::Count() {
-  return 0;
+  idx_t count = 0;
+  for (const auto& lineage_data : lineage) {
+    count += lineage_data.size();
+  }
+
+  return count;
 }
 
 idx_t OrderByLog::ChunksCount() {
-  return 0;
+  return lineage.size();
 }
   
 void OrderByLog::BuildIndexes() {
@@ -179,6 +235,9 @@ idx_t HALog::ChunksCount() {
 
 // TODO: an issue with multi-threading --  build could run on separate thread from scan
 void HALog::BuildIndexes() {
+
+  // TODO: detect if finalize exist
+
   // build side
   auto size = addchunk_log.size();
   idx_t count_so_far = 0;
@@ -192,6 +251,7 @@ void HALog::BuildIndexes() {
 		count_so_far += res_count;
 	//}
   }
+  processed = true;
 }
 
 

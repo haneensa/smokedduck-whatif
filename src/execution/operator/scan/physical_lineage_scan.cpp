@@ -28,12 +28,11 @@ PhysicalLineageScan::PhysicalLineageScan(shared_ptr<OperatorLineage> lineage_op,
 
 
 
-class PhysicalLineageScanState : public GlobalSourceState {
+class LineageScanLocalSourceState : public LocalSourceState {
 public:
-	explicit PhysicalLineageScanState(shared_ptr<OperatorLineage> lineage_op) : initialized(false) {
+	LineageScanLocalSourceState(ExecutionContext &context) {
 	}
 
-	bool initialized;
 	idx_t global_count = 0;
 	idx_t log_id = 0;
 	idx_t current_thread = 0;
@@ -41,24 +40,23 @@ public:
 	idx_t chunk_index = 0;
 };
 
-
-unique_ptr<GlobalSourceState> PhysicalLineageScan::GetGlobalSourceState(ClientContext &context) const {
-	return make_uniq<PhysicalLineageScanState>(lineage_op);
+unique_ptr<LocalSourceState> PhysicalLineageScan::GetLocalSourceState(ExecutionContext &context,
+                                                                    GlobalSourceState &gstate) const {
+	return make_uniq<LineageScanLocalSourceState>(context);
 }
+
 
 SourceResultType PhysicalLineageScan::GetData(ExecutionContext &context, DataChunk &chunk,
                                                  OperatorSourceInput &input) const {
-	auto &state = input.global_state.Cast<PhysicalLineageScanState>();
+	auto &state = input.local_state.Cast<LineageScanLocalSourceState>();
 
 	DataChunk result;
  	bool cache_on = false;
 	if (stage_idx == 100) {
-    /*
-		bool must_add_rowid = state.chunk_index == lineage_op->intermediate_chunk_processed_counter;
-
 		vector<LogicalType> types = lineage_op->chunk_collection.Types();
-		types.push_back(LogicalType::INTEGER);
+    types.push_back(LogicalType::INTEGER);
 		result.InitializeEmpty(types);
+
 
 		if (lineage_op->chunk_collection.Count() == 0) {
 			return SourceResultType::FINISHED;
@@ -67,15 +65,15 @@ SourceResultType PhysicalLineageScan::GetData(ExecutionContext &context, DataChu
 			return SourceResultType::FINISHED;
 		}
 		DataChunk &collection_chunk = lineage_op->chunk_collection.GetChunk(state.chunk_index);
-		if (must_add_rowid) {
-			collection_chunk.data.push_back(Vector(LogicalType::INTEGER));
-			collection_chunk.data[collection_chunk.ColumnCount() - 1].Sequence(state.global_count, 1,
+
+    collection_chunk.data.push_back(Vector(LogicalType::INTEGER));
+		collection_chunk.data[collection_chunk.ColumnCount() - 1].Sequence(state.global_count, 1,
 			                                                                   collection_chunk.size());
-			lineage_op->intermediate_chunk_processed_counter++;
-		}
+
 		result.Reference(collection_chunk);
 		state.chunk_index++;
-		state.global_count += result.size();*/
+		state.global_count += result.size();
+		state.local_count += result.size();
 	} else {
 		lineage_op->GetLineageAsChunk(result, state.global_count, state.local_count,
 		                                  state.current_thread, state.log_id, cache_on);

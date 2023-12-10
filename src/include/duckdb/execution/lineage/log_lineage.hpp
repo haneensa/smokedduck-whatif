@@ -23,7 +23,7 @@ class Log;
 
 class Log {
 public:
-	Log() {}
+	Log() : processed(false) {}
 
 	idx_t GetLogSize(idx_t stage_idx) {
 		return 0;
@@ -47,6 +47,7 @@ public:
 public:
 	vector<std::pair<idx_t, idx_t>> output_index;
 	vector<std::pair<idx_t, idx_t>> cached_output_index;
+  bool processed;
 };
 
 // TableScanLog

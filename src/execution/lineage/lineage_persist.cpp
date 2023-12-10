@@ -70,9 +70,10 @@ idx_t OperatorLineage::GetLineageAsChunk(DataChunk &insert_chunk,
   local_count += insert_chunk.size();
 
   if (insert_chunk.size() == 0) {
-	thread_id++;
-	cache = true;
-	data_idx = 0;
+    thread_id++;
+    cache = true;
+    data_idx = 0;
+    std::cout << "done " << thread_vec.size() << " " << thread_id << " " << data_idx << std::endl;
   }
 
   return insert_chunk.size();
@@ -108,14 +109,13 @@ idx_t FilterLog::GetLineageAsChunk(DataChunk &insert_chunk,
 	  return 0;
   }
     
+  if (!processed)  BuildIndexes();
+
   idx_t res_count = lineage[data_idx].count;
   idx_t child_offset = lineage[data_idx].child_offset;
   data_ptr_t ptr = nullptr;
   if (lineage[data_idx].sel != nullptr) {
     auto vec_ptr = lineage[data_idx].sel.get();
-    for (idx_t i = 0; i < res_count; i++) {
-			*(vec_ptr + i) += child_offset;
-		}
     ptr = (data_ptr_t)vec_ptr;
   }
   getchunk(res_count, global_count, insert_chunk,  ptr, child_offset);
@@ -134,19 +134,19 @@ idx_t TableScanLog::GetLineageAsChunk(DataChunk &insert_chunk,
   if (data_idx >= lineage.size()) {
 	  return 0;
   }
+  
+  if (!processed)  BuildIndexes();
     
   idx_t res_count = lineage[data_idx].count;
   idx_t child_offset = lineage[data_idx].start + lineage[data_idx].vector_index;
   data_ptr_t ptr = nullptr;
   if (lineage[data_idx].sel != nullptr) {
     auto vec_ptr = lineage[data_idx].sel->owned_data.get();
-    for (idx_t i = 0; i < res_count; i++) {
-			*(vec_ptr + i) += child_offset;
-		}
     ptr = (data_ptr_t)vec_ptr;
   }
   getchunk(res_count, global_count, insert_chunk,  ptr, child_offset);
 
+ // std::cout << data_idx << " " << res_count << " " << insert_chunk.size() << " " << child_offset << " " << lineage[data_idx].start << " " << lineage[data_idx].vector_index << " " << global_count << " " << local_count << std::endl;
   data_idx++;
 
   return res_count;
@@ -479,7 +479,7 @@ idx_t HALog::GetLineageAsChunk(DataChunk &insert_chunk,
 		return 0;
 	}
 
-	if (hash_index.size() == 0) {
+	if (!processed) {
 		BuildIndexes();
 	}
 
@@ -522,8 +522,6 @@ idx_t HALog::GetLineageAsChunk(DataChunk &insert_chunk,
 
 	return end_offset;
 	/*
-	    case PhysicalOperatorType::HASH_GROUP_BY:
-	    case PhysicalOperatorType::PERFECT_HASH_GROUP_BY: {
 } else if (stage_idx == LINEAGE_FINALIZE) {
 	//dynamic_cast<CollectionLineage &>(*data_woffset->data).Debug();
 	auto lineage_vec = dynamic_cast<CollectionLineage &>(*data_woffset->data).lineage_vec;
