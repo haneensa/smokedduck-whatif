@@ -252,15 +252,13 @@ void HashJoinLog::PostProcess(shared_ptr<LogIndex> logIdx) {
 			*(vec_ptr + i) = logIdx->hj_hash_index[scatter_idx];
 		}
 	} else {
-		if (logIdx->right_val_log.size() < (lsn+1)) {
-			data_ptr_t* right_build_ptr = lineage_binary[lsn].right.get();
+		data_ptr_t* right_build_ptr = lineage_binary[lsn].right.get();
+		if (right_build_ptr && logIdx->right_val_log.size() < (lsn+1)) {
 			unique_ptr<sel_t[]>  right_val(new sel_t[res_count]);
 			for (idx_t i=0; i < res_count; i++) {
 				right_val[i] = logIdx->hj_hash_index[right_build_ptr[i]];
 			}
 			logIdx->right_val_log.push_back(move(right_val));
-			// release lineage_binary[lsn].right
-			lineage_binary[lsn].right.reset();
 		}
 	}
   }
