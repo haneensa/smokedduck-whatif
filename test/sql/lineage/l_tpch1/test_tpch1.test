@@ -15,36 +15,27 @@ statement ok
 PRAGMA enable_profiling;
 PRAGMA enable_lineage;
 
-query IIII
+statement ok
 SELECT
-    l_returnflag,
-    l_linestatus,
-    sum(l_quantity) AS sum_qty,
-    count(*) AS count_order
+    l_orderkey,
+    o_orderdate,
+    o_shippriority,
 FROM
+    customer,
+    orders,
     lineitem
-GROUP BY
-    l_returnflag,
-    l_linestatus
-----
-N	O	765251.00	30049
-R	F	381449.00	14902
-A	F	380456.00	14876
-N	F	8971.00	348
+WHERE
+    c_mktsegment = 'BUILDING'
+    AND c_custkey = o_custkey
+    AND l_orderkey = o_orderkey
+    AND o_orderdate < CAST('1995-03-15' AS date)
+    AND l_shipdate > CAST('1995-03-15' AS date)
 
 statement ok
 PRAGMA disable_lineage;
 PRAGMA disable_optimizer;
 
 
-query II
-select  l_returnflag,
-           l_linestatus
-from lineitem
-where rowid=59870
-----
-
 query III
-select * from LINEAGE_1_HASH_GROUP_BY_2_0 as src
+select * from LINEAGE_1_HASH_JOIN_3_0 as src
 ----
-

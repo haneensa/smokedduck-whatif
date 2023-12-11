@@ -522,10 +522,12 @@ OperatorResultType PhysicalHashJoin::ExecuteInternal(ExecutionContext &context, 
 		D_ASSERT(!sink.external);
 #ifdef LINEAGE
 		chunk.trace_lineage = ClientConfig::GetConfig(context.client).trace_lineage;
+		chunk.log_per_thread = lineage_op->GetLog(context.thread.thread_id);
 #endif
 		auto result = sink.perfect_join_executor->ProbePerfectHashTable(context, input, chunk, *state.perfect_hash_join_state);
 #ifdef LINEAGE
-		// Cache::Execute should capture chunk.log_record
+		chunk.log_per_thread = nullptr;
+		chunk.trace_lineage = false;
 #endif
 		return result;
 	}

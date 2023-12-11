@@ -546,7 +546,7 @@ void ScanStructure::NextInnerJoin(DataChunk &keys, DataChunk &left, DataChunk &r
 			std::copy(result_vector.data(), result_vector.data() + result_count, left.get());
 		  }
 		  auto log = reinterpret_cast<HashJoinLog*>(keys.log_per_thread.get());
-		  log->lineage_binary.push_back({move(left), move(key_locations_lineage), result_count, 0});
+		  log->lineage_binary.push_back({move(left), move(key_locations_lineage), nullptr, 0, result_count, 0});
 		}
 #endif
 		AdvancePointers();
@@ -607,7 +607,7 @@ void ScanStructure::NextSemiOrAntiJoin(DataChunk &keys, DataChunk &left, DataChu
 			std::copy(sel.data(), sel.data() + result_count, left.get());
 		  }
 		  auto log = reinterpret_cast<HashJoinLog*>(keys.log_per_thread.get());
-		  log->lineage_binary.push_back({move(left), move(key_locations_lineage), result_count, 0});
+		  log->lineage_binary.push_back({move(left), move(key_locations_lineage), nullptr, 0, result_count, 0});
 		}
 #endif
 	} else {
@@ -676,7 +676,7 @@ void ScanStructure::ConstructMarkJoinResult(DataChunk &join_keys, DataChunk &chi
 #ifdef LINEAGE
 	if (join_keys.trace_lineage) {
       auto log = reinterpret_cast<HashJoinLog*>(join_keys.log_per_thread.get());
-      log->lineage_binary.push_back({nullptr, move(key_locations_lineage), child.size(), 0});
+      log->lineage_binary.push_back({nullptr, move(key_locations_lineage), nullptr, 0, child.size(), 0});
 	}
 #endif
 	// if the right side contains NULL values, the result of any FALSE becomes NULL
@@ -797,7 +797,7 @@ void ScanStructure::NextLeftJoin(DataChunk &keys, DataChunk &left, DataChunk &re
 				  std::copy(sel.data(), sel.data() + remaining_count, left.get());
 				}
 				auto log = reinterpret_cast<HashJoinLog*>(keys.log_per_thread.get());
-				log->lineage_binary.push_back({move(left), nullptr, remaining_count, 0});
+				log->lineage_binary.push_back({move(left), nullptr, nullptr, 0, remaining_count, 0});
 			}
 #endif
 		}
@@ -857,7 +857,7 @@ void ScanStructure::NextSingleJoin(DataChunk &keys, DataChunk &input, DataChunk 
 #ifdef LINEAGE
 	if (keys.trace_lineage) {
       auto log = reinterpret_cast<HashJoinLog*>(keys.log_per_thread.get());
-      log->lineage_binary.push_back({nullptr, move(key_locations_lineage), result_count, 0});
+      log->lineage_binary.push_back({nullptr, move(key_locations_lineage), nullptr, 0, result_count, 0});
 	}
 #endif
 	// like the SEMI, ANTI and MARK join types, the SINGLE join only ever does one pass over the HT per input chunk
@@ -921,7 +921,7 @@ void JoinHashTable::ScanFullOuter(JoinHTScanState &state, Vector &addresses, Dat
 			key_locations_lineage[i] = (data_ptr_t)key_locations[i];
 		}
     auto log = reinterpret_cast<HashJoinLog*>(result.log_per_thread.get());
-    log->lineage_binary.push_back({nullptr, move(key_locations_lineage), found_entries, 0});
+    log->lineage_binary.push_back({nullptr, move(key_locations_lineage), nullptr, 0, found_entries, 0});
 		log->output_index.push_back({log->GetLatestLSN(), 0});
 	}
 #endif

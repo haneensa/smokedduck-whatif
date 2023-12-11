@@ -14,7 +14,11 @@ PhysicalLineageScan::PhysicalLineageScan(shared_ptr<OperatorLineage> lineage_op,
                                      idx_t estimated_cardinality, idx_t stage_idx)
     : PhysicalOperator(PhysicalOperatorType::LINEAGE_SCAN, std::move(types), estimated_cardinality),
       bind_data(std::move(bind_data_p)), column_ids(std::move(column_ids_p)),
-      names(std::move(names_p)), table_filters(std::move(table_filters_p)), stage_idx(stage_idx), lineage_op(lineage_op) {}
+      names(std::move(names_p)), table_filters(std::move(table_filters_p)), stage_idx(stage_idx), lineage_op(lineage_op) {
+	if (!lineage_op->processed) {
+		lineage_op->PostProcess();
+	}
+}
 
 PhysicalLineageScan::PhysicalLineageScan(shared_ptr<OperatorLineage> lineage_op, vector<LogicalType> types,
                                          unique_ptr<FunctionData> bind_data_p, vector<LogicalType> returned_types,
@@ -24,7 +28,11 @@ PhysicalLineageScan::PhysicalLineageScan(shared_ptr<OperatorLineage> lineage_op,
     : PhysicalOperator(PhysicalOperatorType::LINEAGE_SCAN, std::move(types), estimated_cardinality),
       bind_data(std::move(bind_data_p)), column_ids(std::move(column_ids_p)),
       projection_ids(std::move(projection_ids_p)),
-      names(std::move(names_p)), table_filters(std::move(table_filters_p)), stage_idx(stage_idx), lineage_op(lineage_op) {}
+      names(std::move(names_p)), table_filters(std::move(table_filters_p)), stage_idx(stage_idx), lineage_op(lineage_op) {
+	if (!lineage_op->processed) {
+		lineage_op->PostProcess();
+	}
+}
 
 
 
@@ -36,7 +44,7 @@ public:
 	idx_t global_count = 0;
 	idx_t log_id = 0;
 	idx_t current_thread = 0;
-  idx_t local_count = 0;
+	idx_t local_count = 0;
 	idx_t chunk_index = 0;
 };
 
@@ -54,7 +62,7 @@ SourceResultType PhysicalLineageScan::GetData(ExecutionContext &context, DataChu
  	bool cache_on = false;
 	if (stage_idx == 100) {
 		vector<LogicalType> types = lineage_op->chunk_collection.Types();
-    types.push_back(LogicalType::INTEGER);
+		types.push_back(LogicalType::INTEGER);
 		result.InitializeEmpty(types);
 
 
@@ -66,7 +74,7 @@ SourceResultType PhysicalLineageScan::GetData(ExecutionContext &context, DataChu
 		}
 		DataChunk &collection_chunk = lineage_op->chunk_collection.GetChunk(state.chunk_index);
 
-    collection_chunk.data.push_back(Vector(LogicalType::INTEGER));
+    	collection_chunk.data.push_back(Vector(LogicalType::INTEGER));
 		collection_chunk.data[collection_chunk.ColumnCount() - 1].Sequence(state.global_count, 1,
 			                                                                   collection_chunk.size());
 

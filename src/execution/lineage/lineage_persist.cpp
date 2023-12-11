@@ -65,7 +65,8 @@ idx_t OperatorLineage::GetLineageAsChunk(DataChunk &insert_chunk,
   }
 
   auto thread_val  = thread_vec[thread_id];
-  log_per_thread[thread_val]->GetLineageAsChunk(insert_chunk, global_count, local_count, data_idx, cache_offset, cache_size, cache);
+  log_per_thread[thread_val]->GetLineageAsChunk(insert_chunk, global_count, local_count, data_idx,
+	                                            cache_offset, cache_size, cache, log_index);
   global_count += insert_chunk.size();
   local_count += insert_chunk.size();
 
@@ -103,13 +104,12 @@ void  getchunk(idx_t res_count, idx_t global_count,
 idx_t FilterLog::GetLineageAsChunk(DataChunk &insert_chunk,
                                    idx_t& global_count, idx_t& local_count,
                                    idx_t& data_idx,
-                                   idx_t &cache_offset, idx_t &cache_size, bool &cache) {
+                                   idx_t &cache_offset, idx_t &cache_size, bool &cache,
+                                   shared_ptr<LogIndex> logIdx) {
   
   if (data_idx >= lineage.size()) {
 	  return 0;
   }
-    
-  if (!processed)  BuildIndexes();
 
   idx_t res_count = lineage[data_idx].count;
   idx_t child_offset = lineage[data_idx].child_offset;
@@ -129,13 +129,12 @@ idx_t FilterLog::GetLineageAsChunk(DataChunk &insert_chunk,
 idx_t TableScanLog::GetLineageAsChunk(DataChunk &insert_chunk,
                                       idx_t& global_count, idx_t& local_count,
                                       idx_t& data_idx,
-                                      idx_t &cache_offset, idx_t &cache_size, bool &cache) {
+                                      idx_t &cache_offset, idx_t &cache_size, bool &cache,
+                                      shared_ptr<LogIndex> logIdx) {
   
   if (data_idx >= lineage.size()) {
 	  return 0;
   }
-  
-  if (!processed)  BuildIndexes();
     
   idx_t res_count = lineage[data_idx].count;
   idx_t child_offset = lineage[data_idx].start + lineage[data_idx].vector_index;
@@ -157,7 +156,8 @@ idx_t TableScanLog::GetLineageAsChunk(DataChunk &insert_chunk,
 idx_t LimitLog::GetLineageAsChunk(DataChunk &insert_chunk,
                                   idx_t& global_count, idx_t& local_count,
                                   idx_t& data_idx,
-                                  idx_t &cache_offset, idx_t &cache_size, bool &cache) {
+                                  idx_t &cache_offset, idx_t &cache_size, bool &cache,
+                                  shared_ptr<LogIndex> logIdx) {
   
   if (data_idx >= lineage.size()) {
 	  return 0;
@@ -181,7 +181,8 @@ idx_t LimitLog::GetLineageAsChunk(DataChunk &insert_chunk,
 idx_t OrderByLog::GetLineageAsChunk(DataChunk &insert_chunk,
                                     idx_t& global_count, idx_t& local_count,
                                     idx_t& data_idx,
-                                    idx_t &cache_offset, idx_t &cache_size, bool &cache) {
+                                    idx_t &cache_offset, idx_t &cache_size, bool &cache,
+                                    shared_ptr<LogIndex> logIdx) {
   
   if (data_idx >= lineage.size()) {
     cache = false;
@@ -230,7 +231,8 @@ idx_t OrderByLog::GetLineageAsChunk(DataChunk &insert_chunk,
 idx_t CrossLog::GetLineageAsChunk(DataChunk &insert_chunk,
                                   idx_t& global_count, idx_t& local_count,
                                   idx_t& data_idx,
-                                  idx_t &cache_offset, idx_t &cache_size, bool &cache) {
+                                  idx_t &cache_offset, idx_t &cache_size, bool &cache,
+                                  shared_ptr<LogIndex> logIdx) {
   
   if (data_idx >= lineage.size()) {
 	  return 0;
@@ -264,7 +266,8 @@ idx_t CrossLog::GetLineageAsChunk(DataChunk &insert_chunk,
 idx_t NLJLog::GetLineageAsChunk(DataChunk &insert_chunk,
                                 idx_t& global_count, idx_t& local_count,
                                 idx_t& data_idx,
-                                idx_t &cache_offset, idx_t &cache_size, bool &cache) {
+                                idx_t &cache_offset, idx_t &cache_size, bool &cache,
+                                shared_ptr<LogIndex> logIdx) {
   
   if (data_idx >= lineage.size()) {
 	  return 0;
@@ -302,7 +305,8 @@ idx_t NLJLog::GetLineageAsChunk(DataChunk &insert_chunk,
 idx_t BNLJLog::GetLineageAsChunk(DataChunk &insert_chunk,
                                  idx_t& global_count, idx_t& local_count,
                                  idx_t& data_idx,
-                                 idx_t &cache_offset, idx_t &cache_size, bool &cache) {
+                                 idx_t &cache_offset, idx_t &cache_size, bool &cache,
+                                 shared_ptr<LogIndex> logIdx) {
   
   if (data_idx >= lineage.size()) {
 	  return 0;
@@ -316,7 +320,8 @@ idx_t BNLJLog::GetLineageAsChunk(DataChunk &insert_chunk,
 idx_t MergeLog::GetLineageAsChunk(DataChunk &insert_chunk,
                                   idx_t& global_count, idx_t& local_count,
                                   idx_t& data_idx,
-                                  idx_t &cache_offset, idx_t &cache_size, bool &cache) {
+                                  idx_t &cache_offset, idx_t &cache_size, bool &cache,
+                                  shared_ptr<LogIndex> logIdx) {
   
   if (data_idx >= lineage.size()) {
 	  return 0;
@@ -403,14 +408,11 @@ idx_t HashJoinLog::GetBuildSideIndex(idx_t cur) {
 idx_t HashJoinLog::GetLineageAsChunk(DataChunk &insert_chunk,
                                      idx_t& global_count, idx_t& local_count,
                                      idx_t& data_idx,
-                                     idx_t &cache_offset, idx_t &cache_size, bool &cache) {
+                                     idx_t &cache_offset, idx_t &cache_size, bool &cache,
+                                     shared_ptr<LogIndex> logIdx) {
   
   if (data_idx >= output_index.size()) {
 	  return 0;
-  }
-  
-  if (hash_index.size() == 0) {
-    BuildIndexes();
   }
 
   idx_t lsn = output_index[data_idx].first;
@@ -421,14 +423,9 @@ idx_t HashJoinLog::GetLineageAsChunk(DataChunk &insert_chunk,
   lsn -= 1;
 
   idx_t res_count = lineage_binary[lsn].count;
-  //idx_t out_offset = lineage_binary[lsn].out_offset;
   data_ptr_t left_ptr = (data_ptr_t)lineage_binary[lsn].left.get();
-  data_ptr_t right_ptr;
-  data_ptr_t* right_build_ptr = lineage_binary[lsn].right.get();
-
   Vector lhs_payload(LogicalType::INTEGER);
-  Vector rhs_payload(LogicalType::INTEGER);
-  
+
   // Left side / probe side
   if (left_ptr == nullptr) {
     if (res_count == STANDARD_VECTOR_SIZE) {
@@ -443,25 +440,45 @@ idx_t HashJoinLog::GetLineageAsChunk(DataChunk &insert_chunk,
     lhs_payload.Reference(temp);
   }
   
-  
-  // Right side / build side
-  if (right_build_ptr == nullptr) {
-    rhs_payload.SetVectorType(VectorType::CONSTANT_VECTOR);
-    ConstantVector::SetNull(rhs_payload, true);
+  Vector rhs_payload(LogicalType::INTEGER);
+  data_ptr_t right_ptr;
+
+  if (lineage_binary[lsn].branch == 1) {
+	right_ptr = (data_ptr_t)lineage_binary[lsn].perfect_right.get();
+	if (right_val_log.size() < (lsn+1)) {
+	  unique_ptr<sel_t[]>  right_val(new sel_t[res_count]);
+	  for (idx_t i=0; i < res_count; i++) {
+		  auto scatter_idx = logIdx->perfect_hash_join_finalize[lineage_binary[lsn].perfect_right[i]];
+		  right_val[i] = logIdx->hj_hash_index[scatter_idx];
+	  }
+	  right_val_log.push_back(move(right_val));
+	  right_ptr = (data_ptr_t)right_val_log.back().get();
+	} else {
+	  right_ptr = (data_ptr_t)right_val_log[lsn].get();
+	}
+	Vector temp(LogicalType::INTEGER, right_ptr);
+	rhs_payload.Reference(temp);
   } else {
-    if (right_val_log.size() < (lsn+1)) {
-      unique_ptr<sel_t[]>  right_val(new sel_t[res_count]);
-      for (idx_t i=0; i < res_count; i++) {
-        right_val[i] = hash_index[right_build_ptr[i]];
-        std::cout << i << " " << right_build_ptr[i] << " " << right_val[i] << std::endl;
-      }
-      right_val_log.push_back(move(right_val));
-      right_ptr = (data_ptr_t)right_val_log.back().get();
-    } else {
-      right_ptr = (data_ptr_t)right_val_log[lsn].get();
-    }
-    Vector temp(LogicalType::INTEGER, (data_ptr_t)right_ptr);
-    rhs_payload.Reference(temp);
+	data_ptr_t* right_build_ptr = lineage_binary[lsn].right.get();
+
+	// Right side / build side
+	if (right_build_ptr == nullptr) {
+	  rhs_payload.SetVectorType(VectorType::CONSTANT_VECTOR);
+	  ConstantVector::SetNull(rhs_payload, true);
+	} else {
+	  if (right_val_log.size() < (lsn+1)) {
+		  unique_ptr<sel_t[]>  right_val(new sel_t[res_count]);
+		  for (idx_t i=0; i < res_count; i++) {
+			  right_val[i] = logIdx->hj_hash_index[right_build_ptr[i]];
+		  }
+		  right_val_log.push_back(move(right_val));
+		  right_ptr = (data_ptr_t)right_val_log.back().get();
+	  } else {
+		  right_ptr = (data_ptr_t)right_val_log[lsn].get();
+	  }
+	  Vector temp(LogicalType::INTEGER, (data_ptr_t)right_ptr);
+	  rhs_payload.Reference(temp);
+	}
   }
 
   fillBaseChunk(insert_chunk, res_count, lhs_payload, rhs_payload, global_count);
@@ -474,14 +491,11 @@ idx_t HashJoinLog::GetLineageAsChunk(DataChunk &insert_chunk,
 idx_t HALog::GetLineageAsChunk(DataChunk &insert_chunk,
                                idx_t& global_count, idx_t& local_count,
                                idx_t& data_idx,
-                               idx_t &cache_offset, idx_t &cache_size, bool &cache) {
+                               idx_t &cache_offset, idx_t &cache_size, bool &cache,
+                               shared_ptr<LogIndex> logIdx) {
 
 	if (data_idx >= scan_log.size()) {
 		return 0;
-	}
-
-	if (!processed) {
-		BuildIndexes();
 	}
 
 	idx_t scan_count = scan_log[data_idx].count;
@@ -493,7 +507,7 @@ idx_t HALog::GetLineageAsChunk(DataChunk &insert_chunk,
 	data_ptr_t* payload = scan_log[data_idx].addchunk_lineage.get();
 	data_ptr_t output_key = payload[current_key];
 	// current scan , current offset into scan, current offset into groups of scan
-	vector<idx_t>& la = hash_index[output_key];
+	vector<idx_t>& la = logIdx->ha_hash_index[output_key];
 	// read from offset_within_key to max(1024, la.size());
 	idx_t end_offset = la.size() - offset_within_key;
 	if (end_offset > STANDARD_VECTOR_SIZE) {
@@ -553,21 +567,18 @@ break;
 idx_t PHALog::GetLineageAsChunk(DataChunk &insert_chunk,
                                 idx_t& global_count, idx_t& local_count,
                                 idx_t& data_idx,
-                                idx_t &cache_offset, idx_t &cache_size, bool &cache) {
+                                idx_t &cache_offset, idx_t &cache_size, bool &cache,
+                                shared_ptr<LogIndex> logIdx) {
 
 	if (data_idx >= scan_lineage.size()) {
 		return 0;
 	}
 
-   	if (hash_index.size() == 0) {
-   		BuildIndexes();
-   	}
-
 	//idx_t scan_count = scan_lineage[data_idx].count;
 	uint32_t* payload = scan_lineage[data_idx].gather.get();
 	uint32_t output_key = payload[current_key];
 	// current scan , current offset into scan, current offset into groups of scan
-	vector<idx_t>& la = hash_index[output_key];
+	vector<idx_t>& la = logIdx->pha_hash_index[output_key];
 	// read from offset_within_key to max(1024, la.size());
 	idx_t end_offset = la.size() - offset_within_key;
 	if (end_offset > STANDARD_VECTOR_SIZE) {

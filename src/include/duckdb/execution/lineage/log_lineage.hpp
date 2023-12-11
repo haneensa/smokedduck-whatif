@@ -20,6 +20,24 @@
 namespace duckdb {
 enum class PhysicalOperatorType : uint8_t;
 class Log;
+class LogIndex;
+
+class LogIndex {
+public:
+	LogIndex() {}
+
+	// PHA: Specialized Index
+	unordered_map<uint32_t, vector<idx_t>> pha_hash_index;
+
+
+	// HA: Specialized Index
+	unordered_map<data_ptr_t, vector<idx_t>> ha_hash_index;
+
+
+	// HJ: Specialized Index
+	unordered_map<data_ptr_t, idx_t> hj_hash_index;
+	unordered_map<idx_t, data_ptr_t> perfect_hash_join_finalize;
+};
 
 class Log {
 public:
@@ -35,19 +53,20 @@ public:
   	virtual idx_t  GetLineageAsChunk(DataChunk &insert_chunk,
 	                                idx_t& global_count, idx_t& local_count,
 	                                idx_t& data_idx,
-	                                idx_t &cache_offset, idx_t &cache_size, bool &cache) {return 0;};
+	                                idx_t &cache_offset, idx_t &cache_size, bool &cache,
+	                                shared_ptr<LogIndex> logIdx) {return 0;};
 
 	virtual idx_t Size() {return 0;};
 	virtual idx_t Count() {return 0;};
 	virtual idx_t ChunksCount() {return 0;};
-	virtual void BuildIndexes() {};
+	virtual void BuildIndexes(shared_ptr<LogIndex> logIdx) {};
 	virtual ~Log() {
 		// Virtual destructor in the base class
 	}
 public:
 	vector<std::pair<idx_t, idx_t>> output_index;
 	vector<std::pair<idx_t, idx_t>> cached_output_index;
-  bool processed;
+  	bool processed;
 };
 
 // TableScanLog
@@ -70,12 +89,13 @@ class TableScanLog : public Log {
   idx_t  GetLineageAsChunk(DataChunk &insert_chunk,
 	                      idx_t& global_count, idx_t& local_count,
 	                      idx_t& data_idx,
-	                      idx_t &cache_offset, idx_t &cache_size, bool &cache) override;
+	                      idx_t &cache_offset, idx_t &cache_size, bool &cache,
+	                      shared_ptr<LogIndex> logIdx) override;
     
   idx_t Size() override;
   idx_t Count() override;
   idx_t ChunksCount() override;
-  void BuildIndexes() override;
+  void BuildIndexes(shared_ptr<LogIndex> logIdx) override;
 
 public:
   vector<scan_artifact> lineage;
@@ -101,12 +121,13 @@ public:
   idx_t  GetLineageAsChunk(DataChunk &insert_chunk,
 	                      idx_t& global_count, idx_t& local_count,
 	                      idx_t& data_idx,
-	                      idx_t &cache_offset, idx_t &cache_size, bool &cache) override;
+	                      idx_t &cache_offset, idx_t &cache_size, bool &cache,
+	                      shared_ptr<LogIndex> logIdx) override;
     
   idx_t Size() override;
   idx_t Count() override;
   idx_t ChunksCount() override;
-  void BuildIndexes() override;
+  void BuildIndexes(shared_ptr<LogIndex> logIdx) override;
 
 
   vector<filter_artifact> lineage;
@@ -120,13 +141,14 @@ class OrderByLog : public Log {
   idx_t  GetLineageAsChunk(DataChunk &insert_chunk,
 	                        idx_t& global_count, idx_t& local_count,
 	                        idx_t& data_idx,
-	                        idx_t &cache_offset, idx_t &cache_size, bool &cache) override;
+	                        idx_t &cache_offset, idx_t &cache_size, bool &cache,
+	                        shared_ptr<LogIndex> logIdx) override;
     
     
   idx_t Size() override;
   idx_t Count() override;
   idx_t ChunksCount() override;
-  void BuildIndexes() override;
+  void BuildIndexes(shared_ptr<LogIndex> logIdx) override;
 
 public:
   vector<vector<idx_t>> lineage;
@@ -147,12 +169,13 @@ class LimitLog : public Log {
   idx_t  GetLineageAsChunk(DataChunk &insert_chunk,
 	                      idx_t& global_count, idx_t& local_count,
 	                      idx_t& data_idx,
-	                      idx_t &cache_offset, idx_t &cache_size, bool &cache) override;
+	                      idx_t &cache_offset, idx_t &cache_size, bool &cache,
+	                      shared_ptr<LogIndex> logIdx) override;
     
   idx_t Size() override;
   idx_t Count() override;
   idx_t ChunksCount() override;
-  void BuildIndexes() override;
+  void BuildIndexes(shared_ptr<LogIndex> logIdx) override;
 
 public:
   vector<limit_artifact> lineage;
@@ -181,7 +204,8 @@ class CrossLog : public Log {
   idx_t  GetLineageAsChunk(DataChunk &insert_chunk,
 	                      idx_t& global_count, idx_t& local_count,
 	                      idx_t& data_idx,
-	                      idx_t &cache_offset, idx_t &cache_size, bool &cache) override;
+	                      idx_t &cache_offset, idx_t &cache_size, bool &cache,
+	                      shared_ptr<LogIndex> logIdx) override;
     
 
 public:
@@ -205,7 +229,8 @@ class NLJLog : public Log {
   idx_t  GetLineageAsChunk(DataChunk &insert_chunk,
 	                      idx_t& global_count, idx_t& local_count,
 	                      idx_t& data_idx,
-	                      idx_t &cache_offset, idx_t &cache_size, bool &cache) override;
+	                      idx_t &cache_offset, idx_t &cache_size, bool &cache,
+	                      shared_ptr<LogIndex> logIdx) override;
 
 public:
   vector<nlj_artifact> lineage;
@@ -229,7 +254,8 @@ class BNLJLog : public Log {
   idx_t  GetLineageAsChunk(DataChunk &insert_chunk,
 	                      idx_t& global_count, idx_t& local_count,
 	                      idx_t& data_idx,
-	                      idx_t &cache_offset, idx_t &cache_size, bool &cache) override;
+	                      idx_t &cache_offset, idx_t &cache_size, bool &cache,
+	                      shared_ptr<LogIndex> logIdx) override;
 
 public:
   vector<bnlj_artifact> lineage;
@@ -252,7 +278,8 @@ class MergeLog : public Log {
   idx_t  GetLineageAsChunk(DataChunk &insert_chunk,
 	                      idx_t& global_count, idx_t& local_count,
 	                      idx_t& data_idx,
-	                      idx_t &cache_offset, idx_t &cache_size, bool &cache) override;
+	                      idx_t &cache_offset, idx_t &cache_size, bool &cache,
+	                      shared_ptr<LogIndex> logIdx) override;
     
 public:
   vector<merge_artifact> lineage;
@@ -276,19 +303,17 @@ class PHALog : public Log {
 	idx_t  GetLineageAsChunk(DataChunk &insert_chunk,
 	                        idx_t& global_count, idx_t& local_count,
 	                        idx_t& data_idx,
-	                        idx_t &cache_offset, idx_t &cache_size, bool &cache) override;
+	                        idx_t &cache_offset, idx_t &cache_size, bool &cache,
+	                        shared_ptr<LogIndex> logIdx) override;
 
 	idx_t Size() override;
 	idx_t Count() override;
 	idx_t ChunksCount() override;
-	void BuildIndexes() override;
+	void BuildIndexes(shared_ptr<LogIndex> logIdx) override;
 
 public:
   vector<vector<uint32_t>> build_lineage;
   vector<pha_scan_artifact> scan_lineage;
-
-  // Specialized Index
-  unordered_map<uint32_t, vector<idx_t>> hash_index;
 
   idx_t scan_log_index=0;
   idx_t current_key=0;
@@ -339,12 +364,13 @@ class HALog : public Log {
 	idx_t  GetLineageAsChunk(DataChunk &insert_chunk,
 	                        idx_t& global_count, idx_t& local_count,
 	                        idx_t& data_idx,
-	                        idx_t &cache_offset, idx_t &cache_size, bool &cache) override;
+	                        idx_t &cache_offset, idx_t &cache_size, bool &cache,
+	                        shared_ptr<LogIndex> logIdx) override;
 
 	idx_t Size() override;
 	idx_t Count() override;
 	idx_t ChunksCount() override;
-	void BuildIndexes() override;
+	void BuildIndexes(shared_ptr<LogIndex> logIdx) override;
 
 public:
   vector<hg_artifact> addchunk_log;
@@ -363,8 +389,6 @@ public:
   idx_t current_key=0;
   idx_t offset_within_key=0;
 
-  // Specialized Index
-  unordered_map<data_ptr_t, vector<idx_t>> hash_index;
 };
 
 // Hash Join Lineage
@@ -372,6 +396,8 @@ public:
 struct hj_probe_artifact {
   unique_ptr<sel_t[]> left;
   unique_ptr<data_ptr_t[]> right;
+  unique_ptr<sel_t[]> perfect_right;
+  idx_t branch;
   idx_t count;
   idx_t out_offset;
 };
@@ -402,12 +428,13 @@ public:
   idx_t  GetLineageAsChunk(DataChunk &insert_chunk,
 	                      idx_t& global_count, idx_t& local_count,
 	                      idx_t& data_idx,
-	                      idx_t &cache_offset, idx_t &cache_size, bool &cache) override;
+	                      idx_t &cache_offset, idx_t &cache_size, bool &cache,
+	                      shared_ptr<LogIndex> logIdx) override;
   
   idx_t Size() override;
   idx_t Count() override;
   idx_t ChunksCount() override;
-  void BuildIndexes() override;
+  void BuildIndexes(shared_ptr<LogIndex> logIdx) override;
 
 public:
   vector<hj_build_artifact> lineage_build;
@@ -415,9 +442,6 @@ public:
 
   vector<hj_probe_artifact> lineage_binary;
   vector<unique_ptr<sel_t[]>> right_val_log;
-
-  // Specialized Index
-  unordered_map<data_ptr_t, idx_t> hash_index;
 };
 
 
