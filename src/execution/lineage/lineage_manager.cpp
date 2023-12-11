@@ -101,8 +101,6 @@ void LineageManager::CreateLineageTables(ClientContext &context, PhysicalOperato
 		for (idx_t col_i = 0; col_i < op->types.size(); col_i++) {
 			table.emplace_back("col_" + to_string(col_i), op->types[col_i]);
 		}
-		// Explictly add rowid column because the auto-included rowid column is incorrect
-		table.emplace_back("rowid", LogicalType::INTEGER);
 
 		string table_name = "LINEAGE_" + to_string(query_id) + "_"  + op->GetName() + "_100";
 		auto create_info = make_uniq<CreateTableInfo>(catalog_name, DEFAULT_SCHEMA, table_name);

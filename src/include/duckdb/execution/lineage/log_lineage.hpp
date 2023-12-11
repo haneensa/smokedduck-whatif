@@ -37,29 +37,25 @@ public:
 	// HJ: Specialized Index
 	unordered_map<data_ptr_t, idx_t> hj_hash_index;
 	unordered_map<idx_t, data_ptr_t> perfect_hash_join_finalize;
+	vector<unique_ptr<sel_t[]>> right_val_log;
 };
 
 class Log {
 public:
 	Log() : processed(false) {}
-
-	idx_t GetLogSize(idx_t stage_idx) {
-		return 0;
-	}
-
-	idx_t GetLogSizeBytes();
-  	virtual idx_t GetLatestLSN();
-	
+  	virtual idx_t GetLatestLSN() { return 0; };
   	virtual idx_t  GetLineageAsChunk(DataChunk &insert_chunk,
 	                                idx_t& global_count, idx_t& local_count,
 	                                idx_t& data_idx,
 	                                idx_t &cache_offset, idx_t &cache_size, bool &cache,
 	                                shared_ptr<LogIndex> logIdx) {return 0;};
 
-	virtual idx_t Size() {return 0;};
-	virtual idx_t Count() {return 0;};
-	virtual idx_t ChunksCount() {return 0;};
+	virtual idx_t Size() { return output_index.size() * 2 * sizeof(idx_t); };
+	virtual idx_t Count() { return 0; };
+	virtual idx_t ChunksCount() { return output_index.size(); };
 	virtual void BuildIndexes(shared_ptr<LogIndex> logIdx) {};
+	virtual void PostProcess(shared_ptr<LogIndex> logIdx) {};
+
 	virtual ~Log() {
 		// Virtual destructor in the base class
 	}
@@ -96,6 +92,7 @@ class TableScanLog : public Log {
   idx_t Count() override;
   idx_t ChunksCount() override;
   void BuildIndexes(shared_ptr<LogIndex> logIdx) override;
+  void PostProcess(shared_ptr<LogIndex> logIdx) override;
 
 public:
   vector<scan_artifact> lineage;
@@ -128,7 +125,7 @@ public:
   idx_t Count() override;
   idx_t ChunksCount() override;
   void BuildIndexes(shared_ptr<LogIndex> logIdx) override;
-
+  void PostProcess(shared_ptr<LogIndex> logIdx) override;
 
   vector<filter_artifact> lineage;
 };
@@ -148,7 +145,6 @@ class OrderByLog : public Log {
   idx_t Size() override;
   idx_t Count() override;
   idx_t ChunksCount() override;
-  void BuildIndexes(shared_ptr<LogIndex> logIdx) override;
 
 public:
   vector<vector<idx_t>> lineage;
@@ -435,13 +431,13 @@ public:
   idx_t Count() override;
   idx_t ChunksCount() override;
   void BuildIndexes(shared_ptr<LogIndex> logIdx) override;
+  void PostProcess(shared_ptr<LogIndex> logIdx) override;
 
 public:
   vector<hj_build_artifact> lineage_build;
   vector<hj_finalize_artifact> lineage_finalize;
 
   vector<hj_probe_artifact> lineage_binary;
-  vector<unique_ptr<sel_t[]>> right_val_log;
 };
 
 

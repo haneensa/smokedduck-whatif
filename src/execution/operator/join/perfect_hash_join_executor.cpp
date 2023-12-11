@@ -210,12 +210,9 @@ OperatorResultType PerfectHashJoinExecutor::ProbePerfectHashTable(ExecutionConte
 #ifdef LINEAGE
 	if (result.size() > 0 && result.trace_lineage) {
 		    unique_ptr<sel_t[]> right = nullptr;
-		    if (probe_sel_count < STANDARD_VECTOR_SIZE) {
-				right = unique_ptr<sel_t[]>(new sel_t[probe_sel_count]);
-				std::copy(state.build_sel_vec.data(), state.build_sel_vec.data() + probe_sel_count, right.get());
-		    }
-
-
+		    right = unique_ptr<sel_t[]>(new sel_t[probe_sel_count]);
+		    std::copy(state.build_sel_vec.data(), state.build_sel_vec.data() + probe_sel_count, right.get());
+		    
 		    unique_ptr<sel_t[]> left = nullptr;
 		    if (probe_sel_count < STANDARD_VECTOR_SIZE) {
 				left = unique_ptr<sel_t[]>(new sel_t[probe_sel_count]);

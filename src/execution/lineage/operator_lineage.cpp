@@ -3,34 +3,17 @@
 
 namespace duckdb {
 
-idx_t OperatorLineage::Size() {
-	idx_t size = 0;
-/*	for (auto& log : log_per_thread) {
-		size +=  log.second.GetLogSize(log.first);
-	}*/
-
-	return size;
-}
-
-idx_t Log::GetLatestLSN() {
-	return 0;
-}
-
-idx_t Log::GetLogSizeBytes() {
-	idx_t size_bytes = 0;
-/*	for (idx_t i = 0; i < log->size(); i++) {
-		for (const auto& lineage_data : log[i]) {
-			size_bytes += lineage_data->data->Size();
-		}
-	}*/
-	return size_bytes;
-}
-
 void OperatorLineage::PostProcess() {
 	if (processed)	return;
+	// 1. build indexes
 	log_index = make_shared<LogIndex>();
 	for (auto& log : log_per_thread) {
 		log.second->BuildIndexes(log_index);
+	}
+
+	// 2. adjust offsets for cheaper retrieval
+	for (auto& log : log_per_thread) {
+		log.second->PostProcess(log_index);
 	}
 
 	processed = true;
@@ -101,8 +84,13 @@ idx_t FilterLog::Count() {
 idx_t FilterLog::ChunksCount() {
   return lineage.size();
 }
-  
+
 void FilterLog::BuildIndexes(shared_ptr<LogIndex> logIdx) {
+}
+
+void FilterLog::PostProcess(shared_ptr<LogIndex> logIdx) {
+  if (processed) return;
+
   for (const auto& lineage_data : lineage) {
     if (lineage_data.sel != nullptr) {
       auto vec_ptr = lineage_data.sel.get();
@@ -137,8 +125,13 @@ idx_t TableScanLog::Count() {
 idx_t TableScanLog::ChunksCount() {
   return lineage.size();
 }
-  
+
 void TableScanLog::BuildIndexes(shared_ptr<LogIndex> logIdx) {
+}
+
+void TableScanLog::PostProcess(shared_ptr<LogIndex> logIdx) {
+  if (processed) return;
+
   for (const auto& lineage_data : lineage) {
     if (lineage_data.sel != nullptr) {
       auto vec_ptr = lineage_data.sel->owned_data.get();
@@ -192,9 +185,6 @@ idx_t OrderByLog::Count() {
 idx_t OrderByLog::ChunksCount() {
   return lineage.size();
 }
-  
-void OrderByLog::BuildIndexes(shared_ptr<LogIndex> logIdx) {
-}
 
 // HashJoinLog
 idx_t HashJoinLog::Size() {
@@ -234,31 +224,45 @@ void HashJoinLog::BuildIndexes(shared_ptr<LogIndex> logIdx) {
 	  logIdx->perfect_hash_join_finalize[ lineage_finalize.back().sel->owned_data[i] ] = lineage_finalize.back().scatter[i];
 	}
   }
+}
+
+void HashJoinLog::PostProcess(shared_ptr<LogIndex> logIdx) {
+  if (processed) return;
 
   for (idx_t i=0; i < output_index.size(); ++i) {
-    idx_t lsn = output_index[i].first;
-    if (lsn == 0) { // something is wrong
-      std::cout << "lsn == 0 for " << i <<  std::endl;
-      break;
-    }
-    lsn -= 1;
-    idx_t child_offset = output_index[i].second;
+	idx_t lsn = output_index[i].first;
+	if (lsn == 0) { // something is wrong
+	  std::cout << "lsn == 0 for " << i <<  std::endl;
+	  break;
+	}
+	lsn -= 1;
+	idx_t child_offset = output_index[i].second;
 	idx_t res_count = lineage_binary[lsn].count;
-    if (lineage_binary[lsn].left != nullptr) {
-      auto vec_ptr = lineage_binary[lsn].left.get();
-      for (idx_t i = 0; i < res_count; i++) {
-        *(vec_ptr + i) += child_offset;
-      }
-    }
-	/*if (lineage_binary[lsn].branch == 1) {
-	  auto vec_ptr = lineage_binary[lsn].perfect_right.get();
+	if (lineage_binary[lsn].left != nullptr) {
+	  auto vec_ptr = lineage_binary[lsn].left.get();
 	  for (idx_t i = 0; i < res_count; i++) {
-		std::cout << res_count << " " << logIdx->perfect_hash_join_finalize.added_count << " " << vec_ptr[i] << std::endl;
-		idx_t rhs_index = logIdx->perfect_hash_join_finalize.sel->owned_data[vec_ptr[i]];
-		data_ptr_t rhs_build = logIdx->perfect_hash_join_finalize.scatter[rhs_index];
-		*(vec_ptr + i) = logIdx->hj_hash_index[rhs_build];
+		*(vec_ptr + i) += child_offset;
 	  }
-	}*/
+	}
+
+	if (lineage_binary[lsn].branch == 1) {
+		auto vec_ptr = lineage_binary[lsn].perfect_right.get();
+		for (idx_t i=0; i < res_count; i++) {
+			auto scatter_idx = logIdx->perfect_hash_join_finalize[lineage_binary[lsn].perfect_right[i]];
+			*(vec_ptr + i) = logIdx->hj_hash_index[scatter_idx];
+		}
+	} else {
+		if (logIdx->right_val_log.size() < (lsn+1)) {
+			data_ptr_t* right_build_ptr = lineage_binary[lsn].right.get();
+			unique_ptr<sel_t[]>  right_val(new sel_t[res_count]);
+			for (idx_t i=0; i < res_count; i++) {
+				right_val[i] = logIdx->hj_hash_index[right_build_ptr[i]];
+			}
+			logIdx->right_val_log.push_back(move(right_val));
+			// release lineage_binary[lsn].right
+			lineage_binary[lsn].right.reset();
+		}
+	}
   }
   processed = true;
 }
@@ -280,7 +284,6 @@ idx_t HALog::ChunksCount() {
 // TODO: an issue with multi-threading --  build could run on separate thread from scan
 void HALog::BuildIndexes(shared_ptr<LogIndex> logIdx) {
   // TODO: detect if finalize exist
-
   // build side
   auto size = addchunk_log.size();
   idx_t count_so_far = 0;
@@ -294,7 +297,30 @@ void HALog::BuildIndexes(shared_ptr<LogIndex> logIdx) {
 		count_so_far += res_count;
 	//}
   }
-  processed = true;
+
+  /*
+} else if (stage_idx == LINEAGE_FINALIZE) {
+  //dynamic_cast<CollectionLineage &>(*data_woffset->data).Debug();
+  auto lineage_vec = dynamic_cast<CollectionLineage &>(*data_woffset->data).lineage_vec;
+  auto nested_lineage_vec =  dynamic_cast<CollectionLineage &>(*lineage_vec->at(0)).lineage_vec;
+  idx_t res_count =  0;
+  for (idx_t i=0; i < nested_lineage_vec->size(); i++) {
+	  res_count +=  nested_lineage_vec->at(i)->Count();
+	  Vector source_payload(types[0], nested_lineage_vec->at(i)->Process(0));
+	  Vector new_payload(types[1], nested_lineage_vec->at(i)->Process(0));
+	  insert_chunk.data[0].Reference(source_payload);
+	  insert_chunk.data[1].Reference(new_payload);
+	  break;
+  }
+
+  insert_chunk.SetCardinality(res_count);
+  insert_chunk.data[2].Reference(thread_id_vec);
+  global_count += res_count;
+} else {
+}
+break;
+}
+*/
 }
 
 

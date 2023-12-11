@@ -73,11 +73,6 @@ SourceResultType PhysicalLineageScan::GetData(ExecutionContext &context, DataChu
 			return SourceResultType::FINISHED;
 		}
 		DataChunk &collection_chunk = lineage_op->chunk_collection.GetChunk(state.chunk_index);
-
-    	collection_chunk.data.push_back(Vector(LogicalType::INTEGER));
-		collection_chunk.data[collection_chunk.ColumnCount() - 1].Sequence(state.global_count, 1,
-			                                                                   collection_chunk.size());
-
 		result.Reference(collection_chunk);
 		state.chunk_index++;
 		state.global_count += result.size();

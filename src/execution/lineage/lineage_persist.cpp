@@ -445,17 +445,6 @@ idx_t HashJoinLog::GetLineageAsChunk(DataChunk &insert_chunk,
 
   if (lineage_binary[lsn].branch == 1) {
 	right_ptr = (data_ptr_t)lineage_binary[lsn].perfect_right.get();
-	if (right_val_log.size() < (lsn+1)) {
-	  unique_ptr<sel_t[]>  right_val(new sel_t[res_count]);
-	  for (idx_t i=0; i < res_count; i++) {
-		  auto scatter_idx = logIdx->perfect_hash_join_finalize[lineage_binary[lsn].perfect_right[i]];
-		  right_val[i] = logIdx->hj_hash_index[scatter_idx];
-	  }
-	  right_val_log.push_back(move(right_val));
-	  right_ptr = (data_ptr_t)right_val_log.back().get();
-	} else {
-	  right_ptr = (data_ptr_t)right_val_log[lsn].get();
-	}
 	Vector temp(LogicalType::INTEGER, right_ptr);
 	rhs_payload.Reference(temp);
   } else {
@@ -466,16 +455,7 @@ idx_t HashJoinLog::GetLineageAsChunk(DataChunk &insert_chunk,
 	  rhs_payload.SetVectorType(VectorType::CONSTANT_VECTOR);
 	  ConstantVector::SetNull(rhs_payload, true);
 	} else {
-	  if (right_val_log.size() < (lsn+1)) {
-		  unique_ptr<sel_t[]>  right_val(new sel_t[res_count]);
-		  for (idx_t i=0; i < res_count; i++) {
-			  right_val[i] = logIdx->hj_hash_index[right_build_ptr[i]];
-		  }
-		  right_val_log.push_back(move(right_val));
-		  right_ptr = (data_ptr_t)right_val_log.back().get();
-	  } else {
-		  right_ptr = (data_ptr_t)right_val_log[lsn].get();
-	  }
+	  right_ptr = (data_ptr_t)logIdx->right_val_log[lsn].get();
 	  Vector temp(LogicalType::INTEGER, (data_ptr_t)right_ptr);
 	  rhs_payload.Reference(temp);
 	}
@@ -514,8 +494,6 @@ idx_t HALog::GetLineageAsChunk(DataChunk &insert_chunk,
 		end_offset = STANDARD_VECTOR_SIZE;
 	}
 	insert_chunk.SetCardinality(end_offset);
-
-	// TODO: only display between offset_within_key to end_offset
 	data_ptr_t ptr = (data_ptr_t)(la.data() + offset_within_key);
 	Vector in_index(LogicalType::BIGINT, ptr);
 	// use in index to loop up hash_map_agg
@@ -536,29 +514,6 @@ idx_t HALog::GetLineageAsChunk(DataChunk &insert_chunk,
 	}
 
 	return end_offset;
-	/*
-} else if (stage_idx == LINEAGE_FINALIZE) {
-	//dynamic_cast<CollectionLineage &>(*data_woffset->data).Debug();
-	auto lineage_vec = dynamic_cast<CollectionLineage &>(*data_woffset->data).lineage_vec;
-	auto nested_lineage_vec =  dynamic_cast<CollectionLineage &>(*lineage_vec->at(0)).lineage_vec;
-	idx_t res_count =  0;
-	for (idx_t i=0; i < nested_lineage_vec->size(); i++) {
-		res_count +=  nested_lineage_vec->at(i)->Count();
-		Vector source_payload(types[0], nested_lineage_vec->at(i)->Process(0));
-		Vector new_payload(types[1], nested_lineage_vec->at(i)->Process(0));
-		insert_chunk.data[0].Reference(source_payload);
-		insert_chunk.data[1].Reference(new_payload);
-		break;
-	}
-
-	insert_chunk.SetCardinality(res_count);
-	insert_chunk.data[2].Reference(thread_id_vec);
-	global_count += res_count;
-} else {
-}
-break;
-}
-	 */
 }
 
 
@@ -585,8 +540,6 @@ idx_t PHALog::GetLineageAsChunk(DataChunk &insert_chunk,
 		end_offset = STANDARD_VECTOR_SIZE;
 	}
 	insert_chunk.SetCardinality(end_offset);
-
-	// TODO: only display between offset_within_key to end_offset
 	data_ptr_t ptr = (data_ptr_t)(la.data() + offset_within_key);
 	Vector in_index(LogicalType::BIGINT, ptr);
 	// use in index to loop up hash_map_agg
@@ -609,20 +562,6 @@ idx_t PHALog::GetLineageAsChunk(DataChunk &insert_chunk,
 
 	return end_offset;
 }
-    
-/*
-   case PhysicalOperatorType::PROJECTION: {
-           D_ASSERT(stage_idx == LINEAGE_SOURCE);
-           // schema: [INTEGER in_index, INTEGER out_index, INTEGER thread_id]
-           idx_t res_count = data_woffset->data->Count();
-           insert_chunk.SetCardinality(res_count);
-           Vector in_index = data_woffset->data->GetVecRef(types[0], global_count);
-           insert_chunk.data[0].Reference(in_index);
-           insert_chunk.data[1].Sequence(global_count, 1, res_count); // out_index
-           insert_chunk.data[2].Reference(thread_id_vec);  // thread_id
-           break;
-       }
-*/
 
 } // namespace duckdb
 #endif
