@@ -474,6 +474,7 @@ idx_t HALog::GetLineageAsChunk(DataChunk &insert_chunk,
                                idx_t &cache_offset, idx_t &cache_size, bool &cache,
                                shared_ptr<LogIndex> logIdx) {
 
+  if (global_count == 0) key_offset = 0;
 	if (data_idx >= scan_log.size()) {
 		return 0;
 	}
@@ -481,6 +482,7 @@ idx_t HALog::GetLineageAsChunk(DataChunk &insert_chunk,
 	idx_t scan_count = scan_log[data_idx].count;
 	if (current_key >= scan_count) {
 		data_idx++;
+    key_offset += current_key;
 		current_key = 0;
 		return 0;
 	}
@@ -498,7 +500,7 @@ idx_t HALog::GetLineageAsChunk(DataChunk &insert_chunk,
 	Vector in_index(LogicalType::BIGINT, ptr);
 	// use in index to loop up hash_map_agg
 	insert_chunk.data[0].Reference(in_index);
-	insert_chunk.data[1].Reference(Value::INTEGER(current_key)); // out_index
+	insert_chunk.data[1].Reference(Value::INTEGER(current_key + key_offset)); // out_index
 
  	offset_within_key += end_offset;
 	if (offset_within_key >= la.size()) {
@@ -507,6 +509,7 @@ idx_t HALog::GetLineageAsChunk(DataChunk &insert_chunk,
 	}
 	if (current_key >= scan_log[data_idx].count) {
 		cache = false;
+    key_offset += current_key;
 		current_key = 0;
 		data_idx++;
 	} else {
@@ -525,10 +528,18 @@ idx_t PHALog::GetLineageAsChunk(DataChunk &insert_chunk,
                                 idx_t &cache_offset, idx_t &cache_size, bool &cache,
                                 shared_ptr<LogIndex> logIdx) {
 
+  if (global_count == 0) key_offset = 0;
 	if (data_idx >= scan_lineage.size()) {
 		return 0;
 	}
 
+	idx_t scan_count = scan_lineage[data_idx].count;
+	if (current_key >= scan_count) {
+		data_idx++;
+    key_offset += current_key;
+		current_key = 0;
+		return 0;
+	}
 	//idx_t scan_count = scan_lineage[data_idx].count;
 	uint32_t* payload = scan_lineage[data_idx].gather.get();
 	uint32_t output_key = payload[current_key];
@@ -544,7 +555,7 @@ idx_t PHALog::GetLineageAsChunk(DataChunk &insert_chunk,
 	Vector in_index(LogicalType::BIGINT, ptr);
 	// use in index to loop up hash_map_agg
 	insert_chunk.data[0].Reference(in_index);
-	insert_chunk.data[1].Reference(Value::INTEGER(current_key)); // out_index
+	insert_chunk.data[1].Reference(Value::INTEGER(current_key + key_offset)); // out_index
 
 	global_count += end_offset;
 	offset_within_key += end_offset;
@@ -554,6 +565,7 @@ idx_t PHALog::GetLineageAsChunk(DataChunk &insert_chunk,
 	}
 	if (current_key >= scan_lineage[data_idx].count) {
 		cache = false;
+    key_offset += current_key;
 		current_key = 0;
 		data_idx++;
 	} else {

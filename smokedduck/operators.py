@@ -103,91 +103,24 @@ class TableScan(SingleOp):
         return "SEQ_SCAN"
 
 
-class GroupBy(Op):
-    def __init__(self, query_id: int, name: str, op_id: int, parent_join_cond: str, finalize_checker: Callable[[str], bool]) -> None:
-        super().__init__(query_id, name, op_id, parent_join_cond)
-        self.source = self.single_op_table_name + "_0"
-        self.sink = self.single_op_table_name + "_1"
-        self.combine = self.single_op_table_name + "_2"  # TODO: integrate combine
-        self.finalize = self.single_op_table_name + "_3"
-        self.include_finalize = finalize_checker(self.finalize)
+class GroupBy(SingleOp):
+    def __init__(self, query_id: int, op_id: int, parent_join_cond: str) -> None:
+        super().__init__(query_id, self.get_name(), op_id, parent_join_cond)
 
-    @abstractmethod
-    def get_name(self) -> str:
-        pass
-
-    def get_from_string(self) -> str:
-        if self.include_finalize:
-            join_sink = " LEFT JOIN " + self.finalize + " ON " + self.source + ".in_index = " + self.finalize + ".out_index" + \
-                        " LEFT JOIN " + self.sink + " AS " + self.single_op_table_name + " ON " + self.finalize + ".in_index = " + \
-                        self.single_op_table_name + ".out_index"
-        else:
-            join_sink = " LEFT JOIN " + self.sink + " AS " + self.single_op_table_name + " ON " + self.source + ".in_index = " + \
-                        self.single_op_table_name + ".out_index"
-        if self.is_root:
-            return self.source + join_sink
-        else:
-            return "LEFT JOIN " + self.source + " ON " + self.parent_join_cond + " = " + self.source + ".out_index" + join_sink
-
-    def get_child_join_conds(self) -> list:
-        return [self.single_op_table_name + ".in_index"]
-
-    def get_out_index(self) -> str:
-        return self.source + ".out_index"
-
-
-class HashGroupBy(GroupBy):
-    def __init__(self, query_id: int, op_id: int, parent_join_cond: str, finalize_checker: Callable[[str], bool]) -> None:
-        super().__init__(query_id, self.get_name(), op_id, parent_join_cond, finalize_checker)
+class HashGroupBy(SingleOp):
+    def __init__(self, query_id: int, op_id: int, parent_join_cond: str) -> None:
+        super().__init__(query_id, self.get_name(), op_id, parent_join_cond)
 
     def get_name(self) -> str:
         return "HASH_GROUP_BY"
 
 
 class PerfectHashGroupBy(GroupBy):
-    def __init__(self, query_id: int, op_id: int, parent_join_cond: str, finalize_checker: Callable[[str], bool]) -> None:
-        super().__init__(query_id, self.get_name(), op_id, parent_join_cond, finalize_checker)
+    def __init__(self, query_id: int, op_id: int, parent_join_cond: str) -> None:
+        super().__init__(query_id, self.get_name(), op_id, parent_join_cond)
 
     def get_name(self) -> str:
         return "PERFECT_HASH_GROUP_BY"
-
-
-# NOTE: HashJoin is not a StandardJoin (it's Astandard) because it has its own logic
-class HashJoin(Op):
-    def __init__(self, query_id: int, op_id: int, parent_join_cond: str, finalize_checker: Callable[[str], bool]) -> None:
-        super().__init__(query_id, self.get_name(), op_id, parent_join_cond)
-        self.probe = self.single_op_table_name + "_0"
-        self.build = self.single_op_table_name + "_1"
-        self.combine = self.single_op_table_name + "_2"  # TODO: integrate combine
-        self.finalize = self.single_op_table_name + "_3"  # TODO: integrate finalize
-        self.include_finalize = finalize_checker(self.finalize)
-
-        self.probe_name = self.single_op_table_name + "_probe"
-        self.build_name = self.single_op_table_name + "_build"
-
-    def get_name(self) -> str:
-        return "HASH_JOIN"
-
-    def get_from_string(self) -> str:
-        if self.include_finalize:
-            join_build = " LEFT JOIN " + self.finalize + " ON " + self.probe_name + ".rhs_index = " + \
-                         self.finalize + ".out_index JOIN " + self.build + " AS " + self.build_name + " ON " + \
-                         self.build_name + ".out_index = " + self.finalize +".in_index"
-        else:
-            join_build = " LEFT JOIN " + self.build + " AS " + self.build_name + " ON " + self.probe_name + ".rhs_index = " + \
-                         self.build_name + ".out_index"
-
-        if self.is_root:
-            return self.probe + " AS " + self.probe_name + join_build
-        else:
-            return " LEFT JOIN " + self.probe + " AS " + self.probe_name + " ON " + self.parent_join_cond + " = " + \
-                self.probe_name + ".out_index" + join_build
-
-    def get_child_join_conds(self) -> list:
-        return [self.probe_name + ".lhs_index", self.build_name + ".in_index"]
-
-    def get_out_index(self) -> str:
-        return self.probe_name + ".out_index"
 
 
 class StandardJoin(Op):
@@ -199,18 +132,18 @@ class StandardJoin(Op):
     def get_name(self) -> str:
         pass
 
-    def get_from_string(self) -> str:
-        if self.is_root:
-            return self.inner_op_table_name + " AS " + self.single_op_table_name
-        else:
-            return "FULL OUTER JOIN " + self.inner_op_table_name + " AS " + self.single_op_table_name \
-                + " ON " + self.parent_join_cond + " = " + self.single_op_table_name + ".out_index"
-
     def get_child_join_conds(self) -> list:
         return [self.single_op_table_name + ".lhs_index", self.single_op_table_name + ".rhs_index"]
 
     def get_out_index(self) -> str:
         return self.single_op_table_name + ".out_index"
+
+class HashJoin(StandardJoin):
+    def __init__(self, query_id: int, op_id: int, parent_join_cond: str) -> None:
+        super().__init__(query_id, self.get_name(), op_id, parent_join_cond)
+
+    def get_name(self) -> str:
+        return "BLOCKWISE_NL_JOIN"
 
 
 class BlockwiseNLJoin(StandardJoin):
@@ -273,11 +206,11 @@ class OperatorFactory():
         elif op == 'SEQ_SCAN':
             return TableScan(query_id, op_id, parent_join_cond)
         elif op == 'HASH_GROUP_BY':
-            return HashGroupBy(query_id, op_id, parent_join_cond, self.finalize_checker)
+            return HashGroupBy(query_id, op_id, parent_join_cond)
         elif op == 'PERFECT_HASH_GROUP_BY':
-            return PerfectHashGroupBy(query_id, op_id, parent_join_cond, self.finalize_checker)
+            return PerfectHashGroupBy(query_id, op_id, parent_join_cond)
         elif op == 'HASH_JOIN':
-            return HashJoin(query_id, op_id, parent_join_cond, self.finalize_checker)
+            return HashJoin(query_id, op_id, parent_join_cond)
         elif op == 'BLOCKWISE_NL_JOIN':
             return BlockwiseNLJoin(query_id, op_id, parent_join_cond)
         elif op == 'PIECEWISE_MERGE_JOIN':

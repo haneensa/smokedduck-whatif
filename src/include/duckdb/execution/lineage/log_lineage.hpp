@@ -38,6 +38,9 @@ public:
 	unordered_map<data_ptr_t, idx_t> hj_hash_index;
 	unordered_map<idx_t, data_ptr_t> perfect_hash_join_finalize;
 	vector<unique_ptr<sel_t[]>> right_val_log;
+  idx_t arraySize = 0;
+  vector<idx_t> hj_array;
+  vector<vector<std::pair<idx_t, data_ptr_t>>> index_hj;
 };
 
 class Log {
@@ -313,6 +316,7 @@ public:
 
   idx_t scan_log_index=0;
   idx_t current_key=0;
+  idx_t key_offset=0;
   idx_t offset_within_key=0;
 };
 
@@ -384,7 +388,7 @@ public:
   idx_t scan_log_index=0;
   idx_t current_key=0;
   idx_t offset_within_key=0;
-
+  idx_t key_offset=0;
 };
 
 // Hash Join Lineage

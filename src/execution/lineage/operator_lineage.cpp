@@ -201,6 +201,12 @@ idx_t HashJoinLog::ChunksCount() {
   
 void HashJoinLog::BuildIndexes(shared_ptr<LogIndex> logIdx) {
   idx_t count_so_far = 0;
+  for (idx_t i = 0; i < lineage_build.size(); i++) {
+    logIdx->arraySize += lineage_build[i].added_count;
+  }
+
+  logIdx->index_hj.resize(logIdx->arraySize);
+
   // if sel vector exists, create hash map: addr -> id ?
   for (idx_t i = 0; i < lineage_build.size(); i++) {
     idx_t res_count = lineage_build[i].added_count;
@@ -208,11 +214,15 @@ void HashJoinLog::BuildIndexes(shared_ptr<LogIndex> logIdx) {
     auto sel = lineage_build[i].sel;
     if (sel) {
       for (idx_t j = 0; j < res_count; j++) {
-        logIdx->hj_hash_index[payload[j]] = sel->owned_data[j] + count_so_far;
+      std::uintptr_t addrValue = reinterpret_cast<std::uintptr_t>(payload[j]);
+      idx_t hash = addrValue % logIdx->arraySize;
+      logIdx->index_hj[hash].push_back({sel->owned_data[j]+count_so_far, payload[j]});
       }
     } else {
       for (idx_t j = 0; j < res_count; j++) {
-        logIdx->hj_hash_index[payload[j]] = j + count_so_far;
+        std::uintptr_t addrValue = reinterpret_cast<std::uintptr_t>(payload[j]);
+        idx_t hash = addrValue % logIdx->arraySize;
+        logIdx->index_hj[hash].push_back({j+count_so_far, payload[j]});
       }
     }
 
@@ -228,7 +238,7 @@ void HashJoinLog::BuildIndexes(shared_ptr<LogIndex> logIdx) {
 
 void HashJoinLog::PostProcess(shared_ptr<LogIndex> logIdx) {
   if (processed) return;
-
+  logIdx->right_val_log.resize(GetLatestLSN()  + logIdx->right_val_log.size() );
   for (idx_t i=0; i < output_index.size(); ++i) {
 	idx_t lsn = output_index[i].first;
 	if (lsn == 0) { // something is wrong
@@ -253,18 +263,22 @@ void HashJoinLog::PostProcess(shared_ptr<LogIndex> logIdx) {
 		}
 	} else {
 		data_ptr_t* right_build_ptr = lineage_binary[lsn].right.get();
-		if (right_build_ptr && logIdx->right_val_log.size() < (lsn+1)) {
-			unique_ptr<sel_t[]>  right_val(new sel_t[res_count]);
+		if (logIdx->right_val_log[lsn].get() == nullptr) {
+      unique_ptr<sel_t[]>  right_val(new sel_t[res_count]);
 			for (idx_t i=0; i < res_count; i++) {
-				right_val[i] = logIdx->hj_hash_index[right_build_ptr[i]];
+        std::uintptr_t addrValue = reinterpret_cast<std::uintptr_t>(right_build_ptr[i]);
+        idx_t hash = addrValue % logIdx->arraySize;
+        for (auto k=0; k < logIdx->index_hj[hash].size(); ++k) {
+          if (logIdx->index_hj[hash][k].second == right_build_ptr[i])
+            right_val[i] = logIdx->index_hj[hash][k].first;
+        }
 			}
-			logIdx->right_val_log.push_back(move(right_val));
+      logIdx->right_val_log[lsn] = move(right_val);
 		}
 	}
   }
   processed = true;
 }
-
 
 // HashAggregateLog
 idx_t HALog::Size() {
