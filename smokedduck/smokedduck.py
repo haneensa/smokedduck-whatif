@@ -10,6 +10,7 @@ class SmokedDuck:
 
     def __init__(self, duckdb_conn: duckdb.DuckDBPyConnection) -> None:
         self.duckdb_conn = duckdb_conn
+        self.duckdb_conn.execute("pragma threads=1")
         self.operator_factory = OperatorFactory(self._finalize_checker)
 
         self.query_id = -1
