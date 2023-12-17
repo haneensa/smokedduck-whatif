@@ -3,7 +3,7 @@ from typing import Callable
 
 class Op(ABC):
     def __init__(self, query_id: int, op: str, op_id: int, parent_join_cond: str) -> None:
-        self.single_op_table_name = f"LINEAGE_{query_id}_{op}_{op_id}"
+        self.single_op_table_name = f"LINEAGE_{query_id}_{op}_{op_id}_0"
         self.id = op_id
         self.is_root = parent_join_cond is None
         self.parent_join_cond = parent_join_cond
@@ -25,11 +25,13 @@ class Op(ABC):
     def get_out_index(self) -> str:
         pass
 
+    @abstractmethod
+    def get_in_index(self, cid) -> str:
+        pass
 
 class SingleOp(Op):
     def __init__(self, query_id: int, name: str, op_id: int, parent_join_cond: str) -> None:
         super().__init__(query_id, name, op_id, parent_join_cond)
-        self.inner_op_table_name = self.single_op_table_name + "_0"
 
     @abstractmethod
     def get_name(self) -> str:
@@ -37,13 +39,13 @@ class SingleOp(Op):
 
     def get_from_string(self) -> str:
         if self.is_root:
-            return self.inner_op_table_name + " AS " + self.single_op_table_name
+            return self.single_op_table_name
         else:
             if self.is_agg_child:
-                return "LEFT JOIN " + self.inner_op_table_name + " AS " + self.single_op_table_name \
+                return "LEFT JOIN "  + self.single_op_table_name \
                     + " ON " + self.parent_join_cond + " = " + "0"
             else:
-                return "LEFT JOIN " + self.inner_op_table_name + " AS " + self.single_op_table_name \
+                return "LEFT JOIN " + self.single_op_table_name \
                     + " ON " + self.parent_join_cond + " = " + self.single_op_table_name + ".out_index"
 
     def get_child_join_conds(self) -> list:
@@ -54,6 +56,8 @@ class SingleOp(Op):
             return "0 as out_index"
         return self.single_op_table_name + ".out_index"
 
+    def get_in_index(self, cid) -> str:
+        return self.single_op_table_name + ".in_index"
 
 class Limit(SingleOp):
     def __init__(self, query_id: int, op_id: int, parent_join_cond: str) -> None:
@@ -61,6 +65,14 @@ class Limit(SingleOp):
 
     def get_name(self) -> str:
         return "LIMIT"
+
+class ColScan(SingleOp):
+    def __init__(self, query_id: int, op_id: int, parent_join_cond: str) -> None:
+        super().__init__(query_id, self.get_name(), op_id, parent_join_cond)
+
+    def get_name(self) -> str:
+        return "COLUMN_DATA_SCAN"
+
 
 
 class StreamingLimit(SingleOp):
@@ -115,7 +127,7 @@ class HashGroupBy(SingleOp):
         return "HASH_GROUP_BY"
 
 
-class PerfectHashGroupBy(GroupBy):
+class PerfectHashGroupBy(SingleOp):
     def __init__(self, query_id: int, op_id: int, parent_join_cond: str) -> None:
         super().__init__(query_id, self.get_name(), op_id, parent_join_cond)
 
@@ -126,7 +138,6 @@ class PerfectHashGroupBy(GroupBy):
 class StandardJoin(Op):
     def __init__(self, query_id: int, name: str, op_id: int, parent_join_cond: str) -> None:
         super().__init__(query_id, name, op_id, parent_join_cond)
-        self.inner_op_table_name = self.single_op_table_name + "_0"
 
     @abstractmethod
     def get_name(self) -> str:
@@ -137,13 +148,27 @@ class StandardJoin(Op):
 
     def get_out_index(self) -> str:
         return self.single_op_table_name + ".out_index"
+    
+    def get_in_index(self, cid) -> str:
+        if cid == 0:
+            return self.single_op_table_name + ".lhs_index"
+        else:
+            return self.single_op_table_name + ".rhs_index"
+
+    def get_from_string(self) -> str:
+        if self.is_root:
+            return  self.single_op_table_name
+        else:
+            return "JOIN " + self.single_op_table_name \
+                    + " ON " + self.parent_join_cond + " = " + self.single_op_table_name + ".out_index"
+
 
 class HashJoin(StandardJoin):
     def __init__(self, query_id: int, op_id: int, parent_join_cond: str) -> None:
         super().__init__(query_id, self.get_name(), op_id, parent_join_cond)
 
     def get_name(self) -> str:
-        return "BLOCKWISE_NL_JOIN"
+        return "HASH_JOIN"
 
 
 class BlockwiseNLJoin(StandardJoin):

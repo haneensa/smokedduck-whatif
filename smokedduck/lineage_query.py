@@ -79,6 +79,13 @@ def _generate_lineage_query(
     name_set = set()
 
     op = operator_factory.get_op(plan_node['name'], query_id, parent_join_cond)
+
+    while op.get_name() == "PROJECTION":
+        plan_node = children[0]
+        children = plan_node['children']
+        print("skipping ", op.get_name(), " kids: ", children, "new: ", plan_node["name"])
+        op = operator_factory.get_op(plan_node['name'], query_id, parent_join_cond)
+
     if op.get_name() == "UNGROUPED_AGGREGATE":
         agg_child_op = operator_factory.get_op(children[0]['name'], query_id, parent_join_cond)
         agg_child_op.is_root = op.is_root
@@ -87,6 +94,11 @@ def _generate_lineage_query(
         plan_node = plan_node['children'][0]
         # only need to update out_index to 0 for all output tuples
         op.is_agg_child = True
+        while op.get_name() == "PROJECTION":
+            plan_node = children[0]
+            children = plan_node['children']
+            print("skipping ", op.get_name(), " kids: ", children, "new: ", plan_node["name"])
+            op = operator_factory.get_op(plan_node['name'], query_id, parent_join_cond)
 
     child_join_conds = op.get_child_join_conds()
     assert len(children) == len(child_join_conds) or op.get_name() == 'SEQ_SCAN'
@@ -94,6 +106,11 @@ def _generate_lineage_query(
     froms.extend(prov_model.get_froms(plan_node, query_id, op))
 
     for i in range(len(children)):
+        if children[i]["name"].rsplit("_", 1)[0] == "COLUMN_DATA_SCAN":
+            name = children[i]["name"]
+            projections.append(Projection(in_index=op.get_in_index(i), alias=name, orig_table_name=name))
+            continue
+
         _, child_names, child_projections, child_froms = _generate_lineage_query(children[i], query_id,
                                                                                  prov_model, child_join_conds[i], operator_factory)
 

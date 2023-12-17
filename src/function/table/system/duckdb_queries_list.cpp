@@ -36,6 +36,8 @@ static unique_ptr<FunctionData> DuckDBQueriesListBind(ClientContext &context, Ta
 	names.emplace_back("postprocess_time");
 	return_types.emplace_back(LogicalType::FLOAT);
 
+  names.emplace_back("plan");
+	return_types.emplace_back(LogicalType::VARCHAR);
 
 
 	return nullptr;
@@ -92,6 +94,10 @@ void DuckDBQueriesListFunction(ClientContext &context, TableFunctionInput &data_
     float postprocess_time = 0.0;//((float) end - start) / CLOCKS_PER_SEC;
 		output.SetValue(col++, count,Value::FLOAT(postprocess_time));
 
+    // plan, VARCHAR
+		output.SetValue(col++, count, PlanToString(
+		                                  context.client_data->lineage_manager->queryid_to_plan[data.offset].get()
+		                                  ));
 
 		count++;
 		data.offset++;
