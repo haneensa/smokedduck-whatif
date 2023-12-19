@@ -83,7 +83,6 @@ def _generate_lineage_query(
     while op.get_name() == "PROJECTION":
         plan_node = children[0]
         children = plan_node['children']
-        print("skipping ", op.get_name(), " kids: ", children, "new: ", plan_node["name"])
         op = operator_factory.get_op(plan_node['name'], query_id, parent_join_cond)
 
     if op.get_name() == "UNGROUPED_AGGREGATE":
@@ -93,12 +92,12 @@ def _generate_lineage_query(
         children = plan_node['children'][0]['children']
         plan_node = plan_node['children'][0]
         # only need to update out_index to 0 for all output tuples
-        op.is_agg_child = True
         while op.get_name() == "PROJECTION":
             plan_node = children[0]
             children = plan_node['children']
-            print("skipping ", op.get_name(), " kids: ", children, "new: ", plan_node["name"])
             op = operator_factory.get_op(plan_node['name'], query_id, parent_join_cond)
+            op.is_agg_child = True
+            op.is_root = agg_child_op.is_root
 
     child_join_conds = op.get_child_join_conds()
     assert len(children) == len(child_join_conds) or op.get_name() == 'SEQ_SCAN'

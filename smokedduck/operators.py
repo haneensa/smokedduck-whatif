@@ -147,6 +147,8 @@ class StandardJoin(Op):
         return [self.single_op_table_name + ".lhs_index", self.single_op_table_name + ".rhs_index"]
 
     def get_out_index(self) -> str:
+        if self.is_agg_child:
+            return "0 as out_index"
         return self.single_op_table_name + ".out_index"
     
     def get_in_index(self, cid) -> str:
@@ -213,9 +215,6 @@ class UngroupedAggregate(SingleOp):
         return ""
 
 class OperatorFactory():
-    def __init__(self, finalize_checker: Callable[[str], bool]):
-        self.finalize_checker = finalize_checker
-
     def get_op(self, op_str: str, query_id: int, parent_join_cond: str) -> Op:
         op, op_id = op_str.rsplit("_", 1)
         if op == 'LIMIT':

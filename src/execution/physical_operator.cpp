@@ -259,7 +259,7 @@ OperatorResultType CachingPhysicalOperator::Execute(ExecutionContext &context, D
 	}
 	if (!state.can_cache_chunk) {
 #ifdef LINEAGE
-		if (ClientConfig::GetConfig(context.client).trace_lineage) {
+		if (ClientConfig::GetConfig(context.client).trace_lineage && chunk.size() > 0) {
       auto log = lineage_op->GetLog(thread_id);
       log->output_index.push_back({log->GetLatestLSN(), state.in_start});
 		}

@@ -393,21 +393,6 @@ idx_t MergeLog::GetLineageAsChunk(DataChunk &insert_chunk,
    */
 	return 0;
 }
-/*
-idx_t HashJoinLog::GetBuildSideIndex(idx_t cur) {
-  if (lineage_finalize.size() > 0 && lineage_finalize.back().added_count > cur) {
-    // substitute cur with the address it refer to
-    // using lineage_finalize data
-    auto count = lineage_finalize.back().added_count;
-    auto new_cur = lineage_finalize.back().sel->owned_data[cur];
-    std::cout << count << " old cur: " << cur << " New : " << new_cur << std::endl;
-    // assert new_cur < count
-    auto addr =  lineage_finalize.back().scatter.get())[new_cur];
-    cur =  addr;
-  }
-
-  return 0;
-}*/
 
 // Hash Join
 // schema: [INTEGER lhs_index, INTEGER rhs_index, INTEGER out_index]
@@ -423,7 +408,7 @@ idx_t HashJoinLog::GetLineageAsChunk(DataChunk &insert_chunk,
 
   idx_t lsn = output_index[data_idx].first;
   if (lsn == 0) { // something is wrong
-	return 0;
+	  return 0;
   }
 
   lsn -= 1;
@@ -472,6 +457,7 @@ idx_t HashJoinLog::GetLineageAsChunk(DataChunk &insert_chunk,
 
   fillBaseChunk(insert_chunk, res_count, lhs_payload, rhs_payload, global_count);
   data_idx++;
+
   return res_count;
 }
 

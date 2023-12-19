@@ -265,7 +265,6 @@ void HashJoinLog::PostProcess(shared_ptr<LogIndex> logIdx) {
 				if (logIdx->index_hj[hash][k].second == (data_ptr_t)scatter_idx)
 					*(vec_ptr + i) = logIdx->index_hj[hash][k].first;
 			}
-			std::cout << i << " " << 	*(vec_ptr + i) << std::endl;
 		}
 	} else {
 		data_ptr_t* right_build_ptr = lineage_binary[lsn].right.get();
