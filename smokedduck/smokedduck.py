@@ -11,17 +11,13 @@ class SmokedDuck:
     def __init__(self, duckdb_conn: duckdb.DuckDBPyConnection) -> None:
         self.duckdb_conn = duckdb_conn
         self.duckdb_conn.execute("pragma threads=1")
-        self.operator_factory = OperatorFactory(self._finalize_checker)
+        self.operator_factory = OperatorFactory()
 
         self.query_id = -1
         self.query_plan = None
         self.captured_lineage_model = None
         self.latest_relation = None
         self._conform_to_duckdb_interface()
-
-    def _finalize_checker(self, finalize_table):
-        finalize_test = self.duckdb_conn.execute(sql_statements.check_finalize(finalize_table)).df()
-        return finalize_test['cnt'][0] > 0
 
     def _conform_to_duckdb_interface(self) -> None:
         smokedduck_methods = set([name for name in SmokedDuck.__dict__.keys()])
