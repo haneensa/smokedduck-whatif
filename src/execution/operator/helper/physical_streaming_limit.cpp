@@ -62,7 +62,7 @@ OperatorResultType PhysicalStreamingLimit::Execute(ExecutionContext &context, Da
 		chunk.Reference(input);
 #ifdef LINEAGE
 		if (ClientConfig::GetConfig(context.client).trace_lineage) {
-	    auto lop = reinterpret_cast<LimitLog*>(lineage_op->GetLog(0).get());
+	    auto lop = reinterpret_cast<LimitLog*>(lineage_op->GetLog(context.thread.thread_id).get());
       lop->lineage.push_back({orig_offset, input.size(), offset});
 		}
 #endif

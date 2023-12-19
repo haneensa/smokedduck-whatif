@@ -38,9 +38,9 @@ public:
 	unordered_map<data_ptr_t, idx_t> hj_hash_index;
 	unordered_map<idx_t, data_ptr_t> perfect_hash_join_finalize;
 	vector<unique_ptr<sel_t[]>> right_val_log;
-  idx_t arraySize = 0;
-  vector<idx_t> hj_array;
-  vector<vector<std::pair<idx_t, data_ptr_t>>> index_hj;
+	idx_t arraySize = 0;
+	vector<idx_t> hj_array;
+	vector<vector<std::pair<idx_t, data_ptr_t>>> index_hj;
 };
 
 class Log {
@@ -397,6 +397,9 @@ struct hj_probe_artifact {
   unique_ptr<sel_t[]> left;
   unique_ptr<data_ptr_t[]> right;
   unique_ptr<sel_t[]> perfect_right;
+  // 0: inner join
+  // 1: perfect hash table
+  // 2: semi/mark join
   idx_t branch;
   idx_t count;
   idx_t out_offset;

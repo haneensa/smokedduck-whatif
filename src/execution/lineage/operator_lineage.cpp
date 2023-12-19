@@ -258,22 +258,28 @@ void HashJoinLog::PostProcess(shared_ptr<LogIndex> logIdx) {
 	if (lineage_binary[lsn].branch == 1) {
 		auto vec_ptr = lineage_binary[lsn].perfect_right.get();
 		for (idx_t i=0; i < res_count; i++) {
-			auto scatter_idx = logIdx->perfect_hash_join_finalize[lineage_binary[lsn].perfect_right[i]];
-			*(vec_ptr + i) = logIdx->hj_hash_index[scatter_idx];
+			auto idx = lineage_binary[lsn].perfect_right[i];
+			std::uintptr_t scatter_idx = (std::uintptr_t)logIdx->perfect_hash_join_finalize[idx];
+			idx_t hash = scatter_idx % logIdx->arraySize;
+			for (auto k=0; k < logIdx->index_hj[hash].size(); ++k) {
+				if (logIdx->index_hj[hash][k].second == (data_ptr_t)scatter_idx)
+					*(vec_ptr + i) = logIdx->index_hj[hash][k].first;
+			}
+			std::cout << i << " " << 	*(vec_ptr + i) << std::endl;
 		}
 	} else {
 		data_ptr_t* right_build_ptr = lineage_binary[lsn].right.get();
 		if (logIdx->right_val_log[lsn].get() == nullptr) {
-      unique_ptr<sel_t[]>  right_val(new sel_t[res_count]);
+			unique_ptr<sel_t[]>  right_val(new sel_t[res_count]);
 			for (idx_t i=0; i < res_count; i++) {
-        std::uintptr_t addrValue = reinterpret_cast<std::uintptr_t>(right_build_ptr[i]);
-        idx_t hash = addrValue % logIdx->arraySize;
-        for (auto k=0; k < logIdx->index_hj[hash].size(); ++k) {
-          if (logIdx->index_hj[hash][k].second == right_build_ptr[i])
-            right_val[i] = logIdx->index_hj[hash][k].first;
-        }
+				std::uintptr_t addrValue = reinterpret_cast<std::uintptr_t>(right_build_ptr[i]);
+				idx_t hash = addrValue % logIdx->arraySize;
+				for (auto k=0; k < logIdx->index_hj[hash].size(); ++k) {
+				  if (logIdx->index_hj[hash][k].second == right_build_ptr[i])
+					right_val[i] = logIdx->index_hj[hash][k].first;
+				}
 			}
-      logIdx->right_val_log[lsn] = move(right_val);
+			logIdx->right_val_log[lsn] = move(right_val);
 		}
 	}
   }

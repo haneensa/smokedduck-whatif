@@ -106,16 +106,23 @@ idx_t FilterLog::GetLineageAsChunk(DataChunk &insert_chunk,
                                    idx_t& data_idx,
                                    idx_t &cache_offset, idx_t &cache_size, bool &cache,
                                    shared_ptr<LogIndex> logIdx) {
-  
-  if (data_idx >= lineage.size()) {
-	  return 0;
+  if (data_idx >= output_index.size()) {
+	return 0;
   }
 
-  idx_t res_count = lineage[data_idx].count;
-  idx_t child_offset = lineage[data_idx].child_offset;
+  idx_t lsn = output_index[data_idx].first;
+  if (lsn == 0) { // something is wrong
+	return 0;
+  }
+
+  lsn -= 1;
+
+
+  idx_t res_count = lineage[lsn].count;
+  idx_t child_offset = lineage[lsn].child_offset;
   data_ptr_t ptr = nullptr;
-  if (lineage[data_idx].sel != nullptr) {
-    auto vec_ptr = lineage[data_idx].sel.get();
+  if (lineage[lsn].sel != nullptr) {
+    auto vec_ptr = lineage[lsn].sel.get();
     ptr = (data_ptr_t)vec_ptr;
   }
   getchunk(res_count, global_count, insert_chunk,  ptr, child_offset);
@@ -145,7 +152,6 @@ idx_t TableScanLog::GetLineageAsChunk(DataChunk &insert_chunk,
   }
   getchunk(res_count, global_count, insert_chunk,  ptr, child_offset);
 
- // std::cout << data_idx << " " << res_count << " " << insert_chunk.size() << " " << child_offset << " " << lineage[data_idx].start << " " << lineage[data_idx].vector_index << " " << global_count << " " << local_count << std::endl;
   data_idx++;
 
   return res_count;
@@ -427,8 +433,11 @@ idx_t HashJoinLog::GetLineageAsChunk(DataChunk &insert_chunk,
   Vector lhs_payload(LogicalType::INTEGER);
 
   // Left side / probe side
-  if (left_ptr == nullptr) {
-    if (res_count == STANDARD_VECTOR_SIZE) {
+
+  // check if all lhs is included
+
+  if (left_ptr == nullptr || lineage_binary[lsn].branch == 2) {
+    if (res_count == STANDARD_VECTOR_SIZE || lineage_binary[lsn].branch == 2) {
       lhs_payload.Sequence(global_count, 1, res_count); // out_index
     } else {
       lhs_payload.SetVectorType(VectorType::CONSTANT_VECTOR);

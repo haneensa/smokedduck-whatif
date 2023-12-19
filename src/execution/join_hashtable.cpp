@@ -667,7 +667,8 @@ void ScanStructure::ConstructMarkJoinResult(DataChunk &join_keys, DataChunk &chi
 		for (idx_t i = 0; i < child.size(); i++) {
 			bool_result[i] = found_match[i];
 #ifdef LINEAGE
-			key_locations_lineage[i] = ptrs[i];
+			if (found_match[i])
+				key_locations_lineage[i] = ptrs[i];
 #endif
 		}
 	} else {
@@ -676,7 +677,7 @@ void ScanStructure::ConstructMarkJoinResult(DataChunk &join_keys, DataChunk &chi
 #ifdef LINEAGE
 	if (join_keys.trace_lineage) {
       auto log = reinterpret_cast<HashJoinLog*>(join_keys.log_per_thread.get());
-      log->lineage_binary.push_back({nullptr, move(key_locations_lineage), nullptr, 0, child.size(), 0});
+      log->lineage_binary.push_back({nullptr, move(key_locations_lineage), nullptr, 2, child.size(), 0});
 	}
 #endif
 	// if the right side contains NULL values, the result of any FALSE becomes NULL
@@ -857,7 +858,7 @@ void ScanStructure::NextSingleJoin(DataChunk &keys, DataChunk &input, DataChunk 
 #ifdef LINEAGE
 	if (keys.trace_lineage) {
       auto log = reinterpret_cast<HashJoinLog*>(keys.log_per_thread.get());
-      log->lineage_binary.push_back({nullptr, move(key_locations_lineage), nullptr, 0, result_count, 0});
+      log->lineage_binary.push_back({nullptr, move(key_locations_lineage), nullptr, 2, result_count, 0});
 	}
 #endif
 	// like the SEMI, ANTI and MARK join types, the SINGLE join only ever does one pass over the HT per input chunk
