@@ -16,7 +16,7 @@ PRAGMA enable_profiling;
 PRAGMA enable_lineage;
 
 statement ok
-SELECT supp_nation, cust_nation, l_year, sum(volume) AS revenue FROM ( SELECT n1.n_name AS supp_nation, n2.n_name AS cust_nation, extract(year FROM l_shipdate) AS l_year, l_extendedprice * (1 - l_discount) AS volume FROM supplier, lineitem, orders, customer, nation n1, nation n2 WHERE s_suppkey = l_suppkey AND o_orderkey = l_orderkey AND c_custkey = o_custkey AND s_nationkey = n1.n_nationkey AND c_nationkey = n2.n_nationkey AND ((n1.n_name = 'FRANCE' AND n2.n_name = 'GERMANY') OR (n1.n_name = 'GERMANY' AND n2.n_name = 'FRANCE')) AND l_shipdate BETWEEN CAST('1995-01-01' AS date) AND CAST('1996-12-31' AS date)) AS shipping GROUP BY supp_nation, cust_nation, l_year;
+SELECT s_suppkey, s_name, s_address, s_phone, total_revenue FROM supplier, ( SELECT l_suppkey AS supplier_no, sum(l_extendedprice * (1 - l_discount)) AS total_revenue FROM lineitem WHERE l_shipdate >= CAST('1996-01-01' AS date) AND l_shipdate < CAST('1996-04-01' AS date) GROUP BY supplier_no) revenue0 WHERE s_suppkey = supplier_no AND total_revenue = ( SELECT max(total_revenue) FROM ( SELECT l_suppkey AS supplier_no, sum(l_extendedprice * (1 - l_discount)) AS total_revenue FROM lineitem WHERE l_shipdate >= CAST('1996-01-01' AS date) AND l_shipdate < CAST('1996-04-01' AS date) GROUP BY supplier_no) revenue1);
 
 statement ok
 PRAGMA disable_lineage;
@@ -24,5 +24,12 @@ PRAGMA disable_optimizer;
 
 
 query III
-select * from LINEAGE_1_HASH_JOIN_5_0 as src
+select * from LINEAGE_1_HASH_JOIN_14_0
 ----
+20	0	0
+
+query III
+select * from LINEAGE_1_HASH_JOIN_14_0
+----
+20	0	0
+

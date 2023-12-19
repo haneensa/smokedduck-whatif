@@ -265,7 +265,6 @@ void HashJoinLog::PostProcess(shared_ptr<LogIndex> logIdx) {
 				if (logIdx->index_hj[hash][k].second == (data_ptr_t)scatter_idx)
 					*(vec_ptr + i) = logIdx->index_hj[hash][k].first;
 			}
-			std::cout << i << " " << 	*(vec_ptr + i) << std::endl;
 		}
 	} else {
 		data_ptr_t* right_build_ptr = lineage_binary[lsn].right.get();
@@ -303,17 +302,48 @@ idx_t HALog::ChunksCount() {
 void HALog::BuildIndexes(shared_ptr<LogIndex> logIdx) {
   // TODO: detect if finalize exist
   // build side
-  auto size = addchunk_log.size();
-  idx_t count_so_far = 0;
-  for (idx_t i=0; i < size; i++) {
-	//if (sink_log[i].branch == 0) {
-		idx_t res_count = addchunk_log[i].count;
-		auto payload = addchunk_log[i].addchunk_lineage.get();
+  for (auto g=0; g < grouping_set.size(); g++) {
+	auto size = grouping_set[g].size();
+	idx_t count_so_far = 0;
+	for (idx_t i=0; i < size; i++) {
+		//if (sink_log[i].branch == 0) {
+		auto lsn = grouping_set[g][i];
+		if (lsn == 0) {
+			std::cout << "HALog::BuildIndexes: grouping_set lsn 0" << std::endl;
+			return;
+		}
+		lsn -= 1;
+		idx_t res_count = addchunk_log[lsn].count;
+		auto payload = addchunk_log[lsn].addchunk_lineage.get();
 		for (idx_t j=0; j < res_count; ++j) {
-	  		logIdx->ha_hash_index[payload[j]].push_back(j + count_so_far);
+			logIdx->ha_hash_index[payload[j]].push_back(j + count_so_far);
 		}
 		count_so_far += res_count;
-	//}
+		//}
+	}
+  }
+  // go over distinct_scan, distinct_sink
+  // for each element in distinct sink, add it to HT. with value as distinct_ht[distinct_index[i]]
+  if (grouping_set.empty() == false) return;
+  for (auto g=0; g < distinct_index.size(); g++) {
+	auto size = distinct_index[g].size();
+	idx_t count_so_far = 0;
+	for (idx_t i=0; i < size; i++) {
+		//if (sink_log[i].branch == 0) {
+		auto lsn = distinct_index[g][i];
+		if (lsn == 0) {
+			std::cout << "HALog::BuildIndexes: distinct_index lsn 0" << std::endl;
+			return;
+		}
+		lsn -= 1;
+		idx_t res_count = addchunk_log[lsn].count;
+		auto payload = addchunk_log[lsn].addchunk_lineage.get();
+		for (idx_t j=0; j < res_count; ++j) {
+			logIdx->ha_hash_index[payload[j]].push_back(j + count_so_far);
+		}
+		count_so_far += res_count;
+		//}
+	}
   }
 
   /*
@@ -341,7 +371,40 @@ break;
 */
 }
 
+void HALog::PostProcess(shared_ptr<LogIndex> logIdx) {
+  if (grouping_set.empty() == false) return;
 
+  // go over distinct_scan, distinct_sink
+  // for each element in distinct sink, add it to HT. with value as distinct_ht[distinct_index[i]]
+  for (auto g=0; g < distinct_scan.size(); g++) {
+	auto size = distinct_scan[g].size();
+	idx_t count_so_far = 0;
+	for (idx_t i=0; i < size; i++) {
+		//if (sink_log[i].branch == 0) {
+		auto lsn = distinct_scan[g][i];
+		auto sink_lsn = distinct_sink[g][i];
+		if (lsn == 0 || sink_lsn == 0) {
+			std::cout << "HALog::BuildIndexes: distinct_index lsn 0" << std::endl;
+			return;
+		}
+		lsn -= 1;
+		sink_lsn -= 1;
+		idx_t res_count = scan_log[lsn].count;
+		auto payload = scan_log[lsn].addchunk_lineage.get();
+		auto sink_payload = addchunk_log[sink_lsn].addchunk_lineage.get();
+		for (idx_t j=0; j < res_count; ++j) {
+			logIdx->ha_hash_index[sink_payload[j]].insert(logIdx->ha_hash_index[sink_payload[j]].end(),
+				                                          logIdx->ha_hash_index[payload[j]].begin(),
+				                                          logIdx->ha_hash_index[payload[j]].end());
+
+		}
+		count_so_far += res_count;
+		//}
+	}
+  }
+  processed = true;
+
+}
 // Perfect HashAggregateLog
 idx_t PHALog::Size() {
   return 0;

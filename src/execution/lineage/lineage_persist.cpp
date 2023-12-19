@@ -484,20 +484,28 @@ idx_t HALog::GetLineageAsChunk(DataChunk &insert_chunk,
                                shared_ptr<LogIndex> logIdx) {
 
   if (global_count == 0) key_offset = 0;
-	if (data_idx >= scan_log.size()) {
+	if (data_idx >= output_index.size()) {
 		return 0;
 	}
 
-	idx_t scan_count = scan_log[data_idx].count;
+	idx_t lsn = output_index[data_idx].first;
+	if (lsn == 0) { // something is wrong
+		return 0;
+	}
+
+	lsn -= 1;
+
+	idx_t scan_count = scan_log[lsn].count;
 	if (current_key >= scan_count) {
 		data_idx++;
-    key_offset += current_key;
+    	key_offset += current_key;
 		current_key = 0;
 		return 0;
 	}
-	data_ptr_t* payload = scan_log[data_idx].addchunk_lineage.get();
+	data_ptr_t* payload = scan_log[lsn].addchunk_lineage.get();
 	data_ptr_t output_key = payload[current_key];
 	// current scan , current offset into scan, current offset into groups of scan
+	std::cout << "HALog: " << (idx_t)output_key <<  std::endl;
 	vector<idx_t>& la = logIdx->ha_hash_index[output_key];
 	// read from offset_within_key to max(1024, la.size());
 	idx_t end_offset = la.size() - offset_within_key;
@@ -516,7 +524,7 @@ idx_t HALog::GetLineageAsChunk(DataChunk &insert_chunk,
 		offset_within_key = 0;
 		current_key++;
 	}
-	if (current_key >= scan_log[data_idx].count) {
+	if (current_key >= scan_log[lsn].count) {
 		cache = false;
     key_offset += current_key;
 		current_key = 0;

@@ -235,7 +235,6 @@ CachingPhysicalOperator::CachingPhysicalOperator(PhysicalOperatorType type, vect
 OperatorResultType CachingPhysicalOperator::Execute(ExecutionContext &context, DataChunk &input, DataChunk &chunk,
                                                     GlobalOperatorState &gstate, OperatorState &state_p) const {
 	auto &state = state_p.Cast<CachingOperatorState>();
-
 	// Execute child operator
 	auto child_result = ExecuteInternal(context, input, chunk, gstate, state);
 	auto thread_id = context.thread.thread_id;
@@ -260,8 +259,8 @@ OperatorResultType CachingPhysicalOperator::Execute(ExecutionContext &context, D
 	if (!state.can_cache_chunk) {
 #ifdef LINEAGE
 		if (ClientConfig::GetConfig(context.client).trace_lineage) {
-      auto log = lineage_op->GetLog(thread_id);
-      log->output_index.push_back({log->GetLatestLSN(), state.in_start});
+		  auto log = lineage_op->GetLog(thread_id);
+		  log->output_index.push_back({log->GetLatestLSN(), state.in_start});
 		}
 #endif
 		return child_result;

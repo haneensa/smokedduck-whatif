@@ -159,12 +159,6 @@ void RadixPartitionedHashTable::Sink(ExecutionContext &context, DataChunk &chunk
 #endif
 		llstate.total_groups +=
 		    gstate.finalized_hts[0]->AddChunk(gstate.append_state, group_chunk, payload_input, filter);
-#ifdef LINEAGE
-		/*if (group_chunk.log_record) {
-			chunk.log_record = move(group_chunk.log_record);
-			group_chunk.log_record = nullptr;
-		}*/
-#endif
 		return;
 	}
 

@@ -358,7 +358,7 @@ class HALog : public Log {
     HALog() {}
 
 	idx_t GetLatestLSN() override {
-		return scan_log.size();
+		return addchunk_log.size();
 	}
 
 	idx_t  GetLineageAsChunk(DataChunk &insert_chunk,
@@ -371,6 +371,7 @@ class HALog : public Log {
 	idx_t Count() override;
 	idx_t ChunksCount() override;
 	void BuildIndexes(shared_ptr<LogIndex> logIdx) override;
+	void PostProcess(shared_ptr<LogIndex> logIdx) override;
 
 public:
   vector<hg_artifact> addchunk_log;
@@ -381,6 +382,13 @@ public:
   vector<vector<flushmove_artifact*>> combine_log;
   vector<finalize_artifact> finalize_log;
   vector<hg_artifact> scan_log;
+
+  unordered_map<idx_t, vector<idx_t>> distinct_index;
+  unordered_map<idx_t, vector<idx_t>> distinct_scan;
+  unordered_map<idx_t, vector<idx_t>> distinct_sink;
+
+  unordered_map<idx_t, vector<idx_t>> grouping_set;
+
 
   // context for current scan
   // TODO: state should be passed and manageed by

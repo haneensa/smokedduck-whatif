@@ -271,8 +271,16 @@ idx_t GroupedAggregateHashTable::AddChunk(AggregateHTAppendState &state, DataChu
 #endif
 
 	auto new_group_count = FindOrCreateGroups(state, groups, group_hashes, state.addresses, state.new_groups);
+#ifdef LINEAGE
+	if (groups.trace_lineage) {
+		auto ptrs = FlatVector::GetData<data_ptr_t>(state.addresses);
+		unique_ptr<data_ptr_t[]> addresses_copy(new data_ptr_t[groups.size()]);
+		std::copy(ptrs, ptrs + groups.size() , addresses_copy.get());
+		auto lop = reinterpret_cast<HALog*>(groups.log_per_thread.get());
+		lop->addchunk_log.push_back({move(addresses_copy), groups.size()});
+	}
+#endif
 	VectorOperations::AddInPlace(state.addresses, layout.GetAggrOffset(), payload.size());
-
 	// Now every cell has an entry, update the aggregates
 	auto &aggregates = layout.GetAggregates();
 	idx_t filter_idx = 0;
@@ -301,15 +309,7 @@ idx_t GroupedAggregateHashTable::AddChunk(AggregateHTAppendState &state, DataChu
 		filter_idx++;
 	}
 
-#ifdef LINEAGE
-	if (groups.trace_lineage) {
-		auto ptrs = FlatVector::GetData<data_ptr_t>(state.addresses);
-		unique_ptr<data_ptr_t[]> addresses_copy(new data_ptr_t[groups.size()]);
-		std::copy(ptrs, ptrs + groups.size() , addresses_copy.get());
-    auto lop = reinterpret_cast<HALog*>(groups.log_per_thread.get());
-    lop->addchunk_log.push_back({move(addresses_copy), groups.size()});
-	}
-#endif
+
 	Verify();
 	return new_group_count;
 }
@@ -477,6 +477,7 @@ idx_t GroupedAggregateHashTable::FindOrCreateGroupsInternal(AggregateHTAppendSta
 				auto page_ptr = payload_hds_ptrs[ht_entry.page_nr - 1];
 				auto page_offset = ht_entry.page_offset * tuple_size;
 				addresses[index] = page_ptr + page_offset;
+
 			}
 
 			// Perform group comparisons
@@ -660,16 +661,16 @@ idx_t GroupedAggregateHashTable::Scan(TupleDataParallelScanState &gstate, TupleD
 	data_collection->Scan(gstate, lstate, result);
 	RowOperationsState row_state(aggregate_allocator->GetAllocator());
 	const auto group_cols = layout.ColumnCount() - 1;
-	RowOperations::FinalizeStates(row_state, layout, lstate.chunk_state.row_locations, result, group_cols);
 #ifdef LINEAGE
 	if (result.trace_lineage) {
 		auto ptrs = FlatVector::GetData<data_ptr_t>( lstate.chunk_state.row_locations);
 		unique_ptr<data_ptr_t[]> addresses_copy(new data_ptr_t[result.size()]);
 		std::copy(ptrs, ptrs + result.size() , addresses_copy.get());
-    auto lop = reinterpret_cast<HALog*>(result.log_per_thread.get());
-    lop->scan_log.push_back({move(addresses_copy), result.size()});
+		auto lop = reinterpret_cast<HALog*>(result.log_per_thread.get());
+		lop->scan_log.push_back({move(addresses_copy), result.size()});
 	}
 #endif
+	RowOperations::FinalizeStates(row_state, layout, lstate.chunk_state.row_locations, result, group_cols);
 	return result.size();
 }
 
