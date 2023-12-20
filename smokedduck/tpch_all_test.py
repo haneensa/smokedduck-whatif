@@ -5,7 +5,7 @@ import pandas as pd
 con = smokedduck.connect(':default:')
 con.execute('CALL dbgen(sf=1);')
 
-fix_list = [2, 4, 11, 13, 15, 16, 17,18,  20, 21, 22]
+fix_list = [2, 4, 11, 13, 15, 17,18,  20, 21, 22]
 for i in range(1, 23):
     if i in fix_list:
         print(f"############# {i} SKIP ###########")

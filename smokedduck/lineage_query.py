@@ -106,8 +106,8 @@ def _generate_lineage_query(
 
     for i in range(len(children)):
         if children[i]["name"].rsplit("_", 1)[0] == "COLUMN_DATA_SCAN":
-            name = children[i]["name"]
-            projections.append(Projection(in_index=op.get_in_index(i), alias=name, orig_table_name=name))
+            #name = children[i]["name"]
+            #projections.append(Projection(in_index=op.get_in_index(i), alias=name, orig_table_name=name))
             continue
 
         _, child_names, child_projections, child_froms = _generate_lineage_query(children[i], query_id,

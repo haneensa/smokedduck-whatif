@@ -6,7 +6,7 @@ con = smokedduck.connect(':default:')
 con.execute('CALL dbgen(sf=0.01);')
 
 fix_list = [2, 4, 7, 11, 15, 16, 17,18,  20, 21]
-qid = "13"
+qid = "16"
 print(f"############# Testing {qid} ###########")
 query_file = f"queries/tpch/tpch_{qid}.sql"
 logical_file = f"queries/perm/q{qid}.sql"
@@ -20,7 +20,7 @@ print(sql)
 # Printing lineage that was captured from base query
 print(con.execute(sql, capture_lineage='lineage').df())
 lineage = con.lineage().df()
-print(lineage)
+
 with open(logical_file, "r") as f:
     logical_sql = " ".join(f.read().split())
 
