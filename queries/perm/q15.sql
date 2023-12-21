@@ -1,13 +1,10 @@
-  ROW_NUMBER() OVER (ORDER BY (SELECT 1)) AS out_index,
   select 
-    Qplus.s_suppkey,
-    Qplus.s_name,
-    Qplus.s_address,
-    Qplus.s_phone,
-    Qplus.total_revenue, s_rid, l_rid, l_rid2
+  0 as out_index,
+    s_rid as supplier, l_rid as lineitem, l_rid2 as lineitem_2
   from
   (
-  select *,
+  select
+  *,
          supplier.rowid as s_rid from supplier, (
     select * from (
               select l_suppkey as supplier_no, sum(l_extendedprice * (1 - l_discount)) as total_revenue

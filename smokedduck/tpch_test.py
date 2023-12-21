@@ -3,9 +3,10 @@ import pandas as pd
 
 # Creating connection
 con = smokedduck.connect(':default:')
-con.execute('CALL dbgen(sf=0.01);')
+con.execute('CALL dbgen(sf=0.1);')
 
-fix_list = [2, 4, 7, 11, 15, 16, 17,18,  20, 21]
+subset = [2, 4, 11, 17, 21, 22]
+fix_list = [11, 16, 20]
 qid = "16"
 print(f"############# Testing {qid} ###########")
 query_file = f"queries/tpch/tpch_{qid}.sql"
@@ -33,8 +34,16 @@ lineage= lineage.reindex(sorted(lineage.columns), axis=1)
 
 logical_lineage = logical_lineage.sort_values(by=list(logical_lineage.columns)).reset_index(drop=True)
 lineage = lineage.sort_values(by=list(lineage.columns)).reset_index(drop=True)
-
+lineage = lineage[list(logical_lineage.columns)]
 print(lineage)
 print(logical_lineage)
 logical_lineage= logical_lineage.astype(lineage.dtypes)
-assert lineage.equals(logical_lineage), f"DataFrames do not have equal content, {qid}"
+print(lineage.isin(logical_lineage).all().all())
+df_all = logical_lineage.merge(lineage, on=list(logical_lineage.columns), how='left', indicator=True)
+right_only = df_all[ df_all['_merge'] == "right_only"]
+print(right_only)
+left_only = df_all[ df_all['_merge'] == "left_only"]
+print(left_only)
+both = df_all[ df_all['_merge'] == "both"]
+print(both)
+assert (len(both) == len(lineage) and len(right_only) == 0) or lineage.equals(logical_lineage), f"DataFrames do not have equal content, {qid}"

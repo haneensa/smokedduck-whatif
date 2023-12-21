@@ -61,7 +61,7 @@ def get_query(
             raise Exception("Selected forward lineage table " + forward_table + " not found in query")
 
     ret += prov_model.query_suffix(out_index)
-
+    print(ret)
     return ret
 
 

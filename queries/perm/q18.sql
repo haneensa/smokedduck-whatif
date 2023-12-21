@@ -1,9 +1,9 @@
-  ROW_NUMBER() OVER (ORDER BY (SELECT 1)) AS out_index,
-  select  c_name,  c_custkey,  o_orderkey,  o_orderdate,  o_totalprice,  
-  sum_l_quantity_300, sum_l_quantity,
-  c_rid, o_rid, l_rid, l_rid2
+  select  out_index-1 as out_index,
+  c_rid as customer, o_rid as orders, l_rid as lineitem, l_rid2 as lineitem_2
   from (
-        SELECT  c_name,  c_custkey,  o_orderkey,  o_orderdate,  o_totalprice,  sum(l_quantity) as sum_l_quantity
+        SELECT  
+      ROW_NUMBER() OVER (ORDER BY (SELECT 1)) AS out_index,
+        c_name,  c_custkey,  o_orderkey,  o_orderdate,  o_totalprice,  sum(l_quantity) as sum_l_quantity
         FROM customer, orders, lineitem
         WHERE o_orderkey IN (
                 SELECT l_orderkey

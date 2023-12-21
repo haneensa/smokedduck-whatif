@@ -830,7 +830,7 @@ void ScanStructure::NextSingleJoin(DataChunk &keys, DataChunk &input, DataChunk 
 			auto index = match_sel.get_index(i);
 			found_match[index] = true;
 #ifdef LINEAGE
-			key_locations_lineage[result_count] = ptrs[index];
+			key_locations_lineage[index] = ptrs[index];
 #endif
 			result_sel.set_index(result_count++, index);
 		}

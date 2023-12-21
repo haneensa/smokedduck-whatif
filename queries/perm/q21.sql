@@ -1,8 +1,9 @@
-          ROW_NUMBER() OVER (ORDER BY (SELECT 1)) AS out_index,
-  select s_name, numwait,
-         s_rid, l_rid, l_rid2, o_rid, n_rid
+  select out_index-1 as out_index,
+         s_rid as supplier, l_rid as lineitem, l_rid2 as lineitem_2, o_rid as orders, n_rid as nation
   from (
-      SELECT s_name, count(*) AS numwait
+      SELECT 
+          ROW_NUMBER() OVER (ORDER BY (SELECT 1)) AS out_index,
+      s_name, count(*) AS numwait
       FROM (
           SELECT s_name, s_suppkey, o_orderkey
           FROM supplier, lineitem l1, orders, nation
