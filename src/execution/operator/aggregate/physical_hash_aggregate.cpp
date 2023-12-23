@@ -348,7 +348,7 @@ void PhysicalHashAggregate::SinkDistinctGrouping(ExecutionContext &context, Data
 #ifdef LINEAGE
 		if (lineage_op && lineage_op->trace_lineage) {
 			auto log = reinterpret_cast<HALog*>(lineage_op->GetLog(context.thread.thread_id).get());
-			log->distinct_index[table_idx].push_back(log->GetLatestLSN());
+			log->distinct_index[table_idx].push_back(log->addchunk_log.size());
 		}
 #endif
 	}
@@ -678,7 +678,7 @@ public:
 #ifdef LINEAGE
 				auto log = reinterpret_cast<HALog*>(group_chunk.log_per_thread.get());
 				log->distinct_scan[grouping_idx].push_back(log->scan_log.size());
-				log->distinct_sink[grouping_idx].push_back(log->GetLatestLSN());
+				log->distinct_sink[grouping_idx].push_back(log->addchunk_log.size());
 #endif
 			}
 		}
@@ -992,6 +992,8 @@ SourceResultType PhysicalHashAggregate::GetData(ExecutionContext &context, DataC
 		if (chunk.trace_lineage && chunk.size() > 0) {
 			auto log = reinterpret_cast<HALog*>(chunk.log_per_thread.get());
 			log->output_index.push_back({log->scan_log.size(), 0});
+			chunk.trace_lineage = false;
+			chunk.log_per_thread = nullptr;
 		}
 #endif
 		if (chunk.size() != 0) {

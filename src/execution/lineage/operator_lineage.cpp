@@ -327,7 +327,10 @@ void HALog::BuildIndexes(shared_ptr<LogIndex> logIdx) {
   if (grouping_set.empty() == false) return;
   for (auto g=0; g < distinct_index.size(); g++) {
 	auto size = distinct_index[g].size();
-	idx_t count_so_far = 0;
+	if (logIdx->distinct_count.find(g) == logIdx->distinct_count.end()) {
+		logIdx->distinct_count[g] = 0;
+	}
+	idx_t count_so_far = logIdx->distinct_count[g];
 	for (idx_t i=0; i < size; i++) {
 		//if (sink_log[i].branch == 0) {
 		auto lsn = distinct_index[g][i];
@@ -339,11 +342,12 @@ void HALog::BuildIndexes(shared_ptr<LogIndex> logIdx) {
 		idx_t res_count = addchunk_log[lsn].count;
 		auto payload = addchunk_log[lsn].addchunk_lineage.get();
 		for (idx_t j=0; j < res_count; ++j) {
-			logIdx->ha_hash_index[payload[j]].push_back(j + count_so_far);
+			logIdx->ha_distinct_hash_index[payload[j]].push_back(j + count_so_far);
 		}
 		count_so_far += res_count;
 		//}
 	}
+	logIdx->distinct_count[g] = count_so_far;
   }
 
   /*
@@ -394,8 +398,8 @@ void HALog::PostProcess(shared_ptr<LogIndex> logIdx) {
 		auto sink_payload = addchunk_log[sink_lsn].addchunk_lineage.get();
 		for (idx_t j=0; j < res_count; ++j) {
 			logIdx->ha_hash_index[sink_payload[j]].insert(logIdx->ha_hash_index[sink_payload[j]].end(),
-				                                          logIdx->ha_hash_index[payload[j]].begin(),
-				                                          logIdx->ha_hash_index[payload[j]].end());
+				                                          logIdx->ha_distinct_hash_index[payload[j]].begin(),
+				                                          logIdx->ha_distinct_hash_index[payload[j]].end());
 
 		}
 		count_so_far += res_count;

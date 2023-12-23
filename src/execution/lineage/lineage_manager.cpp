@@ -8,6 +8,7 @@
 #include "duckdb/planner/parsed_data/bound_create_table_info.hpp"
 #include "duckdb/catalog/catalog_entry/duck_table_entry.hpp"
 #include "duckdb/execution/operator/join/physical_delim_join.hpp"
+#include "duckdb/execution/operator/helper/physical_execute.hpp"
 #include <utility>
 
 namespace duckdb {
@@ -59,6 +60,9 @@ idx_t PlanAnnotator(PhysicalOperator *op, idx_t counter) {
 }
 
 void LineageManager::InitOperatorPlan(ClientContext &context, PhysicalOperator *op) {
+	if (op->type == PhysicalOperatorType::EXECUTE) {
+		InitOperatorPlan(context, &dynamic_cast<PhysicalExecute*>(op)->plan);
+	}
 	PlanAnnotator(op, 0);
 	CreateOperatorLineage(context, op, trace_lineage);
 }

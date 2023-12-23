@@ -109,7 +109,7 @@ void PhysicalOrder::Combine(ExecutionContext &context, GlobalSinkState &gstate_p
 	auto &lstate = lstate_p.Cast<OrderLocalSinkState>();
 #ifdef LINEAGE
 	if (ClientConfig::GetConfig(context.client).trace_lineage)
-		lstate.local_sort_state.log_per_thread = lineage_op->GetLog(0);
+		lstate.local_sort_state.log_per_thread = lineage_op->GetLog(context.thread.thread_id);
 #endif
 	gstate.global_sort_state.AddLocalState(lstate.local_sort_state);
 }
