@@ -7,7 +7,7 @@ con.execute('CALL dbgen(sf=0.1);')
 
 subset = [2, 4, 11, 17, 21, 22]
 fix_list = [11, 16, 20]
-qid = "16"
+qid = "02"
 print(f"############# Testing {qid} ###########")
 query_file = f"queries/tpch/tpch_{qid}.sql"
 logical_file = f"queries/perm/q{qid}.sql"

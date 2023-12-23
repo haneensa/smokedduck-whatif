@@ -1,3 +1,7 @@
+# to get full lineage, 1: check if query has semi/mark/single join
+# if so, check the rhs table, check the key
+# use the key attribute to retrieve all similar keys using a scan
+
 import duckdb
 import json
 import lineage_query
@@ -79,6 +83,7 @@ class SmokedDuck:
                 forward_ids
             ))
 
+    
     def lineage(self) -> duckdb.DuckDBPyConnection:
         return self._lineage_query('lineage')
 
