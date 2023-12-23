@@ -491,7 +491,6 @@ idx_t HALog::GetLineageAsChunk(DataChunk &insert_chunk,
 	data_ptr_t* payload = scan_log[lsn].addchunk_lineage.get();
 	data_ptr_t output_key = payload[current_key];
 	// current scan , current offset into scan, current offset into groups of scan
-	std::cout << "HALog: " << (idx_t)output_key <<  std::endl;
 	vector<idx_t>& la = logIdx->ha_hash_index[output_key];
 	// read from offset_within_key to max(1024, la.size());
 	idx_t end_offset = la.size() - offset_within_key;

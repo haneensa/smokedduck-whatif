@@ -1,12 +1,8 @@
-  ROW_NUMBER() OVER (ORDER BY (SELECT 1)) AS out_index,
-  SELECT  Nl.rowid as N_lineitem_rowid,
-          Nl.l_partkey as N_l_partkey,
-
-          Tplus.Prov_lineitem_rowid,
-          Tplus.Prov_part_rowid,
-          Tplus.l_quantity,
-          Tplus.p_partkey,
-          Tplus.l_partkey
+  SELECT
+        0 as out_index,  
+        Nl.rowid as lineitem, 
+          Tplus.Prov_lineitem_rowid as lineitem_2,
+          Tplus.Prov_part_rowid as part
 FROM      lineitem as Nl, (select 
                                 lineitem.rowid as Prov_lineitem_rowid, 
                                 part.rowid as Prov_part_rowid, 

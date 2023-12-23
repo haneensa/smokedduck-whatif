@@ -1,7 +1,9 @@
-          ROW_NUMBER() OVER (ORDER BY (SELECT 1)) AS out_index,
-  select *
+  select out_index-1 as out_index, s_rid as supplier, n_rid as nation, cb_part.rowid as part,
+    cb_lineitem.rowid as lineitem, cb_partsupp.rowid as partsupp
   from (
-    SELECT *, supplier.rowid as s_rid, nation.rowid as n_rid FROM supplier, nation
+    SELECT 
+          ROW_NUMBER() OVER (ORDER BY (SELECT 1)) AS out_index,
+    *, supplier.rowid as s_rid, nation.rowid as n_rid FROM supplier, nation
   ) as qbase_plus,  partsupp as cb_partsupp, part as cb_part, lineitem as cb_lineitem
   WHERE qbase_plus.s_suppkey IN ( SELECT ps_suppkey FROM partsupp
                                   WHERE ps_partkey IN (SELECT p_partkey FROM part WHERE p_name LIKE 'forest%')

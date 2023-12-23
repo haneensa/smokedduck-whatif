@@ -400,7 +400,6 @@ void HALog::PostProcess(shared_ptr<LogIndex> logIdx) {
 			logIdx->ha_hash_index[sink_payload[j]].insert(logIdx->ha_hash_index[sink_payload[j]].end(),
 				                                          logIdx->ha_distinct_hash_index[payload[j]].begin(),
 				                                          logIdx->ha_distinct_hash_index[payload[j]].end());
-
 		}
 		count_so_far += res_count;
 		//}

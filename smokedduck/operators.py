@@ -42,10 +42,10 @@ class SingleOp(Op):
             return self.single_op_table_name
         else:
             if self.is_agg_child:
-                return "LEFT JOIN "  + self.single_op_table_name \
+                return "JOIN "  + self.single_op_table_name \
                     + " ON " + self.parent_join_cond + " = " + "0"
             else:
-                return "LEFT JOIN " + self.single_op_table_name \
+                return "JOIN " + self.single_op_table_name \
                     + " ON " + self.parent_join_cond + " = " + self.single_op_table_name + ".out_index"
 
     def get_child_join_conds(self) -> list:

@@ -1,5 +1,6 @@
-select main.*, subq.* from (
+select out_index-1 as out_index, ps_rid as partsupp_2, ps_rid2 as partsupp, s_rid as supplier_2, n_rid as nation, n_rid2 as nation_2, s_rid2 as supplier from (
     select groups.*,
+      ROW_NUMBER() OVER (ORDER BY (SELECT 1)) AS out_index,
     j1.partsupp_rowid as ps_rid, j1.supplier_rowid as s_rid, j1.nation_rowid as n_rid
     from (
       SELECT ps_partkey, sum(ps_supplycost * ps_availqty) AS value
