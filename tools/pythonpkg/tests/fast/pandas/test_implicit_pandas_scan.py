@@ -1,6 +1,6 @@
 # simple DB API testcase
 
-import duckdb
+import smokedduck as duckdb
 import pandas as pd
 import pytest
 from conftest import NumpyPandas, ArrowPandas

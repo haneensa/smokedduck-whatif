@@ -1,5 +1,5 @@
 from typing import TYPE_CHECKING, Optional, List, Tuple
-from duckdb.experimental.spark.exception import ContributionsAcceptedError
+from smokedduck.experimental.spark.exception import ContributionsAcceptedError
 
 
 class SparkConf:

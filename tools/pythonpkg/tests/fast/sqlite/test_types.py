@@ -27,7 +27,7 @@
 import datetime
 import decimal
 import unittest
-import duckdb
+import smokedduck as duckdb
 import pytest
 
 

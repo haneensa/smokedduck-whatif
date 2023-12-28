@@ -1,11 +1,11 @@
-import duckdb
+import smokedduck as duckdb
 import os
 import shutil
 
 
 class TestMultiStatement(object):
     def test_multi_statement(self, duckdb_cursor):
-        import duckdb
+        import smokedduck as duckdb
 
         con = duckdb.connect(':memory:')
 

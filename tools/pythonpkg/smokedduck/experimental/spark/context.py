@@ -1,14 +1,14 @@
 from typing import Optional
-import duckdb
-from duckdb import DuckDBPyConnection
+import smokedduck
+from smokedduck import DuckDBPyConnection
 
-from duckdb.experimental.spark.exception import ContributionsAcceptedError
-from duckdb.experimental.spark.conf import SparkConf
+from smokedduck.experimental.spark.exception import ContributionsAcceptedError
+from smokedduck.experimental.spark.conf import SparkConf
 
 
 class SparkContext:
     def __init__(self, master: str):
-        self._connection = duckdb.connect(':memory:')
+        self._connection = smokedduck.connect(':memory:')
 
     @property
     def connection(self) -> DuckDBPyConnection:
@@ -68,10 +68,10 @@ class SparkContext:
     def addPyFile(self, path: str) -> None:
         raise ContributionsAcceptedError
 
-    # def binaryFiles(self, path: str, minPartitions: Optional[int] = None) -> duckdb.experimental.spark.rdd.RDD[typing.Tuple[str, bytes]]:
+    # def binaryFiles(self, path: str, minPartitions: Optional[int] = None) -> smokedduck.experimental.spark.rdd.RDD[typing.Tuple[str, bytes]]:
     # 	pass
 
-    # def binaryRecords(self, path: str, recordLength: int) -> duckdb.experimental.spark.rdd.RDD[bytes]:
+    # def binaryRecords(self, path: str, recordLength: int) -> smokedduck.experimental.spark.rdd.RDD[bytes]:
     # 	pass
 
     # def broadcast(self, value: ~T) -> 'Broadcast[T]':
@@ -86,7 +86,7 @@ class SparkContext:
     def dump_profiles(self, path: str) -> None:
         raise ContributionsAcceptedError
 
-    # def emptyRDD(self) -> duckdb.experimental.spark.rdd.RDD[typing.Any]:
+    # def emptyRDD(self) -> smokedduck.experimental.spark.rdd.RDD[typing.Any]:
     # 	pass
 
     def getCheckpointDir(self) -> Optional[str]:
@@ -146,7 +146,7 @@ class SparkContext:
     def sparkUser(self) -> str:
         raise ContributionsAcceptedError
 
-    # def statusTracker(self) -> duckdb.experimental.spark.status.StatusTracker:
+    # def statusTracker(self) -> smokedduck.experimental.spark.status.StatusTracker:
     # 	raise ContributionsAcceptedError
 
     # def textFile(self, name: str, minPartitions: Optional[int] = None, use_unicode: bool = True) -> pyspark.rdd.RDD[str]:

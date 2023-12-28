@@ -1,4 +1,4 @@
-import duckdb
+import smokedduck as duckdb
 import numpy
 import pytest
 from datetime import date, timedelta

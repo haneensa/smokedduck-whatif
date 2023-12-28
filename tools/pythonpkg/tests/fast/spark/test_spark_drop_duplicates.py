@@ -15,7 +15,7 @@ from duckdb.experimental.spark.sql.types import (
     MapType,
 )
 from duckdb.experimental.spark.sql.functions import col, struct, when, lit, array_contains
-import duckdb
+import smokedduck as duckdb
 import re
 
 

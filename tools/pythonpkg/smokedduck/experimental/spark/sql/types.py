@@ -21,8 +21,8 @@ import calendar
 import time
 import math
 
-import duckdb
-from duckdb.typing import DuckDBPyType
+import smokedduck
+from smokedduck.typing import DuckDBPyType
 
 from ..exception import ContributionsAcceptedError
 
@@ -347,7 +347,7 @@ class DecimalType(FractionalType):
     """
 
     def __init__(self, precision: int = 10, scale: int = 0):
-        super().__init__(duckdb.decimal_type(precision, scale))
+        super().__init__(smokedduck.decimal_type(precision, scale))
         self.precision = precision
         self.scale = scale
         self.hasPrecisionInfo = True  # this is a public API

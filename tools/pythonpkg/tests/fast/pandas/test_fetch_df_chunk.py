@@ -1,5 +1,5 @@
 import pytest
-import duckdb
+import smokedduck as duckdb
 
 VECTOR_SIZE = duckdb.__standard_vector_size__
 

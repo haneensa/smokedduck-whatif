@@ -1,7 +1,7 @@
 import pandas
 import numpy as np
 import datetime
-import duckdb
+import smokedduck as duckdb
 import pytest
 from conftest import NumpyPandas, ArrowPandas
 
@@ -11,7 +11,7 @@ class TestCaseAlias(object):
     def test_case_alias(self, duckdb_cursor, pandas):
         import numpy as np
         import datetime
-        import duckdb
+        import smokedduck as duckdb
 
         con = duckdb.connect(':memory:')
 

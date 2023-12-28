@@ -7,7 +7,7 @@ from duckdb.experimental.spark.sql.functions import struct
 from duckdb.experimental.spark.sql.types import Row
 from duckdb.experimental.spark.errors import PySparkTypeError
 
-import duckdb
+import smokedduck as duckdb
 import re
 
 

@@ -1,7 +1,7 @@
 # multiple result sets
 
 import numpy
-import duckdb
+import smokedduck as duckdb
 
 
 class TestMultipleResultSets(object):

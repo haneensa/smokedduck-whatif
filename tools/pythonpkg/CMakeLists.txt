@@ -19,6 +19,6 @@ endif()
 
 set(ALL_OBJECT_FILES duckdb_python.cpp ${ALL_OBJECT_FILES})
 
-add_library(python_duckdb ${ALL_OBJECT_FILES})
-target_include_directories(python_duckdb PRIVATE ${PYTHON_INCLUDE_DIRS})
-target_link_libraries(python_duckdb duckdb_static ${PYTHON_LIBRARIES})
+add_library(python_smokedduck ${ALL_OBJECT_FILES})
+target_include_directories(python_smokedduck PRIVATE ${PYTHON_INCLUDE_DIRS})
+target_link_libraries(python_smokedduck smokedduck_static ${PYTHON_LIBRARIES})

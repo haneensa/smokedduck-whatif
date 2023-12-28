@@ -1,5 +1,5 @@
 import gc
-import duckdb
+import smokedduck as duckdb
 import pytest
 import os, psutil
 import pandas as pd

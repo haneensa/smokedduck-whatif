@@ -1,8 +1,8 @@
 _exported_symbols = []
 
 # Modules
-import duckdb.functional as functional
-import duckdb.typing as typing
+import smokedduck.functional
+import smokedduck.typing
 _exported_symbols.extend([
     "typing",
     "functional"

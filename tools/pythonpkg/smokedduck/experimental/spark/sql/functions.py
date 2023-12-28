@@ -1,7 +1,7 @@
 from .column import Column, _get_expr
 from typing import Any, Callable, overload, Union
 
-from duckdb import CaseExpression, ConstantExpression, ColumnExpression, FunctionExpression, Expression
+from smokedduck import CaseExpression, ConstantExpression, ColumnExpression, FunctionExpression, Expression
 from ._typing import ColumnOrName
 from ..exception import ContributionsAcceptedError
 

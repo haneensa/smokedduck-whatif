@@ -1,6 +1,6 @@
 import os
 
-import duckdb
+import smokedduck as duckdb
 from pytest import raises
 
 

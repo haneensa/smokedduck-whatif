@@ -1,4 +1,4 @@
-from duckdb.duckdb.typing import (
+from smokedduck.duckdb.typing import (
     DuckDBPyType,
     BIGINT,
     BIT,

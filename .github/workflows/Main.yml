@@ -1,33 +1,33 @@
 name: Main
 on:
   workflow_dispatch:
-  repository_dispatch:
-  push:
-    branches:
-      - '**'
-      - '!main'
-      - '!feature'
-    tags:
-      - '**'
-    paths-ignore:
-      - '**.md'
-      - 'tools/**'
-      - '!tools/odbc/**'
-      - '!tools/shell/**'
-      - '.github/patches/duckdb-wasm/**'
-      - '.github/workflows/**'
-      - '!.github/workflows/Main.yml'
-
-  pull_request:
-    types: [opened, reopened, ready_for_review]
-    paths-ignore:
-      - '**.md'
-      - 'tools/**'
-      - '!tools/odbc/**'
-      - '!tools/shell/**'
-      - '.github/patches/duckdb-wasm/**'
-      - '.github/workflows/**'
-      - '!.github/workflows/Main.yml'
+#  repository_dispatch:
+#  push:
+#    branches:
+#      - '**'
+#      - '!main'
+#      - '!feature'
+#    tags:
+#      - '**'
+#    paths-ignore:
+#      - '**.md'
+#      - 'tools/**'
+#      - '!tools/odbc/**'
+#      - '!tools/shell/**'
+#      - '.github/patches/duckdb-wasm/**'
+#      - '.github/workflows/**'
+#      - '!.github/workflows/Main.yml'
+#
+#  pull_request:
+#    types: [opened, reopened, ready_for_review]
+#    paths-ignore:
+#      - '**.md'
+#      - 'tools/**'
+#      - '!tools/odbc/**'
+#      - '!tools/shell/**'
+#      - '.github/patches/duckdb-wasm/**'
+#      - '.github/workflows/**'
+#      - '!.github/workflows/Main.yml'
 
 
 concurrency:

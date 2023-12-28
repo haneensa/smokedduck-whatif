@@ -6,9 +6,9 @@ from .types import DataType
 if TYPE_CHECKING:
     from ._typing import ColumnOrName, LiteralType, DecimalLiteral, DateTimeLiteral
 
-from duckdb import ConstantExpression, ColumnExpression, FunctionExpression, Expression
+from smokedduck import ConstantExpression, ColumnExpression, FunctionExpression, Expression
 
-from duckdb.typing import DuckDBPyType
+from smokedduck.typing import DuckDBPyType
 
 __all__ = ["Column"]
 

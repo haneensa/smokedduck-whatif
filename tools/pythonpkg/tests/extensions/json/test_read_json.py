@@ -2,7 +2,7 @@ import numpy
 import datetime
 import pandas
 import pytest
-import duckdb
+import smokedduck as duckdb
 import re
 
 

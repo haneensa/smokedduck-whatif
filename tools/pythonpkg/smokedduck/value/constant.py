@@ -1,6 +1,6 @@
 from typing import Any, Dict
-from duckdb.typing import DuckDBPyType
-from duckdb.typing import (
+from smokedduck.typing import DuckDBPyType
+from smokedduck.typing import (
     BIGINT,
     BIT,
     BLOB,
@@ -124,9 +124,9 @@ class DoubleValue(Value):
 
 class DecimalValue(Value):
     def __init__(self, object: Any, width: int, scale: int):
-        import duckdb
+        import smokedduck
 
-        decimal_type = duckdb.decimal_type(width, scale)
+        decimal_type = smokedduck.decimal_type(width, scale)
         super().__init__(object, decimal_type)
 
 
@@ -203,37 +203,37 @@ class TimeTimeZoneValue(Value):
 
 class ListValue(Value):
     def __init__(self, object: Any, child_type: DuckDBPyType):
-        import duckdb
+        import smokedduck
 
-        list_type = duckdb.list_type(child_type)
+        list_type = smokedduck.list_type(child_type)
         super().__init__(object, list_type)
 
 
 class StructValue(Value):
     def __init__(self, object: Any, children: Dict[str, DuckDBPyType]):
-        import duckdb
+        import smokedduck
 
-        struct_type = duckdb.struct_type(children)
+        struct_type = smokedduck.struct_type(children)
         super().__init__(object, struct_type)
 
 
 class MapValue(Value):
     def __init__(self, object: Any, key_type: DuckDBPyType, value_type: DuckDBPyType):
-        import duckdb
+        import smokedduck
 
-        map_type = duckdb.map_type(key_type, value_type)
+        map_type = smokedduck.map_type(key_type, value_type)
         super().__init__(object, map_type)
 
 
 class UnionType(Value):
     def __init__(self, object: Any, members: Dict[str, DuckDBPyType]):
-        import duckdb
+        import smokedduck
 
-        union_type = duckdb.union_type(members)
+        union_type = smokedduck.union_type(members)
         super().__init__(object, union_type)
 
 
-# TODO: add EnumValue once `duckdb.enum_type` is added
+# TODO: add EnumValue once `smokedduck.enum_type` is added
 
 __all__ = [
     "Value",

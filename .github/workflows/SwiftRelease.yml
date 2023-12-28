@@ -1,10 +1,10 @@
 name: SwiftRelease
 on:
   workflow_dispatch:
-  repository_dispatch:
-  push:
-    tags:
-      - '**'
+#  repository_dispatch:
+#  push:
+#    tags:
+#      - '**'
 
 env:
   SOURCE_REF: ${{ github.event_name == 'release' && github.ref_name || 'main' }}

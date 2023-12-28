@@ -1,4 +1,4 @@
-import duckdb
+import smokedduck as duckdb
 import os
 from pytest import raises, mark
 import pytest

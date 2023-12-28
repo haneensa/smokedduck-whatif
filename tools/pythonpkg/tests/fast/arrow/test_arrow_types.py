@@ -1,4 +1,4 @@
-import duckdb
+import smokedduck as duckdb
 
 try:
     import pyarrow as pa

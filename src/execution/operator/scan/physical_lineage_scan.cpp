@@ -86,7 +86,7 @@ SourceResultType PhysicalLineageScan::GetData(ExecutionContext &context, DataChu
 	chunk.Reset();
 	chunk.SetCardinality(result.size());
 	if (result.size() > 0) {
-		for (uint col_idx=0; col_idx < column_ids.size(); ++col_idx) {
+		for (idx_t col_idx=0; col_idx < column_ids.size(); ++col_idx) {
 			idx_t column = column_ids[col_idx];
 			if (column == COLUMN_IDENTIFIER_ROW_ID) {
 				// row id column: fill in the row ids

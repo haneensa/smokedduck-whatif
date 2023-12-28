@@ -1,6 +1,6 @@
 import pandas as pd
 import pytest
-import duckdb
+import smokedduck as duckdb
 import sys
 import gc
 

@@ -1,35 +1,35 @@
 name: Julia
 on:
   workflow_dispatch:
-  repository_dispatch:
-  push:
-    branches:
-      - '**'
-      - '!main'
-      - '!feature'
-    tags:
-      - '**'
-    paths-ignore:
-      - '**.md'
-      - 'examples/**'
-      - 'test/**'
-      - 'tools/**'
-      - '!tools/juliapkg/**'
-      - '.github/patches/duckdb-wasm/**'
-      - '.github/workflows/**'
-      - '!.github/workflows/Julia.yml'
-
-  pull_request:
-    types: [opened, reopened, ready_for_review]
-    paths-ignore:
-      - '**.md'
-      - 'examples/**'
-      - 'test/**'
-      - 'tools/**'
-      - '!tools/juliapkg/**'
-      - '.github/patches/duckdb-wasm/**'
-      - '.github/workflows/**'
-      - '!.github/workflows/Julia.yml'
+#  repository_dispatch:
+#  push:
+#    branches:
+#      - '**'
+#      - '!main'
+#      - '!feature'
+#    tags:
+#      - '**'
+#    paths-ignore:
+#      - '**.md'
+#      - 'examples/**'
+#      - 'test/**'
+#      - 'tools/**'
+#      - '!tools/juliapkg/**'
+#      - '.github/patches/duckdb-wasm/**'
+#      - '.github/workflows/**'
+#      - '!.github/workflows/Julia.yml'
+#
+#  pull_request:
+#    types: [opened, reopened, ready_for_review]
+#    paths-ignore:
+#      - '**.md'
+#      - 'examples/**'
+#      - 'test/**'
+#      - 'tools/**'
+#      - '!tools/juliapkg/**'
+#      - '.github/patches/duckdb-wasm/**'
+#      - '.github/workflows/**'
+#      - '!.github/workflows/Julia.yml'
 
 
 concurrency:
