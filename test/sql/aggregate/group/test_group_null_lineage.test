@@ -1,0 +1,51 @@
+# name: test/sql/aggregate/group/test_group_null_lineage.test
+# description: GROUP BY NULL value
+# group: [group]
+
+statement ok
+SET default_null_order='nulls_first';
+
+statement ok
+CREATE TABLE integers(i INTEGER, j INTEGER);
+
+statement ok
+INSERT INTO integers VALUES (3, 4), (NULL, 4), (2, 4);
+
+
+
+statement ok
+PRAGMA threads=1;
+PRAGMA enable_lineage;
+
+query IIR
+SELECT i, SUM(j), LIST(rowid) FROM integers GROUP BY i ORDER BY i
+----
+NULL	4	[1]
+2	4	[2]
+3	4	[0]
+
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_optimizer;
+
+query I
+SELECT count(*) FROM duckdb_queries_list()
+----
+2
+
+
+query II
+SELECT * FROM  LINEAGE_1_ORDER_BY_3_0
+----
+0	0
+1	1
+2	2
+
+
+query II
+SELECT * FROM LINEAGE_1_PERFECT_HASH_GROUP_BY_2_0
+----
+1	0
+2	1
+0	2

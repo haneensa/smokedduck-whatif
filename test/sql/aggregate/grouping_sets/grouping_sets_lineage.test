@@ -1,0 +1,696 @@
+# name: test/sql/aggregate/grouping_sets/grouping_sets_lineage.test
+# description: Test basic grouping sets
+# group: [grouping_sets]
+
+statement ok
+SET default_null_order='nulls_first';
+
+statement ok
+PRAGMA enable_verification
+
+statement ok
+create table students (course VARCHAR, type VARCHAR);
+
+statement ok
+insert into students
+		(course, type)
+	values
+		('CS', 'Bachelor'),
+		('CS', 'Bachelor'),
+		('CS', 'PhD'),
+		('Math', 'Masters'),
+		('CS', NULL),
+		('CS', NULL),
+		('Math', NULL);
+
+
+statement ok
+PRAGMA threads=1;
+PRAGMA enable_lineage;
+
+# multiple grouping sets
+query III
+select count(*), course, type
+	from students
+	group by grouping sets ((course), (type))
+	order by 1, 2, 3;
+----
+1	NULL	Masters
+1	NULL	PhD
+2	NULL	Bachelor
+2	Math	NULL
+3	NULL	NULL
+5	CS	NULL
+
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_optimizer;
+
+
+query I
+SELECT count(*) FROM duckdb_queries_list()
+----
+10
+
+
+query II
+SELECT * FROM LINEAGE_1_ORDER_BY_4_0
+----
+4	0
+3	1
+2	2
+1	3
+5	4
+0	5
+
+query II
+SELECT * FROM LINEAGE_1_HASH_GROUP_BY_2_0
+----
+0	0
+1	0
+2	0
+4	0
+5	0
+3	1
+6	1
+0	2
+1	2
+2	3
+3	4
+4	5
+5	5
+6	5
+
+
+statement ok
+PRAGMA threads=1;
+PRAGMA enable_lineage;
+
+# multiple grouping sets
+# these are combined as if they are regular GROUP BY expressions
+# i.e. the result is just GROUP BY course, type
+
+# If multiple grouping items are specified in a single GROUP BY clause,
+# then the final list of grouping sets is the cross product of the individual items.
+query III
+select count(*), course, type
+	from students
+	group by grouping sets (course), grouping sets(type)
+	order by 1, 2, 3;
+----
+1	CS	PhD
+1	Math	NULL
+1	Math	Masters
+2	CS	NULL
+2	CS	Bachelor
+
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_optimizer;
+
+
+query I
+SELECT count(*) FROM duckdb_queries_list()
+----
+20
+
+
+query II
+SELECT * FROM LINEAGE_19_ORDER_BY_4_0
+----
+1	0
+4	1
+2	2
+3	3
+0	4
+
+query II
+SELECT * FROM LINEAGE_19_HASH_GROUP_BY_2_0
+----
+0	0
+1	0
+2	1
+3	2
+4	3
+5	3
+6	4
+
+
+statement ok
+PRAGMA threads=1;
+PRAGMA enable_lineage;
+
+# combining grouping sets with non-grouping sets
+query III
+select count(*), course, type
+	from students
+	group by course, grouping sets(type)
+	order by 1, 2, 3;
+----
+1	CS	PhD
+1	Math	NULL
+1	Math	Masters
+2	CS	NULL
+2	CS	Bachelor
+
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_optimizer;
+
+
+query I
+SELECT count(*) FROM duckdb_queries_list()
+----
+30
+
+
+query II
+SELECT * FROM LINEAGE_29_ORDER_BY_4_0
+----
+1	0
+4	1
+2	2
+3	3
+0	4
+
+query II
+SELECT * FROM LINEAGE_29_HASH_GROUP_BY_2_0
+----
+0	0
+1	0
+2	1
+3	2
+4	3
+5	3
+6	4
+
+
+statement ok
+PRAGMA threads=1;
+PRAGMA enable_lineage;
+
+# with multiple grouping sets...
+query IIII
+select count(*), course, type, LIST(rowid)
+	from students
+	group by course, grouping sets(type, ())
+	order by 1, 2, 3;
+----
+1	CS	PhD	[2]
+1	Math	NULL	[6]
+1	Math	Masters	[3]
+2	CS	NULL	[4, 5]
+2	CS	Bachelor	[0, 1]
+2	Math	NULL	[3, 6]
+5	CS	NULL	[0, 1, 2, 4, 5]
+
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_optimizer;
+
+
+query I
+SELECT count(*) FROM duckdb_queries_list()
+----
+40
+
+
+query II
+SELECT * FROM LINEAGE_39_ORDER_BY_4_0
+----
+1	0
+4	1
+2	2
+3	3
+0	4
+6	5
+5	6
+
+query II
+SELECT * FROM LINEAGE_39_HASH_GROUP_BY_2_0
+----
+0	0
+1	0
+2	1
+3	2
+4	3
+5	3
+6	4
+0	5
+1	5
+2	5
+4	5
+5	5
+3	6
+6	6
+
+
+statement ok
+PRAGMA threads=1;
+PRAGMA enable_lineage;
+
+query III
+select count(*), course, type
+	from students
+	group by grouping sets((course, type), (course))
+	order by 1, 2, 3;
+----
+1	CS	PhD
+1	Math	NULL
+1	Math	Masters
+2	CS	NULL
+2	CS	Bachelor
+2	Math	NULL
+5	CS	NULL
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_optimizer;
+
+
+query I
+SELECT count(*) FROM duckdb_queries_list()
+----
+50
+
+
+query II
+SELECT * FROM LINEAGE_49_ORDER_BY_4_0
+----
+1	0
+4	1
+2	2
+3	3
+0	4
+6	5
+5	6
+
+query II
+SELECT * FROM LINEAGE_49_HASH_GROUP_BY_2_0
+----
+0	0
+1	0
+2	1
+3	2
+4	3
+5	3
+6	4
+0	5
+1	5
+2	5
+4	5
+5	5
+3	6
+6	6
+
+
+statement ok
+PRAGMA threads=1;
+PRAGMA enable_lineage;
+
+# nested grouping sets
+# If one GROUPING SETS clause is nested inside another,
+# the effect is the same as if all the elements of the inner clause had been written directly in the outer clause.
+query IIII
+select count(*), course, type, LIST(rowid)
+	from students
+	group by grouping sets (grouping sets(course), grouping sets(type))
+	order by 1, 2, 3;
+----
+1	NULL	Masters	[3]
+1	NULL	PhD	[2]
+2	NULL	Bachelor	[0, 1]
+2	Math	NULL	[3, 6]
+3	NULL	NULL	[4, 5, 6]
+5	CS	NULL	[0, 1, 2, 4, 5]
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_optimizer;
+
+
+query I
+SELECT count(*) FROM duckdb_queries_list()
+----
+60
+
+
+query II
+SELECT * FROM LINEAGE_59_ORDER_BY_4_0
+----
+4	0
+3	1
+2	2
+1	3
+5	4
+0	5
+
+query II
+SELECT * FROM LINEAGE_59_HASH_GROUP_BY_2_0
+----
+0	0
+1	0
+2	0
+4	0
+5	0
+3	1
+6	1
+0	2
+1	2
+2	3
+3	4
+4	5
+5	5
+6	5
+
+
+statement ok
+PRAGMA threads=1;
+PRAGMA enable_lineage;
+
+query IIII
+select count(*), course, type, LIST(rowid)
+        from students
+        group by grouping sets (grouping sets(course, ()), grouping sets(type))
+        order by 1, 2, 3;
+----
+1	NULL	Masters	[3]
+1	NULL	PhD	[2]
+2	NULL	Bachelor	[0, 1]
+2	Math	NULL	[3, 6]
+3	NULL	NULL	[4, 5, 6]
+5	CS	NULL	[0, 1, 2, 4, 5]
+7	NULL	NULL	[0, 1, 2, 3, 4, 5, 6]
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_optimizer;
+
+
+query I
+SELECT count(*) FROM duckdb_queries_list()
+----
+70
+
+
+query II
+SELECT * FROM LINEAGE_69_ORDER_BY_4_0
+----
+5	0
+4	1
+3	2
+1	3
+6	4
+0	5
+2	6
+
+query II
+SELECT * FROM LINEAGE_69_HASH_GROUP_BY_2_0
+----
+0	0
+1	0
+2	0
+4	0
+5	0
+3	1
+6	1
+0	2
+1	2
+2	2
+3	2
+4	2
+5	2
+6	2
+0	3
+1	3
+2	4
+3	5
+4	6
+5	6
+6	6
+
+
+statement ok
+PRAGMA threads=1;
+PRAGMA enable_lineage;
+
+query IIII
+select count(*), course, type, LIST(rowid)
+        from students
+        group by grouping sets ((course), (), (type))
+        order by 1, 2, 3;
+----
+1	NULL	Masters	[3]
+1	NULL	PhD	[2]
+2	NULL	Bachelor	[0, 1]
+2	Math	NULL	[3, 6]
+3	NULL	NULL	[4, 5, 6]
+5	CS	NULL	[0, 1, 2, 4, 5]
+7	NULL	NULL	[0, 1, 2, 3, 4, 5, 6]
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_optimizer;
+
+
+query I
+SELECT count(*) FROM duckdb_queries_list()
+----
+80
+
+
+query II
+SELECT * FROM LINEAGE_79_ORDER_BY_4_0
+----
+5	0
+4	1
+3	2
+1	3
+6	4
+0	5
+2	6
+
+query II
+SELECT * FROM LINEAGE_79_HASH_GROUP_BY_2_0
+----
+0	0
+1	0
+2	0
+4	0
+5	0
+3	1
+6	1
+0	2
+1	2
+2	2
+3	2
+4	2
+5	2
+6	2
+0	3
+1	3
+2	4
+3	5
+4	6
+5	6
+6	6
+
+
+statement ok
+PRAGMA threads=1;
+PRAGMA enable_lineage;
+
+query IIII
+select count(*), course, type, LIST(rowid)
+        from students
+        group by grouping sets(course, ()), grouping sets(type)
+        order by 1, 2, 3;
+----
+1	NULL	Masters	[3]
+1	NULL	PhD	[2]
+1	CS	PhD	[2]
+1	Math	NULL	[6]
+1	Math	Masters	[3]
+2	NULL	Bachelor	[0, 1]
+2	CS	NULL	[4, 5]
+2	CS	Bachelor	[0, 1]
+3	NULL	NULL	[4, 5, 6]
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_optimizer;
+
+
+query I
+SELECT count(*) FROM duckdb_queries_list()
+----
+90
+
+
+query II
+SELECT * FROM LINEAGE_89_ORDER_BY_4_0
+----
+7	0
+6	1
+1	2
+4	3
+2	4
+5	5
+3	6
+0	7
+8	8
+
+query II
+SELECT * FROM LINEAGE_89_HASH_GROUP_BY_2_0
+----
+0	0
+1	0
+2	1
+3	2
+4	3
+5	3
+6	4
+0	5
+1	5
+2	6
+3	7
+4	8
+5	8
+6	8
+
+
+
+statement ok
+PRAGMA threads=1;
+PRAGMA enable_lineage;
+
+query IIII
+select count(*), course, type, LIST(rowid)
+        from students
+        group by grouping sets(course, ()), type
+        order by 1, 2, 3;
+----
+1	NULL	Masters	[3]
+1	NULL	PhD	[2]
+1	CS	PhD	[2]
+1	Math	NULL	[6]
+1	Math	Masters	[3]
+2	NULL	Bachelor	[0, 1]
+2	CS	NULL	[4, 5]
+2	CS	Bachelor	[0, 1]
+3	NULL	NULL	[4, 5, 6]
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_optimizer;
+
+
+query I
+SELECT count(*) FROM duckdb_queries_list()
+----
+100
+
+
+query II
+SELECT * FROM LINEAGE_99_ORDER_BY_4_0
+----
+7	0
+6	1
+1	2
+4	3
+2	4
+5	5
+3	6
+0	7
+8	8
+
+query II
+SELECT * FROM LINEAGE_99_HASH_GROUP_BY_2_0
+----
+0	0
+1	0
+2	1
+3	2
+4	3
+5	3
+6	4
+0	5
+1	5
+2	6
+3	7
+4	8
+5	8
+6	8
+
+
+query III
+select count(*), course, type
+        from students
+        group by grouping sets((course, type), (type))
+        order by 1, 2, 3;
+----
+1	NULL	Masters
+1	NULL	PhD
+1	CS	PhD
+1	Math	NULL
+1	Math	Masters
+2	NULL	Bachelor
+2	CS	NULL
+2	CS	Bachelor
+3	NULL	NULL
+
+# references to group ids by index
+query III
+select count(*), course, type
+        from students
+        group by grouping sets((2, 3), (3))
+        order by 1, 2, 3;
+----
+1	NULL	Masters
+1	NULL	PhD
+1	CS	PhD
+1	Math	NULL
+1	Math	Masters
+2	NULL	Bachelor
+2	CS	NULL
+2	CS	Bachelor
+3	NULL	NULL
+
+query III
+select count(*), course AS crs, type AS tp
+        from students
+        group by grouping sets((crs, tp), (tp))
+        order by 1, 2, 3;
+----
+1	NULL	Masters
+1	NULL	PhD
+1	CS	PhD
+1	Math	NULL
+1	Math	Masters
+2	NULL	Bachelor
+2	CS	NULL
+2	CS	Bachelor
+3	NULL	NULL
+
+query III
+select count(*), course, type
+        from students
+        group by grouping sets (grouping sets(course, ()), grouping sets(type, ()))
+        order by 1, 2, 3;
+----
+1	NULL	Masters
+1	NULL	PhD
+2	NULL	Bachelor
+2	Math	NULL
+3	NULL	NULL
+5	CS	NULL
+7	NULL	NULL
+7	NULL	NULL
+
+# course is not a group or aggregate column
+statement error
+select course from students group by ();

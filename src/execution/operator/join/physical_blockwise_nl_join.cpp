@@ -142,14 +142,20 @@ OperatorResultType PhysicalBlockwiseNLJoin::ExecuteInternal(ExecutionContext &co
 			if (state.left_outer.Enabled()) {
 #ifdef LINEAGE
 				intermediate_chunk->trace_lineage = ClientConfig::GetConfig(context.client).trace_lineage;
+				if (intermediate_chunk->trace_lineage) {
+					intermediate_chunk->log_per_thread = lineage_op->GetLog(context.thread.thread_id);
+				}
 #endif
 				// left join: before we move to the next chunk, see if we need to output any vectors that didn't
 				// have a match found
 				state.left_outer.ConstructLeftJoinResult(input, *intermediate_chunk);
 #ifdef LINEAGE
-/*				if (intermediate_chunk->log_record) {
-					intermediate_chunk->log_record->in_start = state.in_start;
-				}*/
+				if (intermediate_chunk->size() && intermediate_chunk->trace_lineage) {
+					auto lop = reinterpret_cast<BNLJLog*>(lineage_op->GetLog(context.thread.thread_id).get());
+					lop->lineage.push_back({false, move(lop->shared_lineage.back().left),
+					                        0, 0,chunk.size(), state.in_start, 1});
+					lop->shared_lineage.clear();
+				}
 #endif
 				state.left_outer.Reset();
 			}
@@ -157,23 +163,41 @@ OperatorResultType PhysicalBlockwiseNLJoin::ExecuteInternal(ExecutionContext &co
 			if (join_type == JoinType::SEMI) {
 #ifdef LINEAGE
 				chunk.trace_lineage = ClientConfig::GetConfig(context.client).trace_lineage;
+				if (chunk.trace_lineage) {
+					chunk.log_per_thread = lineage_op->GetLog(context.thread.thread_id);
+				}
 #endif
 				PhysicalJoin::ConstructSemiJoinResult(input, chunk, found_match);
 #ifdef LINEAGE
-/*				if (chunk.trace_lineage && chunk.log_record) {
-					chunk.log_record->in_start = state.in_start;
-				}*/
+				if (chunk.trace_lineage) {
+					bool branch_scanlhs = false;
+					idx_t scan_position = 0;
+					idx_t inchunk = 0;
+					auto lop = reinterpret_cast<BNLJLog*>(lineage_op->GetLog(context.thread.thread_id).get());
+					lop->lineage.push_back({branch_scanlhs, move(lop->shared_lineage.back().left),
+					                        scan_position, inchunk,chunk.size(), state.in_start, 1});
+					lop->shared_lineage.clear();
+				}
 #endif
 			}
 			if (join_type == JoinType::ANTI) {
 #ifdef LINEAGE
 				chunk.trace_lineage = ClientConfig::GetConfig(context.client).trace_lineage;
+				if (chunk.trace_lineage) {
+					chunk.log_per_thread = lineage_op->GetLog(context.thread.thread_id);
+				}
 #endif
 				PhysicalJoin::ConstructAntiJoinResult(input, chunk, found_match);
 #ifdef LINEAGE
-/*				if (chunk.trace_lineage && chunk.log_record) {
-					chunk.log_record->in_start = state.in_start;
-				}*/
+				if (chunk.trace_lineage) {
+					bool branch_scanlhs = false;
+					idx_t scan_position = 0;
+					idx_t inchunk = 0;
+					auto lop = reinterpret_cast<BNLJLog*>(lineage_op->GetLog(context.thread.thread_id).get());
+					lop->lineage.push_back({branch_scanlhs, move(lop->shared_lineage.back().left),
+					                        scan_position, inchunk,chunk.size(), state.in_start, 1});
+					lop->shared_lineage.clear();
+				}
 #endif
 			}
 
@@ -196,10 +220,10 @@ OperatorResultType PhysicalBlockwiseNLJoin::ExecuteInternal(ExecutionContext &co
 						std::copy(state.match_sel.data(),
                 state.match_sel.data() + result_count,
                 sel_copy->owned_data.get());
-            reinterpret_cast<BNLJLog*>(lineage_op->GetLog(0).get())->lineage.push_back({
+            reinterpret_cast<BNLJLog*>(lineage_op->GetLog(context.thread.thread_id).get())->lineage.push_back({
                 state.cross_product.ScanLHS(),
                 sel_copy, state.cross_product.ScanPosition(), state.cross_product.PositionInChunk(),
-                result_count, state.in_start});
+                result_count, state.in_start, 1});
 					}
 #endif
 				} else {
@@ -212,10 +236,10 @@ OperatorResultType PhysicalBlockwiseNLJoin::ExecuteInternal(ExecutionContext &co
 						std::copy(state.match_sel.data(),
                 state.match_sel.data() + result_count,
                 sel_copy->owned_data.get());
-            reinterpret_cast<BNLJLog*>(lineage_op->GetLog(0).get())->lineage.push_back({
+            reinterpret_cast<BNLJLog*>(lineage_op->GetLog(context.thread.thread_id).get())->lineage.push_back({
                 state.cross_product.ScanLHS(),
                 sel_copy, state.cross_product.ScanPosition(), state.cross_product.PositionInChunk(),
-                result_count, state.in_start});
+                result_count, state.in_start, 1});
 					}
 #endif
 				}
@@ -237,10 +261,10 @@ OperatorResultType PhysicalBlockwiseNLJoin::ExecuteInternal(ExecutionContext &co
 						std::copy(state.match_sel.data(),
                 state.match_sel.data() + result_count,
                 sel_copy->owned_data.get());
-            reinterpret_cast<BNLJLog*>(lineage_op->GetLog(0).get())->lineage.push_back({
+            reinterpret_cast<BNLJLog*>(lineage_op->GetLog(context.thread.thread_id).get())->lineage.push_back({
                 state.cross_product.ScanLHS(),
                 sel_copy, state.cross_product.ScanPosition(), state.cross_product.PositionInChunk(),
-                result_count, state.in_start});
+                result_count, state.in_start, 0});
 					}
 #endif
 				} else {
@@ -250,14 +274,12 @@ OperatorResultType PhysicalBlockwiseNLJoin::ExecuteInternal(ExecutionContext &co
 					gstate.right_outer.SetMatches(state.match_sel, result_count, state.cross_product.ScanPosition());
 #ifdef LINEAGE
 					if (ClientConfig::GetConfig(context.client).trace_lineage) {
-            buffer_ptr<SelectionData> sel_copy = make_shared<SelectionData>(result_count);
+            			buffer_ptr<SelectionData> sel_copy = make_shared<SelectionData>(result_count);
 						std::copy(state.match_sel.data(),
-                state.match_sel.data() + result_count,
-                sel_copy->owned_data.get());
-            reinterpret_cast<BNLJLog*>(lineage_op->GetLog(0).get())->lineage.push_back({
-                state.cross_product.ScanLHS(),
-                sel_copy, state.cross_product.ScanPosition(), state.cross_product.PositionInChunk(),
-                result_count, state.in_start});
+                	state.match_sel.data() + result_count,sel_copy->owned_data.get());
+            			reinterpret_cast<BNLJLog*>(lineage_op->GetLog(context.thread.thread_id).get())->lineage.push_back({
+                state.cross_product.ScanLHS(),sel_copy, state.cross_product.ScanPosition(), state.cross_product.PositionInChunk(),
+                	result_count, state.in_start, 0});
 					}
 #endif
 				}
@@ -333,11 +355,11 @@ SourceResultType PhysicalBlockwiseNLJoin::GetData(ExecutionContext &context, Dat
 	if (ClientConfig::GetConfig(context.client).trace_lineage) {
     buffer_ptr<SelectionData> sel_copy = make_shared<SelectionData>(chunk.size());
 		std::copy(lstate.scan_state.match_sel.data(), lstate.scan_state.match_sel.data() + chunk.size(), sel_copy->owned_data.get());
-    reinterpret_cast<BNLJLog*>(lineage_op->GetLog(0).get())->lineage.push_back({
-        true,
-        sel_copy, 0, 0,
-        chunk.size(), lstate.scan_state.local_scan.current_row_index
+    	auto lop =   reinterpret_cast<BNLJLog*>(lineage_op->GetLog(context.thread.thread_id).get());
+		lop->lineage.push_back({true,sel_copy, 0, 0,
+        chunk.size(), lstate.scan_state.local_scan.current_row_index, 2
         });
+		lop->output_index.push_back({lop->GetLatestLSN(), 0});
 	}
 #endif
 	return chunk.size() == 0 ? SourceResultType::FINISHED : SourceResultType::HAVE_MORE_OUTPUT;

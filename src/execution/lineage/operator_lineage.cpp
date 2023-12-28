@@ -7,59 +7,68 @@ void OperatorLineage::PostProcess() {
 	if (processed)	return;
 	// 1. build indexes
 	log_index = make_shared<LogIndex>();
-	for (auto& log : log_per_thread) {
-		log.second->BuildIndexes(log_index);
+	for (idx_t i : thread_vec) {
+		std::cout << 'thread id ' << i <<std::endl;
+		log_per_thread[i]->BuildIndexes(log_index);
 	}
 
 	// 2. adjust offsets for cheaper retrieval
-	for (auto& log : log_per_thread) {
-		log.second->PostProcess(log_index);
+	for (idx_t i : thread_vec) {
+		std::cout << 'thread id ' << i <<std::endl;
+		log_per_thread[i]->PostProcess(log_index);
 	}
 
 	processed = true;
 }
 
-void OperatorLineage::InitLog(idx_t thread_id) {
+void OperatorLineage::InitLog(idx_t thread_id, PhysicalOperator* op) {
+  if (trace_lineage == false) return;
+
   if (log_per_thread.find(thread_id) != log_per_thread.end()) {
     std::cout << "doublicate " << thread_id << std::endl;
     return;
   }
+  // TODO: add lock
   thread_vec.push_back(thread_id);
   if (type ==  PhysicalOperatorType::FILTER) {
 //    std::cout << "filter init log " << thread_id << std::endl;
-	log_per_thread[thread_id] = make_shared<FilterLog>();
+	log_per_thread[thread_id] = make_shared<FilterLog>(thread_id);
   } else if (type ==  PhysicalOperatorType::TABLE_SCAN) {
   //  std::cout << "scan init log " << thread_id << std::endl;
-    log_per_thread[thread_id] = make_shared<TableScanLog>();
+    log_per_thread[thread_id] = make_shared<TableScanLog>(thread_id);
   } else if (type ==  PhysicalOperatorType::LIMIT || type == PhysicalOperatorType::STREAMING_LIMIT) {
     //std::cout << "limit init log " << thread_id << std::endl;
-    log_per_thread[thread_id] = make_shared<LimitLog>();
+    log_per_thread[thread_id] = make_shared<LimitLog>(thread_id);
   } else if (type ==  PhysicalOperatorType::ORDER_BY) {
     //std::cout << "init log orderby " << thread_id << std::endl;
-    log_per_thread[thread_id] = make_shared<OrderByLog>();
+    log_per_thread[thread_id] = make_shared<OrderByLog>(thread_id);
   } else if (type ==  PhysicalOperatorType::CROSS_PRODUCT) {
     //std::cout << "cross init log " << thread_id << std::endl;
-    log_per_thread[thread_id] = make_shared<CrossLog>();
+    log_per_thread[thread_id] = make_shared<CrossLog>(thread_id);
   } else if (type ==  PhysicalOperatorType::PIECEWISE_MERGE_JOIN) {
     //std::cout << "merge init log " << thread_id << std::endl;
-    log_per_thread[thread_id] = make_shared<MergeLog>();
+    log_per_thread[thread_id] = make_shared<MergeLog>(thread_id);
   } else if (type ==  PhysicalOperatorType::NESTED_LOOP_JOIN) {
     //std::cout << "nlj init log " << thread_id << std::endl;
-    log_per_thread[thread_id] = make_shared<NLJLog>();
+    log_per_thread[thread_id] = make_shared<NLJLog>(thread_id);
   } else if (type ==  PhysicalOperatorType::BLOCKWISE_NL_JOIN) {
     //std::cout << "bnlj init log " << thread_id << std::endl;
-    log_per_thread[thread_id] = make_shared<BNLJLog>();
+    log_per_thread[thread_id] = make_shared<BNLJLog>(thread_id);
   } else if (type ==  PhysicalOperatorType::PERFECT_HASH_GROUP_BY) {
     //std::cout << "pha init log " << thread_id << std::endl;
-    log_per_thread[thread_id] = make_shared<PHALog>();
+    log_per_thread[thread_id] = make_shared<PHALog>(thread_id);
   } else if (type ==  PhysicalOperatorType::HASH_GROUP_BY) {
 	  //std::cout << "ha init log " << thread_id << std::endl;
-	  log_per_thread[thread_id] = make_shared<HALog>();
+	  log_per_thread[thread_id] = make_shared<HALog>(thread_id);
   } else if (type ==  PhysicalOperatorType::HASH_JOIN) {
     //std::cout << "hj init log " << thread_id << std::endl;
-    log_per_thread[thread_id] = make_shared<HashJoinLog>();
+    log_per_thread[thread_id] = make_shared<HashJoinLog>(thread_id);
+  } else if (type ==  PhysicalOperatorType::DELIM_JOIN) {
+	//std::cout << "hj init log " << thread_id << std::endl;
+	auto distinct = (PhysicalOperator*)dynamic_cast<PhysicalDelimJoin *>(op)->distinct.get();
+	distinct->lineage_op->InitLog(thread_id);
   } else {
-    log_per_thread[thread_id] = make_shared<Log>();
+    log_per_thread[thread_id] = make_shared<Log>(thread_id);
   }
 }
 
@@ -238,7 +247,7 @@ void HashJoinLog::BuildIndexes(shared_ptr<LogIndex> logIdx) {
 
 void HashJoinLog::PostProcess(shared_ptr<LogIndex> logIdx) {
   if (processed) return;
-  logIdx->right_val_log.resize(GetLatestLSN()  + logIdx->right_val_log.size() );
+  logIdx->right_val_log[thid].resize(GetLatestLSN()  + logIdx->right_val_log[thid].size() );
   for (idx_t i=0; i < output_index.size(); ++i) {
 	idx_t lsn = output_index[i].first;
 	if (lsn == 0) { // something is wrong
@@ -262,27 +271,43 @@ void HashJoinLog::PostProcess(shared_ptr<LogIndex> logIdx) {
 			std::uintptr_t scatter_idx = (std::uintptr_t)logIdx->perfect_hash_join_finalize[idx];
 			idx_t hash = scatter_idx % logIdx->arraySize;
 			for (auto k=0; k < logIdx->index_hj[hash].size(); ++k) {
-				if (logIdx->index_hj[hash][k].second == (data_ptr_t)scatter_idx)
+				if (logIdx->index_hj[hash][k].second == (data_ptr_t)scatter_idx) {
 					*(vec_ptr + i) = logIdx->index_hj[hash][k].first;
+					std::cout << logIdx->index_hj[hash][k].first << std::endl;
+				}
 			}
 		}
 	} else {
 		data_ptr_t* right_build_ptr = lineage_binary[lsn].right.get();
-		if (logIdx->right_val_log[lsn].get() == nullptr) {
+		if (logIdx->right_val_log[thid][lsn].get() == nullptr) {
 			unique_ptr<sel_t[]>  right_val(new sel_t[res_count]);
 			for (idx_t i=0; i < res_count; i++) {
 				std::uintptr_t addrValue = reinterpret_cast<std::uintptr_t>(right_build_ptr[i]);
 				idx_t hash = addrValue % logIdx->arraySize;
 				for (auto k=0; k < logIdx->index_hj[hash].size(); ++k) {
-				  if (logIdx->index_hj[hash][k].second == right_build_ptr[i])
-					right_val[i] = logIdx->index_hj[hash][k].first;
+				  if (logIdx->index_hj[hash][k].second == right_build_ptr[i]) {
+					  right_val[i] = logIdx->index_hj[hash][k].first;
+					  std::cout << thid << " " << res_count << " " << i << " " << (idx_t) right_val[i] << std::endl;
+				  }
 				}
 			}
-			logIdx->right_val_log[lsn] = move(right_val);
+			logIdx->right_val_log[thid][lsn] = move(right_val);
 		}
 	}
   }
   processed = true;
+}
+
+// Merge Join
+
+void MergeLog::BuildIndexes(shared_ptr<LogIndex> logIdx) {
+  if (combine.empty()) return;
+
+  logIdx->sort = move(combine.back());
+}
+
+void MergeLog::PostProcess(shared_ptr<LogIndex> logIdx) {
+
 }
 
 // HashAggregateLog

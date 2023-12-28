@@ -1,0 +1,144 @@
+# name: test/sql/limit/test_preserve_insertion_order_lineage.test
+# description: Test limit with preserve insertion order disabled
+# group: [limit]
+
+statement ok
+PRAGMA enable_verification
+
+statement ok
+SET preserve_insertion_order=false
+
+statement ok
+CREATE TABLE integers AS SELECT 1 AS i FROM range(1000000) t(i)
+
+
+query III
+SELECT MIN(i), MAX(i), COUNT(*) FROM integers
+----
+1	1	1000000
+
+
+statement ok
+PRAGMA threads=1;
+PRAGMA enable_lineage;
+
+query II
+SELECT rowid, * FROM integers LIMIT 5
+----
+0	1
+1	1
+2	1
+3	1
+4	1
+
+statement ok
+PRAGMA disable_lineage;
+
+query II
+SELECT in_index, out_index FROM LINEAGE_2_STREAMING_LIMIT_1_0
+----
+0	0
+1	1
+2	2
+3	3
+4	4
+
+
+statement ok
+PRAGMA threads=1;
+PRAGMA enable_lineage;
+
+query II
+SELECT rowid, * FROM integers LIMIT 5 OFFSET 500000
+----
+500000	1
+500001	1
+500002	1
+500003	1
+500004	1
+
+
+statement ok
+PRAGMA disable_lineage;
+
+query I
+SELECT count(*) FROM duckdb_queries_list()
+----
+24
+
+query II
+SELECT in_index, out_index FROM LINEAGE_23_STREAMING_LIMIT_1_0
+----
+500000	0
+500001	1
+500002	2
+500003	3
+500004	4
+
+statement ok
+CREATE TABLE integers2 AS SELECT * FROM range(1000000) tbl(i)
+
+query III
+SELECT MIN(i), MAX(i), COUNT(*) FROM integers2
+----
+0	999999	1000000
+
+# we need a rowsort here because we don't preserve insertion order
+# note that rowsort is a string-based sort
+query I rowsort
+SELECT * FROM integers2 WHERE i IN (337, 195723, 442578, 994375)
+----
+195723
+337
+442578
+994375
+
+
+statement ok
+PRAGMA threads=1;
+PRAGMA enable_lineage;
+
+# when insertion order is disabled, there is no guarantee on which tuples come out of a LIMIT clause
+# for the LIMIT test select everything
+query II rowsort
+SELECT rowid, * FROM integers2 WHERE i IN (337, 195723, 442578, 994375) LIMIT 4
+----
+195723	195723
+337	337
+442578	442578
+994375	994375
+
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_optimizer;
+
+query I
+SELECT count(*) FROM duckdb_queries_list()
+----
+36
+
+query II
+SELECT * FROM LINEAGE_35_STREAMING_LIMIT_3_0
+----
+0	0
+1	1
+2	2
+3	3
+
+query II
+SELECT * FROM LINEAGE_35_FILTER_1_0
+----
+337	0
+195723	1
+442578	2
+994375	3
+
+query II
+SELECT f.in_index, l.out_index FROM LINEAGE_35_STREAMING_LIMIT_3_0 as l JOIN LINEAGE_35_FILTER_1_0 as f
+ON (l.in_index=f.out_index)
+----
+337	0
+195723	1
+442578	2
+994375	3

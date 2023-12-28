@@ -55,8 +55,8 @@ static void ConstructSemiOrAntiJoinResult(DataChunk &left, DataChunk &result, bo
 		result.Slice(left, sel, result_count);
 #ifdef LINEAGE
 		if (result.log_per_thread) {
-      reinterpret_cast<NLJLog*>(result.log_per_thread.get())->lineage.push_back({
-          sel.sel_data(), nullptr, result_count, 0, 0});
+      		reinterpret_cast<NLJLog*>(result.log_per_thread.get())->shared_lineage.push_back({
+          sel.sel_data(), result_count});
 		}
 #endif
 	} else {
@@ -329,7 +329,8 @@ void PhysicalNestedLoopJoin::ResolveSimpleJoin(ExecutionContext &context, DataCh
 		PhysicalJoin::ConstructSemiJoinResult(input, chunk, found_match);
 #ifdef LINEAGE
 		if (chunk.trace_lineage && chunk.log_per_thread) {
-      reinterpret_cast<NLJLog*>(chunk.log_per_thread.get())->lineage.back().out_start = state.in_start;
+      		auto lop = reinterpret_cast<NLJLog*>(chunk.log_per_thread.get());
+			lop->lineage.push_back({lop->shared_lineage.back().left, nullptr, chunk.size(),0, state.in_start});
 			chunk.log_per_thread = nullptr;
 		}
 #endif
@@ -345,7 +346,8 @@ void PhysicalNestedLoopJoin::ResolveSimpleJoin(ExecutionContext &context, DataCh
 		PhysicalJoin::ConstructAntiJoinResult(input, chunk, found_match);
 #ifdef LINEAGE
 		if (chunk.trace_lineage && chunk.log_per_thread) {
-      reinterpret_cast<NLJLog*>(chunk.log_per_thread.get())->lineage.back().out_start = state.in_start;
+	  		auto lop = reinterpret_cast<NLJLog*>(chunk.log_per_thread.get());
+	  		lop->lineage.push_back({lop->shared_lineage.back().left, nullptr, chunk.size(),0, state.in_start});
 			chunk.log_per_thread = nullptr;
 		}
 #endif
@@ -383,9 +385,18 @@ OperatorResultType PhysicalNestedLoopJoin::ResolveComplexJoin(ExecutionContext &
 					// have a match found
 #ifdef LINEAGE
 					chunk.trace_lineage = ClientConfig::GetConfig(context.client).trace_lineage;
-					chunk.log_per_thread = lineage_op->GetLog(context.thread.thread_id);
+					if (chunk.trace_lineage)
+						chunk.log_per_thread = lineage_op->GetLog(context.thread.thread_id);
 #endif
 					state.left_outer.ConstructLeftJoinResult(input, chunk);
+#ifdef LINEAGE
+					if (chunk.trace_lineage) {
+						auto lop = reinterpret_cast<NLJLog*>(lineage_op->GetLog(context.thread.thread_id).get());
+						lop->lineage.push_back({move(lop->shared_lineage.back().left), nullptr,
+						                        chunk.size(), 0, state.in_start});
+						lop->shared_lineage.clear();
+					}
+#endif
 					state.left_outer.Reset();
 				}
 				return OperatorResultType::NEED_MORE_INPUT;
@@ -504,8 +515,10 @@ SourceResultType PhysicalNestedLoopJoin::GetData(ExecutionContext &context, Data
 		std::copy(lstate.scan_state.match_sel.data(),
         lstate.scan_state.match_sel.data() + chunk.size(),
         sel_copy->owned_data.get());
-    reinterpret_cast<NLJLog*>(lineage_op->GetLog(context.thread.thread_id).get())->lineage.push_back({
+		auto lop = reinterpret_cast<NLJLog*>(lineage_op->GetLog(context.thread.thread_id).get());
+		lop->lineage.push_back({
         nullptr, sel_copy, chunk.size(), lstate.scan_state.local_scan.current_row_index, 0});
+		lop->output_index.push_back({lop->GetLatestLSN(), 0});
 	}
 #endif
 	return chunk.size() == 0 ? SourceResultType::FINISHED : SourceResultType::HAVE_MORE_OUTPUT;

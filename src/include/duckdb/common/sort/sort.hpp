@@ -140,13 +140,15 @@ public:
 	unique_ptr<RowDataCollection> payload_heap;
 	//! Sorted data
 	vector<unique_ptr<SortedBlock>> sorted_blocks;
-#ifdef LINEAGE
-	shared_ptr<Log> log_per_thread;
-#endif
 private:
 	//! Selection vector and addresses for scattering the data to rows
 	const SelectionVector &sel_ptr = *FlatVector::IncrementalSelectionVector();
 	Vector addresses = Vector(LogicalType::POINTER);
+
+#ifdef LINEAGE
+public:
+	shared_ptr<Log> log_per_thread;
+#endif
 };
 
 struct MergeSorter {

@@ -17,29 +17,33 @@ statement ok
 PRAGMA enable_profiling;
 PRAGMA enable_lineage;
 
+# 1
 query IIII
 select t1.rowid, t2.rowid, t1.i, t2.i from t1, t2 where  t1.i > t2.i and t1.i <> t2.i
 ----
 10	0	100	99
 
+# 2
 ## I think there is a bug in semi join implementation with more than two join conditions
 query II
 select t1.rowid, t1.i from t1 semi join t2 on  (t1.i > t2.i)
 ----
 10	100
 
+# 3
 query II
 select t1.rowid, t1.i from t1 anti join t2 on  (t1.i < t2.i)
 ----
 10	100
 
-
+# 4
 query IIII
 select t1.rowid, t2.rowid, t1.i, t2.i from t1 right join t2  on t1.i > t2.i and t1.i <> t2.i
 ----
 10	0	100	99
 NULL	1	NULL	100
 
+# 5
 query IIII
 select t1.rowid, t2.rowid, t1.i, t2.i from t1 left join t2 on t1.i > t2.i and t1.i <> t2.i limit 10
 ----
@@ -54,6 +58,7 @@ select t1.rowid, t2.rowid, t1.i, t2.i from t1 left join t2 on t1.i > t2.i and t1
 7	NULL	7	NULL
 8	NULL	8	NULL
 
+# 6
 query IIII
 select t1.rowid, t2.rowid, t1.i, t2.i from t1 full outer join t2 on t1.i > t2.i and t1.i <> t2.i
 ----
@@ -114,15 +119,15 @@ select lhs_index, rhs_index, out_index from LINEAGE_5_NESTED_LOOP_JOIN_2_0;
 query III
 select lhs_index, rhs_index, out_index from LINEAGE_6_NESTED_LOOP_JOIN_2_0;
 ----
-0	NULL	0
-1	NULL	1
-2	NULL	2
-3	NULL	3
-4	NULL	4
-5	NULL	5
-6	NULL	6
-7	NULL	7
-8	NULL	8
-9	NULL	9
-10	0	10
+10	0	0
+0	NULL	1
+1	NULL	2
+2	NULL	3
+3	NULL	4
+4	NULL	5
+5	NULL	6
+6	NULL	7
+7	NULL	8
+8	NULL	9
+9	NULL	10
 NULL	1	11

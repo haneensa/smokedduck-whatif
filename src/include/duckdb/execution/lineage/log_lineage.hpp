@@ -39,15 +39,18 @@ public:
 	// HJ: Specialized Index
 	unordered_map<data_ptr_t, idx_t> hj_hash_index;
 	unordered_map<idx_t, data_ptr_t> perfect_hash_join_finalize;
-	vector<unique_ptr<sel_t[]>> right_val_log;
+	unordered_map<idx_t, vector<unique_ptr<sel_t[]>>> right_val_log;
 	idx_t arraySize = 0;
 	vector<idx_t> hj_array;
 	vector<vector<std::pair<idx_t, data_ptr_t>>> index_hj;
+
+	// Merge Join
+	vector<idx_t> sort;
 };
 
 class Log {
 public:
-	Log() : processed(false) {}
+	Log(idx_t thid) : thid(thid), processed(false)  {}
   	virtual idx_t GetLatestLSN() { return 0; };
   	virtual idx_t  GetLineageAsChunk(DataChunk &insert_chunk,
 	                                idx_t& global_count, idx_t& local_count,
@@ -65,6 +68,7 @@ public:
 		// Virtual destructor in the base class
 	}
 public:
+	idx_t thid;
 	vector<std::pair<idx_t, idx_t>> output_index;
 	vector<std::pair<idx_t, idx_t>> cached_output_index;
   	bool processed;
@@ -81,7 +85,7 @@ struct scan_artifact {
 
 class TableScanLog : public Log {
   public:
-  TableScanLog() {}
+  TableScanLog(idx_t thid) : Log(thid) {}
 
   idx_t GetLatestLSN() override {
     return lineage.size();
@@ -114,7 +118,7 @@ struct filter_artifact {
 
 class FilterLog : public Log {
 public:
-	FilterLog() {}
+	FilterLog(idx_t thid) : Log(thid)  {}
   
   idx_t GetLatestLSN() override {
     return lineage.size();
@@ -138,7 +142,7 @@ public:
 // Ordrer By
 class OrderByLog : public Log {
   public:
-    OrderByLog() {}
+    OrderByLog(idx_t thid) : Log(thid)  {}
   
   idx_t  GetLineageAsChunk(DataChunk &insert_chunk,
 	                        idx_t& global_count, idx_t& local_count,
@@ -165,7 +169,7 @@ struct limit_artifact {
 
 class LimitLog : public Log {
   public:
-  LimitLog() {}
+  LimitLog(idx_t thid) : Log(thid)  {}
 
   idx_t  GetLineageAsChunk(DataChunk &insert_chunk,
 	                      idx_t& global_count, idx_t& local_count,
@@ -196,7 +200,7 @@ struct cross_artifact {
 
 class CrossLog : public Log {
   public:
-  CrossLog() {}
+  CrossLog(idx_t thid) : Log(thid)  {}
   
   idx_t GetLatestLSN() override {
     return lineage.size();
@@ -213,6 +217,22 @@ public:
   vector<cross_artifact> lineage;
 };
 
+
+// NLJ Log
+//
+struct join_artifact {
+  buffer_ptr<SelectionData> left;
+  idx_t count;
+};
+
+class SharedJoinLog : public Log {
+  public:
+	  SharedJoinLog(idx_t thid) : Log(thid)  {}
+
+  public:
+  vector<join_artifact> shared_lineage;
+};
+
 // NLJ Log
 //
 struct nlj_artifact {
@@ -223,10 +243,14 @@ struct nlj_artifact {
   idx_t out_start;
 };
 
-class NLJLog : public Log {
+class NLJLog : public SharedJoinLog {
   public:
-  NLJLog() {}
-  
+  NLJLog(idx_t thid) : SharedJoinLog(thid)  {}
+
+  idx_t GetLatestLSN() override {
+	return lineage.size();
+  }
+
   idx_t  GetLineageAsChunk(DataChunk &insert_chunk,
 	                      idx_t& global_count, idx_t& local_count,
 	                      idx_t& data_idx,
@@ -246,12 +270,17 @@ struct bnlj_artifact {
   idx_t inchunk;
   idx_t count;
   idx_t out_start;
+  idx_t branch;
 };
 
-class BNLJLog : public Log {
+class BNLJLog : public SharedJoinLog {
   public:
-  BNLJLog() {}
-  
+  BNLJLog(idx_t thid) : SharedJoinLog(thid)  {}
+
+  idx_t GetLatestLSN() override {
+	return lineage.size();
+  }
+
   idx_t  GetLineageAsChunk(DataChunk &insert_chunk,
 	                      idx_t& global_count, idx_t& local_count,
 	                      idx_t& data_idx,
@@ -266,24 +295,33 @@ public:
 //
 struct merge_artifact {
   buffer_ptr<SelectionData> left;
+  vector<vector<idx_t>> lhs_sort;
   buffer_ptr<SelectionData> right;
   idx_t count;
   idx_t right_chunk_index;
   idx_t out_start;
+  idx_t branch;
 };
 
-class MergeLog : public Log {
+class MergeLog : public SharedJoinLog {
   public:
-  MergeLog() {}
-  
+  MergeLog(idx_t thid) : SharedJoinLog(thid)  {}
+
+  idx_t GetLatestLSN() override {
+	return lineage.size();
+  }
+
   idx_t  GetLineageAsChunk(DataChunk &insert_chunk,
 	                      idx_t& global_count, idx_t& local_count,
 	                      idx_t& data_idx,
 	                      idx_t &cache_offset, idx_t &cache_size, bool &cache,
 	                      shared_ptr<LogIndex> logIdx) override;
-    
+  void BuildIndexes(shared_ptr<LogIndex> logIdx) override;
+  void PostProcess(shared_ptr<LogIndex> logIdx) override;
+
 public:
   vector<merge_artifact> lineage;
+  vector<vector<idx_t>> combine;
 };
 
 // Perfect Hash Join
@@ -295,7 +333,7 @@ struct pha_scan_artifact {
 
 class PHALog : public Log {
   public:
-    PHALog() {}
+    PHALog(idx_t thid) : Log(thid)  {}
 
 	idx_t GetLatestLSN() override {
 		return scan_lineage.size();
@@ -357,7 +395,7 @@ struct finalize_artifact {
 
 class HALog : public Log {
   public:
-    HALog() {}
+    HALog(idx_t thid) : Log(thid)  {}
 
 	idx_t GetLatestLSN() override {
 		return addchunk_log.size();
@@ -431,7 +469,7 @@ struct hj_finalize_artifact {
 
 class HashJoinLog : public Log {
 public:
-  HashJoinLog() {}
+  HashJoinLog(idx_t thid) : Log(thid)  {}
 
 
   idx_t GetLatestLSN() override {
@@ -458,6 +496,23 @@ public:
 };
 
 
+// NLJ Log
+//
+struct delim_artifact {
+  buffer_ptr<SelectionData> left;
+  idx_t count;
+};
+
+
+// Delim Join Log
+//
+class DelimJoinLog : public Log {
+  public:
+	  DelimJoinLog(idx_t thid) : Log(thid)  {}
+
+  public:
+  vector<delim_artifact> lineage;
+};
 
 } // namespace duckdb
 #endif

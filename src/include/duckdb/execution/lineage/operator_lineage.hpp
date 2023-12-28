@@ -36,7 +36,7 @@ public:
 	                        );
 	
   	idx_t Size();
-  	void InitLog(idx_t thread_id);
+  	void InitLog(idx_t thread_id, PhysicalOperator*op= nullptr);
 
   	shared_ptr<Log> GetLog(idx_t thread_id) {
     	return log_per_thread[thread_id];

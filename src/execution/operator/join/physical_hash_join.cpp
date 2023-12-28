@@ -557,6 +557,7 @@ OperatorResultType PhysicalHashJoin::ExecuteInternal(ExecutionContext &context, 
 
 #ifdef LINEAGE
 	state.join_keys.trace_lineage = ClientConfig::GetConfig(context.client).trace_lineage;
+	if (state.join_keys.trace_lineage)
   state.join_keys.log_per_thread = lineage_op->GetLog(context.thread.thread_id);
 #endif
 

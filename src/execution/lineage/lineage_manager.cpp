@@ -34,9 +34,6 @@ void LineageManager::CreateOperatorLineage(ClientContext &context,
         op->type, 
         op->id,
         trace_lineage);
-    // op->lineage_op->InitLog(0); // pass thread_id
-  } else {
-   // op->lineage_op->InitLog(0); // pass thread_id
   }
 
 	if (op->type == PhysicalOperatorType::TABLE_SCAN) {

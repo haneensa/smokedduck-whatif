@@ -122,10 +122,18 @@ void PhysicalPiecewiseMergeJoin::Combine(ExecutionContext &context, GlobalSinkSt
                                          LocalSinkState &lstate_p) const {
 	auto &gstate = gstate_p.Cast<MergeJoinGlobalState>();
 	auto &lstate = lstate_p.Cast<MergeJoinLocalState>();
+#ifdef LINEAGE
+	if (ClientConfig::GetConfig(context.client).trace_lineage && lstate.table.local_sort_state.log_per_thread == nullptr) {
+		lstate.table.local_sort_state.log_per_thread = make_shared<OrderByLog>(context.thread.thread_id);
+	}
+#endif
 	gstate.table->Combine(lstate.table);
 #ifdef LINEAGE
-	if (ClientConfig::GetConfig(context.client).trace_lineage) {
-    // TODO: reference lstate.table.local_sort_state.log_record
+	if (ClientConfig::GetConfig(context.client).trace_lineage && lstate.table.local_sort_state.log_per_thread) {
+		auto lop = reinterpret_cast<MergeLog*>(lineage_op->GetLog(context.thread.thread_id).get());
+		auto sort_lop = reinterpret_cast<OrderByLog*>(lstate.table.local_sort_state.log_per_thread.get());
+		lop->combine = move(sort_lop->lineage);
+		sort_lop->lineage.clear();
 	}
 #endif
 	auto &client_profiler = QueryProfiler::Get(context.client);
@@ -230,6 +238,11 @@ public:
 
 		// Set external (can be forced with the PRAGMA)
 		lhs_global_state->external = force_external;
+#ifdef LINEAGE
+		if (ClientConfig::GetConfig(context).trace_lineage && lhs_local_table->local_sort_state.log_per_thread == nullptr) {
+			lhs_local_table->local_sort_state.log_per_thread = make_shared<OrderByLog>(0);
+		}
+#endif
 		lhs_global_state->AddLocalState(lhs_local_table->local_sort_state);
 		lhs_global_state->PrepareMergePhase();
 		while (lhs_global_state->sorted_blocks.size() > 1) {
@@ -428,17 +441,19 @@ void PhysicalPiecewiseMergeJoin::ResolveSimpleJoin(ExecutionContext &context, Da
 	case JoinType::SEMI: {
 #ifdef LINEAGE
 		chunk.trace_lineage = ClientConfig::GetConfig(context.client).trace_lineage;
+		if (chunk.trace_lineage) {
+			// TODO: make a shared log between nljs
+			chunk.log_per_thread = lineage_op->GetLog(context.thread.thread_id);
+		}
 #endif
 		PhysicalJoin::ConstructSemiJoinResult(payload, chunk, found_match);
 #ifdef LINEAGE
 		if (chunk.trace_lineage) {
-      /*
-			auto lineage_lhs = make_uniq<LineageBinary>( state.lhs_local_table->local_sort_state.log_record->data,
-			                                            std::move( dynamic_cast<LineageBinary&>(*chunk.log_record->data).left));
-			chunk.log_record = make_shared<LogRecord>(make_shared<LineageBinary>(move(lineage_lhs), nullptr), state.in_start);
-			chunk.log_record->in_start = state.in_start;*/
-     // auto lop = reinterpret_cast<MergeLog*>(lineage_op->GetLog(0).get());
-     // lop->lineage.push_back({left, nullptr, result.size(), state.right_outer_position, 0});
+			auto lop = reinterpret_cast<MergeLog*>(lineage_op->GetLog(context.thread.thread_id).get());
+			auto sort_lop = reinterpret_cast<OrderByLog*>(state.lhs_local_table->local_sort_state.log_per_thread.get());
+			lop->lineage.push_back({move(lop->shared_lineage.back().left), move(sort_lop->lineage),
+			                        nullptr, chunk.size(), 0, state.in_start, 3});
+			lop->shared_lineage.clear();
 		}
 #endif
 		break;
@@ -446,15 +461,20 @@ void PhysicalPiecewiseMergeJoin::ResolveSimpleJoin(ExecutionContext &context, Da
 	case JoinType::ANTI: {
 #ifdef LINEAGE
 		chunk.trace_lineage = ClientConfig::GetConfig(context.client).trace_lineage;
+		if (chunk.trace_lineage) {
+			// TODO: make a shared log between nljs
+			chunk.log_per_thread = lineage_op->GetLog(context.thread.thread_id);
+		}
 #endif
 		PhysicalJoin::ConstructAntiJoinResult(payload, chunk, found_match);
 #ifdef LINEAGE
 		if (chunk.trace_lineage) {
-      /*
-			auto lineage_lhs = make_uniq<LineageBinary>( state.lhs_local_table->local_sort_state.log_record->data,
-			                                            std::move( dynamic_cast<LineageBinary&>(*chunk.log_record->data).left));
-			chunk.log_record = make_shared<LogRecord>(make_shared<LineageBinary>(move(lineage_lhs), nullptr), state.in_start);
-			chunk.log_record->in_start = state.in_start;*/
+			auto lop = reinterpret_cast<MergeLog*>(lineage_op->GetLog(context.thread.thread_id).get());
+			auto sort_lop = reinterpret_cast<OrderByLog*>(state.lhs_local_table->local_sort_state.log_per_thread.get());
+			lop->lineage.push_back({move(lop->shared_lineage.back().left), move(sort_lop->lineage), nullptr,
+			                        chunk.size(), 0, state.in_start, 3});
+			lop->shared_lineage.clear();
+			sort_lop->lineage.clear();
 		}
 #endif
 		break;
@@ -564,15 +584,18 @@ OperatorResultType PhysicalPiecewiseMergeJoin::ResolveComplexJoin(ExecutionConte
 				// have a match found
 #ifdef LINEAGE
 				chunk.trace_lineage = ClientConfig::GetConfig(context.client).trace_lineage;
+				if (chunk.trace_lineage) {
+					chunk.log_per_thread = lineage_op->GetLog(context.thread.thread_id);
+				}
 #endif
 				state.left_outer.ConstructLeftJoinResult(state.lhs_payload, chunk);
 #ifdef LINEAGE
 				if (chunk.trace_lineage) {
-          /*
-					auto lineage_lhs = make_uniq<LineageBinary>( state.lhs_local_table->local_sort_state.log_record->data,
-																		std::move( dynamic_cast<LineageBinary&>(*chunk.log_record->data).left));
-					chunk.log_record = make_shared<LogRecord>(make_shared<LineageBinary>(move(lineage_lhs), nullptr), state.in_start);
-					chunk.log_record->in_start = state.in_start;*/
+					auto lop = reinterpret_cast<MergeLog*>(lineage_op->GetLog(context.thread.thread_id).get());
+					auto sort_lop = reinterpret_cast<OrderByLog*>(state.lhs_local_table->local_sort_state.log_per_thread.get());
+					lop->lineage.push_back({move(lop->shared_lineage.back().left), sort_lop->lineage, nullptr,
+					                       chunk.size(), 0, state.in_start, 2});
+					lop->shared_lineage.clear();
 				}
 #endif
 				state.left_outer.Reset();
@@ -662,9 +685,12 @@ OperatorResultType PhysicalPiecewiseMergeJoin::ResolveComplexJoin(ExecutionConte
 #ifdef LINEAGE
 			if (ClientConfig::GetConfig(context.client).trace_lineage) {
 				left_info.result.Slice(*sel, result_count);
+				auto lop = reinterpret_cast<MergeLog*>(lineage_op->GetLog(context.thread.thread_id).get());
+				auto sort_lop = reinterpret_cast<OrderByLog*>(state.lhs_local_table->local_sort_state.log_per_thread.get());
 				right_info.result.Slice(*sel, result_count);
-        auto lop = reinterpret_cast<MergeLog*>(lineage_op->GetLog(0).get());
-        lop->lineage.push_back({left_info.result.sel_data(), right_info.result.sel_data(), result_count, state.right_base, state.in_start});
+        		lop->lineage.push_back({left_info.result.sel_data(), sort_lop->lineage,
+				                        right_info.result.sel_data(), result_count,
+				                        state.right_base, state.in_start, 1});
 			}
 #endif
 			chunk.SetCardinality(result_count);
@@ -788,8 +814,11 @@ SourceResultType PhysicalPiecewiseMergeJoin::GetData(ExecutionContext &context, 
 			result.SetCardinality(result_count);
 #ifdef LINEAGE
 			if (ClientConfig::GetConfig(context.client).trace_lineage) {
-        auto lop = reinterpret_cast<MergeLog*>(lineage_op->GetLog(0).get());
-        lop->lineage.push_back({nullptr, rsel.sel_data(), result.size(), state.right_outer_position, 0});
+				auto lop = reinterpret_cast<MergeLog*>(lineage_op->GetLog(context.thread.thread_id).get());
+				lop->lineage.push_back({nullptr, {}, rsel.sel_data(),
+										result.size(), state.right_outer_position,
+										0, 4});
+				lop->output_index.push_back({lop->GetLatestLSN(), 0});
 			}
 #endif
 			break;

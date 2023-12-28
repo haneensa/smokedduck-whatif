@@ -1,0 +1,59 @@
+# name: test/sql/join/inner/test_lt_join_lineage.test
+# description: Test less than join
+# group: [inner]
+
+statement ok
+PRAGMA enable_verification
+
+statement ok
+create table a AS SELECT i FROM range(1, 2001, 1) t1(i)
+
+
+statement ok
+PRAGMA threads=1;
+PRAGMA enable_lineage;
+
+query I
+select count(*) from a, (SELECT 2000 AS j) b where i < j
+----
+1999
+
+query I
+select count(*) from a, (SELECT 2000 AS j) b where i <= j
+----
+2000
+
+query I
+select count(*) from a, (SELECT 1 AS j) b where i > j
+----
+1999
+
+query I
+select count(*) from a, (SELECT 1 AS j) b where i >= j
+----
+2000
+
+
+statement ok
+PRAGMA disable_lineage;
+
+query I
+SELECT count(*) FROM LINEAGE_1_NESTED_LOOP_JOIN_3_0
+----
+1999
+
+query I
+SELECT count(*) FROM LINEAGE_27_CROSS_PRODUCT_3_0
+----
+2000
+
+query I
+SELECT count(*) FROM LINEAGE_3_NESTED_LOOP_JOIN_3_0
+----
+1999
+
+query I
+SELECT count(*) FROM LINEAGE_44_CROSS_PRODUCT_3_0
+----
+2000
+

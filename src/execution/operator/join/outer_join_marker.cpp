@@ -60,13 +60,10 @@ void OuterJoinMarker::ConstructLeftJoinResult(DataChunk &left, DataChunk &result
 			ConstantVector::SetNull(result.data[idx], true);
 		}
 #ifdef LINEAGE
-    /*
 		if (result.trace_lineage) {
-			auto lhs_lineage = make_uniq<LineageSelVec>(remaining_sel, remaining_count);
-			auto lineage_probe_data = make_uniq<LineageBinary>(std::move(lhs_lineage), nullptr);
-			result.log_record = make_uniq<LogRecord>(std::move(lineage_probe_data), 0);
+			auto lop = reinterpret_cast<SharedJoinLog*>(result.log_per_thread.get());
+			lop->shared_lineage.push_back({remaining_sel.sel_data(), remaining_count});
 		}
-    */
 #endif
 	}
 }

@@ -1,0 +1,522 @@
+# name: test/sql/aggregate/group/group_by_all_lineage.test
+# description: Test GROUP BY ALL
+# group: [group]
+
+statement ok
+SET default_null_order='nulls_first';
+
+statement ok
+PRAGMA enable_verification
+
+statement ok
+CREATE TABLE integers(g integer, i integer);
+
+statement ok
+INSERT INTO integers values (0, 1), (0, 2), (1, 3), (1, NULL);
+
+statement ok
+PRAGMA threads=1;
+PRAGMA enable_lineage;
+
+query III
+SELECT g, SUM(i), LIST(rowid) FROM integers GROUP BY ALL ORDER BY 1
+----
+0	3	[0, 1]
+1	3	[2, 3]
+
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_optimizer;
+
+query I
+SELECT count(*) FROM duckdb_queries_list()
+----
+10
+
+
+query II
+SELECT * FROM LINEAGE_1_ORDER_BY_3_0
+----
+0	0
+1	1
+
+query II
+SELECT * FROM LINEAGE_1_HASH_GROUP_BY_2_0
+----
+0	0
+1	0
+2	1
+3	1
+
+
+statement ok
+PRAGMA threads=1;
+PRAGMA enable_lineage;
+
+query III
+SELECT SUM(i), g, LIST(rowid) FROM integers GROUP BY ALL  ORDER BY 2
+----
+3	0	[0, 1]
+3	1	[2, 3]
+
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_optimizer;
+
+query I
+SELECT count(*) FROM duckdb_queries_list()
+----
+20
+
+query II
+SELECT * FROM LINEAGE_19_ORDER_BY_4_0
+----
+0	0
+1	1
+
+
+query II
+SELECT * FROM LINEAGE_19_HASH_GROUP_BY_2_0
+----
+0	0
+1	0
+2	1
+3	1
+
+
+statement ok
+PRAGMA threads=1;
+PRAGMA enable_lineage;
+
+# we can also use the star syntax
+query III
+SELECT g, SUM(i), LIST(rowid) FROM integers GROUP BY *  ORDER BY 1
+----
+0	3	[0, 1]
+1	3	[2, 3]
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_optimizer;
+
+query I
+SELECT count(*) FROM duckdb_queries_list()
+----
+30
+
+
+query II
+SELECT * FROM LINEAGE_29_ORDER_BY_3_0
+----
+0	0
+1	1
+
+
+query II
+SELECT * FROM LINEAGE_29_HASH_GROUP_BY_2_0
+----
+0	0
+1	0
+2	1
+3	1
+
+
+statement ok
+PRAGMA threads=1;
+PRAGMA enable_lineage;
+
+query II
+SELECT g, SUM(i) FROM integers GROUP BY 1 ORDER BY ALL
+----
+0	3
+1	3
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_optimizer;
+
+query I
+SELECT count(*) FROM duckdb_queries_list()
+----
+40
+
+
+query II
+SELECT * FROM LINEAGE_39_ORDER_BY_3_0
+----
+0	0
+1	1
+
+
+query II
+SELECT * FROM LINEAGE_39_HASH_GROUP_BY_2_0
+----
+0	0
+1	0
+2	1
+3	1
+
+
+statement ok
+PRAGMA threads=1;
+PRAGMA enable_lineage;
+
+# multiple aggregates
+query IIIII
+SELECT g, SUM(i), COUNT(*), COUNT(i), SUM(g) FROM integers GROUP BY ALL ORDER BY 1
+----
+0	3	2	2	0
+1	3	2	1	2
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_optimizer;
+
+query I
+SELECT count(*) FROM duckdb_queries_list()
+----
+50
+
+
+query II
+SELECT * FROM LINEAGE_49_ORDER_BY_3_0
+----
+0	0
+1	1
+
+
+query II
+SELECT * FROM LINEAGE_49_HASH_GROUP_BY_2_0
+----
+0	0
+1	0
+2	1
+3	1
+
+
+statement ok
+PRAGMA threads=1;
+PRAGMA enable_lineage;
+
+# complex groups: here we group by the entire calculation
+query IIII
+SELECT i%2, SUM(i), SUM(g), LIST(rowid) FROM integers GROUP BY ALL  ORDER BY 1
+----
+NULL	NULL	1	[3]
+0	2	0	[1]
+1	4	1	[0, 2]
+
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_optimizer;
+
+query I
+SELECT count(*) FROM duckdb_queries_list()
+----
+60
+
+query II
+SELECT * FROM LINEAGE_59_ORDER_BY_3_0
+----
+2	0
+1	1
+0	2
+
+query II
+SELECT * FROM LINEAGE_59_HASH_GROUP_BY_2_0
+----
+0	0
+2	0
+1	1
+3	2
+
+
+statement ok
+PRAGMA threads=1;
+PRAGMA enable_lineage;
+
+# i.e. we group like this
+query IIII
+SELECT i%2, SUM(i), SUM(g), LIST(rowid) FROM integers GROUP BY 1  ORDER BY 1
+----
+NULL	NULL	1	[3]
+0	2	0	[1]
+1	4	1	[0, 2]
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_optimizer;
+
+query I
+SELECT count(*) FROM duckdb_queries_list()
+----
+70
+
+query II
+SELECT * FROM LINEAGE_69_ORDER_BY_3_0
+----
+2	0
+1	1
+0	2
+
+query II
+SELECT * FROM LINEAGE_69_HASH_GROUP_BY_2_0
+----
+0	0
+2	0
+1	1
+3	2
+
+
+statement ok
+PRAGMA threads=1;
+PRAGMA enable_lineage;
+
+
+# NOT like this
+query IIII
+SELECT i%2, SUM(i), SUM(g), LIST(rowid) FROM integers GROUP BY i ORDER BY 1 NULLS FIRST, 2
+----
+NULL	NULL	1	[3]
+0	2	0	[1]
+1	1	0	[0]
+1	3	1	[2]
+
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_optimizer;
+
+query I
+SELECT count(*) FROM duckdb_queries_list()
+----
+80
+
+
+query II
+SELECT * FROM  LINEAGE_79_ORDER_BY_4_0
+----
+3	0
+1	1
+0	2
+2	3
+
+
+query II
+SELECT * FROM LINEAGE_79_HASH_GROUP_BY_2_0
+----
+0	0
+1	1
+2	2
+3	3
+
+
+
+statement ok
+PRAGMA threads=1;
+PRAGMA enable_lineage;
+
+
+# we can do this with multiple columns in the group too
+query IIII
+SELECT (g+i)%2, SUM(i), SUM(g), LIST(rowid) FROM integers GROUP BY ALL ORDER BY 1 NULLS FIRST
+----
+NULL	NULL	1	[3]
+0	5	1	[1, 2]
+1	1	0	[0]
+
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_optimizer;
+
+query I
+SELECT count(*) FROM duckdb_queries_list()
+----
+90
+
+
+query II
+SELECT * FROM  LINEAGE_89_ORDER_BY_3_0
+----
+2	0
+1	1
+0	2
+
+
+query II
+SELECT * FROM LINEAGE_89_HASH_GROUP_BY_2_0
+----
+0	0
+1	1
+2	1
+3	2
+
+
+
+statement ok
+PRAGMA threads=1;
+PRAGMA enable_lineage;
+
+query IIII
+SELECT (g+i)%2, SUM(i), SUM(g), LIST(rowid) FROM integers GROUP BY 1 ORDER BY 1 NULLS FIRST
+----
+NULL	NULL	1	[3]
+0	5	1	[1, 2]
+1	1	0	[0]
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_optimizer;
+
+query I
+SELECT count(*) FROM duckdb_queries_list()
+----
+100
+
+
+query II
+SELECT * FROM  LINEAGE_99_ORDER_BY_3_0
+----
+2	0
+1	1
+0	2
+
+
+query II
+SELECT * FROM LINEAGE_99_HASH_GROUP_BY_2_0
+----
+0	0
+1	1
+2	1
+3	2
+
+
+statement ok
+PRAGMA threads=1;
+PRAGMA enable_lineage;
+
+query IIII
+SELECT (g+i)%2, SUM(i), SUM(g), LIST(rowid) FROM integers GROUP BY g, i ORDER BY 1 NULLS FIRST, 2
+----
+NULL	NULL	1	[3]
+0	2	0	[1]
+0	3	1	[2]
+1	1	0	[0]
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_optimizer;
+
+query I
+SELECT count(*) FROM duckdb_queries_list()
+----
+110
+
+
+query II
+SELECT * FROM  LINEAGE_109_ORDER_BY_4_0
+----
+3	0
+1	1
+2	2
+0	3
+
+
+query II
+SELECT * FROM LINEAGE_109_HASH_GROUP_BY_2_0
+----
+0	0
+1	1
+2	2
+3	3
+
+# we CANNOT mix aggregates and groups
+statement error
+SELECT (g+i)%2 + SUM(i), SUM(i), SUM(g), LIST(rowid) FROM integers GROUP BY ALL ORDER BY 1
+
+# multiple groups
+
+
+statement ok
+PRAGMA threads=1;
+PRAGMA enable_lineage;
+
+query IIIIII
+SELECT g, i, g%2, SUM(i), SUM(g), LIST(rowid) FROM integers GROUP BY 1, 2, 3 ORDER BY 1, 2, 3, 4
+----
+0	1	0	1	0	[0]
+0	2	0	2	0	[1]
+1	NULL	1	NULL	1	[3]
+1	3	1	3	1	[2]
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_optimizer;
+
+query I
+SELECT count(*) FROM duckdb_queries_list()
+----
+120
+
+
+query II
+SELECT * FROM  LINEAGE_119_ORDER_BY_3_0
+----
+0	0
+1	1
+3	2
+2	3
+
+
+query II
+SELECT * FROM LINEAGE_119_HASH_GROUP_BY_2_0
+----
+0	0
+1	1
+2	2
+3	3
+
+
+statement ok
+PRAGMA threads=1;
+PRAGMA enable_lineage;
+
+query IIIIII
+SELECT g, i, g%2, SUM(i), SUM(g), LIST(rowid) FROM integers GROUP BY ALL ORDER BY 1, 2 NULLS FIRST, 3, 4
+----
+0	1	0	1	0	[0]
+0	2	0	2	0	[1]
+1	NULL	1	NULL	1	[3]
+1	3	1	3	1	[2]
+
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_optimizer;
+
+query I
+SELECT count(*) FROM duckdb_queries_list()
+----
+130
+
+
+query II
+SELECT * FROM  LINEAGE_129_ORDER_BY_3_0
+----
+0	0
+1	1
+3	2
+2	3
+
+
+query II
+SELECT * FROM LINEAGE_129_HASH_GROUP_BY_2_0
+----
+0	0
+1	1
+2	2
+3	3

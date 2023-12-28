@@ -1,0 +1,231 @@
+# name: test/sql/aggregate/distinct/test_distinct_lineage.test
+# description: Test DISTINCT keyword
+# group: [distinct]
+
+statement ok
+PRAGMA enable_verification
+
+statement ok
+CREATE TABLE test (a INTEGER, b INTEGER);
+
+statement ok
+INSERT INTO test VALUES (11, 22), (13, 22), (11, 21), (11, 22)
+
+
+statement ok
+PRAGMA threads=1;
+PRAGMA enable_lineage;
+
+query II
+SELECT DISTINCT a, b FROM test ORDER BY a, b
+----
+11	21
+11	22
+13	22
+
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_optimizer;
+
+query I
+SELECT count(*) FROM duckdb_queries_list()
+----
+12
+
+
+query II
+SELECT * FROM  LINEAGE_1_ORDER_BY_3_0
+----
+2	0
+0	1
+1	2
+
+
+query II
+SELECT * FROM LINEAGE_1_HASH_GROUP_BY_2_0
+----
+0	0
+3	0
+1	1
+2	2
+
+
+statement ok
+PRAGMA threads=1;
+PRAGMA enable_lineage;
+
+
+query II
+SELECT DISTINCT test.a, b FROM test ORDER BY a, b
+----
+11	21
+11	22
+13	22
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_optimizer;
+
+query I
+SELECT count(*) FROM duckdb_queries_list()
+----
+24
+
+
+query II
+SELECT * FROM  LINEAGE_23_ORDER_BY_3_0
+----
+2	0
+0	1
+1	2
+
+
+query II
+SELECT * FROM LINEAGE_23_HASH_GROUP_BY_2_0
+----
+0	0
+3	0
+1	1
+2	2
+
+
+statement ok
+PRAGMA threads=1;
+PRAGMA enable_lineage;
+
+query I
+SELECT DISTINCT a FROM test ORDER BY a
+----
+11
+13
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_optimizer;
+
+query I
+SELECT count(*) FROM duckdb_queries_list()
+----
+36
+
+
+query II
+SELECT * FROM  LINEAGE_35_ORDER_BY_3_0
+----
+0	0
+1	1
+
+
+query II
+SELECT * FROM LINEAGE_35_HASH_GROUP_BY_2_0
+----
+0	0
+2	0
+3	0
+1	1
+
+
+statement ok
+PRAGMA threads=1;
+PRAGMA enable_lineage;
+
+query I
+SELECT DISTINCT b FROM test ORDER BY b
+----
+21
+22
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_optimizer;
+
+query I
+SELECT count(*) FROM duckdb_queries_list()
+----
+48
+
+
+query II
+SELECT * FROM  LINEAGE_47_ORDER_BY_3_0
+----
+1	0
+0	1
+
+
+query II
+SELECT * FROM LINEAGE_47_HASH_GROUP_BY_2_0
+----
+0	0
+1	0
+3	0
+2	1
+
+
+
+statement ok
+PRAGMA threads=1;
+PRAGMA enable_lineage;
+
+query IR
+SELECT DISTINCT a, SUM(B) FROM test GROUP BY a ORDER BY a
+----
+11	65.000000
+13	22.000000
+
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_optimizer;
+
+query I
+SELECT count(*) FROM duckdb_queries_list()
+----
+60
+
+
+query II
+SELECT * FROM  LINEAGE_59_ORDER_BY_5_0
+----
+0	0
+1	1
+
+
+query II
+SELECT * FROM LINEAGE_59_HASH_GROUP_BY_4_0
+----
+0	0
+1	1
+
+query II
+SELECT * FROM LINEAGE_59_HASH_GROUP_BY_2_0
+----
+0	0
+2	0
+3	0
+1	1
+
+
+query I
+SELECT DISTINCT MAX(b) FROM test GROUP BY a
+----
+22
+
+query I
+SELECT DISTINCT CASE WHEN a > 11 THEN 11 ELSE a END FROM test
+----
+11
+
+# Distinct LIST<VARCHAR> with NULL in a subsequent position (Issue #3056)
+statement ok
+CREATE TABLE issue3056 AS (SELECT * FROM (VALUES
+	(['TGTA']),
+	(['CGGT']),
+	(['CCTC']),
+	(['TCTA']),
+	(['AGGG']),
+	(NULL))
+tbl(genes));
+
+statement ok
+SELECT DISTINCT genes FROM issue3056;

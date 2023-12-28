@@ -1,4 +1,4 @@
-# name: test/sql/join/mark/test_mark_join_types_lineage.test_coverage
+# name: test/sql/join/mark/test_mark_join_types.test_coverage
 # description: Test mark join with different types
 # group: [mark]
 
@@ -16,11 +16,6 @@ begin transaction
 
 statement ok
 create table a as select i::${type} AS i from range(1, 101, 1) t1(i) order by random()
-
-
-statement ok
-PRAGMA threads=1;
-PRAGMA enable_lineage;
 
 # range joins
 query I
@@ -116,10 +111,6 @@ select * from (select * from a where i > 90) a WHERE i <> ANY((SELECT 96::${type
 98
 99
 100
-
-statement ok
-PRAGMA disable_lineage;
-PRAGMA disable_optimizer;
 
 statement ok
 rollback

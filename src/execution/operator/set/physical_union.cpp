@@ -55,6 +55,9 @@ void PhysicalUnion::BuildPipelines(Pipeline &current, MetaPipeline &meta_pipelin
 	meta_pipeline.AssignNextBatchIndex(union_pipeline);
 }
 
+// union lineage: for each child, if the data comes from the child then include its rowid
+// else null
+// or in_index, child_id, out_index
 vector<const_reference<PhysicalOperator>> PhysicalUnion::GetSources() const {
 	vector<const_reference<PhysicalOperator>> result;
 	for (auto &child : children) {

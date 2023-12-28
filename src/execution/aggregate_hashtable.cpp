@@ -605,12 +605,12 @@ void GroupedAggregateHashTable::Combine(GroupedAggregateHashTable &other) {
 		unique_ptr<data_ptr_t[]> src_addresses_copy(new data_ptr_t[state.groups.size()]);
 		std::copy(ptrs, ptrs + state.groups.size(), src_addresses_copy.get());
 
-    ptrs = FlatVector::GetData<data_ptr_t>( state.group_addresses);
-    unique_ptr<data_ptr_t[]> dst_addresses_copy(new data_ptr_t[state.groups.size()]);
-    std::copy(ptrs, ptrs + state.groups.size() , dst_addresses_copy.get());
+		ptrs = FlatVector::GetData<data_ptr_t>( state.group_addresses);
+		unique_ptr<data_ptr_t[]> dst_addresses_copy(new data_ptr_t[state.groups.size()]);
+		std::copy(ptrs, ptrs + state.groups.size() , dst_addresses_copy.get());
 
-    auto lop = reinterpret_cast<HALog*>(other.log_per_thread.get());
-    lop->flushmove_log.push_back({move(src_addresses_copy), move(dst_addresses_copy), state.groups.size()});
+		auto lop = reinterpret_cast<HALog*>(other.log_per_thread.get());
+		lop->flushmove_log.push_back({move(src_addresses_copy), move(dst_addresses_copy), state.groups.size()});
 	}
 #endif
 	Verify();

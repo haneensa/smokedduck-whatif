@@ -327,7 +327,9 @@ void PhysicalHashAggregate::SinkDistinctGrouping(ExecutionContext &context, Data
 			filtered_input.SetCardinality(count);
 #ifdef LINEAGE
 			filtered_input.trace_lineage = lineage_op->trace_lineage;
-			filtered_input.log_per_thread = lineage_op->GetLog(context.thread.thread_id);
+			if (filtered_input.trace_lineage) {
+				filtered_input.log_per_thread = lineage_op->GetLog(context.thread.thread_id);
+			}
 #endif
 			radix_table.Sink(context, filtered_input, sink_input, empty_chunk, empty_filter);
 #ifdef LINEAGE
@@ -337,7 +339,9 @@ void PhysicalHashAggregate::SinkDistinctGrouping(ExecutionContext &context, Data
 		} else {
 #ifdef LINEAGE
 			chunk.trace_lineage = lineage_op->trace_lineage;
-			chunk.log_per_thread = lineage_op->GetLog(context.thread.thread_id);
+			if (chunk.trace_lineage) {
+				chunk.log_per_thread = lineage_op->GetLog(context.thread.thread_id);
+			}
 #endif
 			radix_table.Sink(context, chunk, sink_input, empty_chunk, empty_filter);
 #ifdef LINEAGE
@@ -415,7 +419,9 @@ SinkResultType PhysicalHashAggregate::Sink(ExecutionContext &context, DataChunk 
 	aggregate_input_chunk.Verify();
 #ifdef LINEAGE
 	chunk.trace_lineage = ClientConfig::GetConfig(context.client).trace_lineage;
-	chunk.log_per_thread = lineage_op->GetLog(context.thread.thread_id);
+	if (chunk.trace_lineage) {
+		chunk.log_per_thread = lineage_op->GetLog(context.thread.thread_id);
+	}
 #endif
 	// For every grouping set there is one radix_table
 	for (idx_t i = 0; i < groupings.size(); i++) {
@@ -428,7 +434,7 @@ SinkResultType PhysicalHashAggregate::Sink(ExecutionContext &context, DataChunk 
 		auto &table = grouping.table_data;
 		table.Sink(context, chunk, sink_input, aggregate_input_chunk, non_distinct_filter);
 #ifdef LINEAGE
-		if (lineage_op && lineage_op->trace_lineage && groupings.size() > 0) {
+		if (chunk.trace_lineage && groupings.size() > 0) {
 			auto log = reinterpret_cast<HALog*>(lineage_op->GetLog(context.thread.thread_id).get());
 			log->grouping_set[i].push_back(log->GetLatestLSN());
 		}
@@ -639,8 +645,10 @@ public:
 				InterruptState interrupt_state;
 				OperatorSourceInput source_input {*global_source, *local_source, interrupt_state};
 #ifdef LINEAGE
-				output_chunk.trace_lineage = true;
-				output_chunk.log_per_thread = op.lineage_op->GetDefaultLog();
+				output_chunk.trace_lineage = ClientConfig::GetConfig(context).trace_lineage;
+				if (output_chunk.trace_lineage) {
+					output_chunk.log_per_thread = op.lineage_op->GetDefaultLog();
+				}
 #endif
 				auto res = radix_table_p->GetData(temp_exec_context, output_chunk, *state.radix_states[table_idx],
 				                                  source_input);
@@ -671,14 +679,18 @@ public:
 				// Sink it into the main ht
 				OperatorSinkInput sink_input {table_state, *temp_local_state, interrupt_state};
 #ifdef LINEAGE
-				group_chunk.trace_lineage = true;
-				group_chunk.log_per_thread = op.lineage_op->GetDefaultLog();
+				group_chunk.trace_lineage = ClientConfig::GetConfig(context).trace_lineage;
+				if (group_chunk.trace_lineage) {
+					group_chunk.log_per_thread = op.lineage_op->GetDefaultLog();
+				}
 #endif
 				grouping_data.table_data.Sink(temp_exec_context, group_chunk, sink_input, aggregate_input_chunk, {i});
 #ifdef LINEAGE
-				auto log = reinterpret_cast<HALog*>(group_chunk.log_per_thread.get());
-				log->distinct_scan[grouping_idx].push_back(log->scan_log.size());
-				log->distinct_sink[grouping_idx].push_back(log->addchunk_log.size());
+				if (group_chunk.trace_lineage) {
+						auto log = reinterpret_cast<HALog*>(group_chunk.log_per_thread.get());
+						log->distinct_scan[grouping_idx].push_back(log->scan_log.size());
+						log->distinct_sink[grouping_idx].push_back(log->addchunk_log.size());
+				}
 #endif
 			}
 		}
@@ -838,7 +850,7 @@ SinkFinalizeType PhysicalHashAggregate::FinalizeDistinct(Pipeline &pipeline, Eve
 			auto &radix_table = distinct_data.radix_tables[table_idx];
 			auto &radix_state = *distinct_state.radix_states[table_idx];
 #ifdef LINEAGE
-			radix_state.trace_lineage = true;
+			radix_state.trace_lineage = ClientConfig::GetConfig(context).trace_lineage;
 #endif
 			bool partitioned = radix_table->Finalize(context, radix_state);
 			if (partitioned) {
@@ -985,7 +997,9 @@ SourceResultType PhysicalHashAggregate::GetData(ExecutionContext &context, DataC
 		                                  interrupt_state};
 #ifdef LINEAGE
 		chunk.trace_lineage = ClientConfig::GetConfig(context.client).trace_lineage;
-		chunk.log_per_thread = lineage_op->GetLog(context.thread.thread_id);
+		if (chunk.trace_lineage) {
+			chunk.log_per_thread = lineage_op->GetLog(context.thread.thread_id);
+		}
 #endif
 		auto res = radix_table.GetData(context, chunk, *grouping_gstate.table_state, source_input);
 #ifdef LINEAGE

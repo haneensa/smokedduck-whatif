@@ -55,17 +55,12 @@ OperatorResultType PhysicalStreamingLimit::Execute(ExecutionContext &context, Da
 	                                  limit_expression.get(), offset_expression.get())) {
 		return OperatorResultType::FINISHED;
 	}
-#ifdef LINEAGE
-	idx_t orig_offset = current_offset;
-#endif
+	if (ClientConfig::GetConfig(context.client).trace_lineage) {
+		input.trace_lineage = true;
+		input.log_per_thread = lineage_op->GetLog(context.thread.thread_id);
+	}
 	if (PhysicalLimit::HandleOffset(input, current_offset, offset, limit)) {
 		chunk.Reference(input);
-#ifdef LINEAGE
-		if (ClientConfig::GetConfig(context.client).trace_lineage) {
-	    auto lop = reinterpret_cast<LimitLog*>(lineage_op->GetLog(context.thread.thread_id).get());
-      lop->lineage.push_back({orig_offset, input.size(), offset});
-		}
-#endif
 	}
 	return OperatorResultType::NEED_MORE_INPUT;
 }

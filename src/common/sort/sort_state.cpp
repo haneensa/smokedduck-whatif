@@ -374,6 +374,10 @@ void LocalSortState::ReOrder(GlobalSortState &gstate, bool reorder_heap) {
 	// Re-order variable size sorting columns
 	if (!gstate.sort_layout.all_constant) {
 		ReOrder(*sb.blob_sorting_data, sorting_ptr, *blob_sorting_heap, gstate, reorder_heap);
+		if (log_per_thread) {
+			// avoid capturing the same order twice
+			log_per_thread = nullptr;
+		}
 	}
 	// And the payload
 	ReOrder(*sb.payload_data, sorting_ptr, *payload_heap, gstate, reorder_heap);

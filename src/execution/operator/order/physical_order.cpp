@@ -112,6 +112,10 @@ void PhysicalOrder::Combine(ExecutionContext &context, GlobalSinkState &gstate_p
 		lstate.local_sort_state.log_per_thread = lineage_op->GetLog(context.thread.thread_id);
 #endif
 	gstate.global_sort_state.AddLocalState(lstate.local_sort_state);
+#ifdef LINEAGE
+	if (lstate.local_sort_state.log_per_thread )
+		lstate.local_sort_state.log_per_thread = nullptr;
+#endif
 }
 
 class PhysicalOrderMergeTask : public ExecutorTask {

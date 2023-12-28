@@ -1,0 +1,178 @@
+# name: test/sql/filter/filter_cache_lineage.test
+# description: Test caches with multiple filters
+# group: [filter]
+
+statement ok
+PRAGMA enable_verification
+
+statement ok
+CREATE TABLE integers AS SELECT a FROM generate_series(0, 9999, 1) tbl(a), generate_series(0, 9, 1) tbl2(b);
+
+
+statement ok
+PRAGMA threads=1;
+PRAGMA enable_lineage;
+
+query II
+SELECT rowid,* FROM integers WHERE a<5;
+----
+0	0
+1	1
+2	2
+3	3
+4	4
+2048	0
+2049	1
+2050	2
+2051	3
+2052	4
+4096	0
+4097	1
+4098	2
+4099	3
+4100	4
+6144	0
+6145	1
+6146	2
+6147	3
+6148	4
+8192	0
+8193	1
+8194	2
+8195	3
+8196	4
+10240	0
+10241	1
+10242	2
+10243	3
+10244	4
+12288	0
+12289	1
+12290	2
+12291	3
+12292	4
+14336	0
+14337	1
+14338	2
+14339	3
+14340	4
+16384	0
+16385	1
+16386	2
+16387	3
+16388	4
+18432	0
+18433	1
+18434	2
+18435	3
+18436	4
+
+statement ok
+PRAGMA disable_lineage;
+
+query II
+SELECT in_index, out_index FROM LINEAGE_5_FILTER_1_0
+----
+0	0
+1	1
+2	2
+3	3
+4	4
+2048	5
+2049	6
+2050	7
+2051	8
+2052	9
+4096	10
+4097	11
+4098	12
+4099	13
+4100	14
+6144	15
+6145	16
+6146	17
+6147	18
+6148	19
+8192	20
+8193	21
+8194	22
+8195	23
+8196	24
+10240	25
+10241	26
+10242	27
+10243	28
+10244	29
+12288	30
+12289	31
+12290	32
+12291	33
+12292	34
+14336	35
+14337	36
+14338	37
+14339	38
+14340	39
+16384	40
+16385	41
+16386	42
+16387	43
+16388	44
+18432	45
+18433	46
+18434	47
+18435	48
+18436	49
+
+
+statement ok
+PRAGMA threads=1;
+PRAGMA enable_lineage;
+
+query II
+SELECT * FROM (SELECT rowid,* FROM integers WHERE (a>1 AND a<10) OR a>9995) tbl(a) WHERE a<5;
+----
+2	2
+3	3
+4	4
+
+
+statement ok
+PRAGMA disable_lineage;
+
+
+query II
+SELECT in_index, out_index FROM LINEAGE_16_FILTER_1_0
+----
+2	0
+3	1
+4	2
+
+
+
+statement ok
+PRAGMA threads=1;
+PRAGMA enable_lineage;
+
+query II
+SELECT * FROM (SELECT * FROM (SELECT rowid,* FROM integers WHERE (a <> 3 AND a<50) OR (a > 9995)) WHERE a>1 AND a<20) tbl(a) WHERE a<5;
+----
+2	2
+4	4
+
+
+
+statement ok
+PRAGMA disable_lineage;
+
+query II
+SELECT in_index, out_index FROM LINEAGE_28_FILTER_1_0
+----
+2	0
+4	1
+
+
+query I
+SELECT COUNT(*) FROM (SELECT * FROM (SELECT * FROM integers WHERE (a <> 3 AND a<50) OR (a > 9995)) WHERE a>1 AND a<20) tbl(a) WHERE a<5;
+----
+20

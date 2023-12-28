@@ -151,9 +151,6 @@ unique_ptr<GlobalSourceState> PhysicalLimit::GetGlobalSourceState(ClientContext 
 SourceResultType PhysicalLimit::GetData(ExecutionContext &context, DataChunk &chunk, OperatorSourceInput &input) const {
 	auto &gstate = sink_state->Cast<LimitGlobalState>();
 	auto &state = input.global_state.Cast<LimitSourceState>();
-#ifdef LINEAGE
-	idx_t orig_offset = state.current_offset;
-#endif
 	while (state.current_offset < gstate.limit + gstate.offset) {
 		if (!state.initialized) {
 			gstate.data.InitializeScan(state.scan_state);
@@ -163,16 +160,14 @@ SourceResultType PhysicalLimit::GetData(ExecutionContext &context, DataChunk &ch
 		if (chunk.size() == 0) {
 			return SourceResultType::FINISHED;
 		}
+		if (ClientConfig::GetConfig(context.client).trace_lineage) {
+			chunk.trace_lineage = true;
+			chunk.log_per_thread = lineage_op->GetLog(context.thread.thread_id);
+		}
 		if (HandleOffset(chunk, state.current_offset, gstate.offset, gstate.limit)) {
 			break;
 		}
 	}
-#ifdef LINEAGE
-		if (ClientConfig::GetConfig(context.client).trace_lineage) {
-	    auto lop = reinterpret_cast<LimitLog*>(lineage_op->GetLog(context.thread.thread_id).get());
-      lop->lineage.push_back({orig_offset, chunk.size(), gstate.offset});
-		}
-#endif
 
 	return chunk.size() > 0 ? SourceResultType::HAVE_MORE_OUTPUT : SourceResultType::FINISHED;
 }
@@ -196,6 +191,14 @@ bool PhysicalLimit::HandleOffset(DataChunk &input, idx_t &current_offset, idx_t 
 			}
 			// set up a slice of the input chunks
 			input.Slice(input, sel, chunk_count);
+#ifdef LINEAGE
+			if (input.trace_lineage) {
+				auto lop = reinterpret_cast<LimitLog*>(input.log_per_thread.get());
+				lop->lineage.push_back({start_position, chunk_count, current_offset});
+				input.trace_lineage = false;
+				input.log_per_thread = nullptr;
+			}
+#endif
 		} else {
 			current_offset += input_size;
 			return false;
@@ -213,6 +216,14 @@ bool PhysicalLimit::HandleOffset(DataChunk &input, idx_t &current_offset, idx_t 
 		// instead of copying we just change the pointer in the current chunk
 		input.Reference(input);
 		input.SetCardinality(chunk_count);
+#ifdef LINEAGE
+		if (input.trace_lineage) {
+			auto lop = reinterpret_cast<LimitLog*>(input.log_per_thread.get());
+			lop->lineage.push_back({0, chunk_count, current_offset});
+			input.trace_lineage = false;
+			input.log_per_thread = nullptr;
+		}
+#endif
 	}
 
 	current_offset += input_size;

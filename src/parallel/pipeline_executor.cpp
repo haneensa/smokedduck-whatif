@@ -21,7 +21,7 @@ PipelineExecutor::PipelineExecutor(ClientContext &context_p, Pipeline &pipeline_
 		pipeline.source->lineage_op->InitLog(thread.thread_id);
 	}
 	if (pipeline.sink && pipeline.sink->lineage_op) {
-		pipeline.sink->lineage_op->InitLog(thread.thread_id);
+		pipeline.sink->lineage_op->InitLog(thread.thread_id, pipeline.sink.get());
 	}
 #endif
 

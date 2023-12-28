@@ -113,22 +113,40 @@ void PerfectAggregateHashTable::AddChunk(DataChunk &groups, DataChunk &payload) 
 	}
 
 #ifdef LINEAGE
-  auto lop = reinterpret_cast<PHALog*>(groups.log_per_thread.get());
-  lop->build_lineage.emplace_back();
-  vector<uint32_t>& cur_lineage = lop->build_lineage.back();
-  cur_lineage.resize(groups.size());
-#endif
+	if (groups.trace_lineage) {
+		auto lop = reinterpret_cast<PHALog*>(groups.log_per_thread.get());
+		lop->build_lineage.emplace_back();
+		vector<uint32_t>& cur_lineage = lop->build_lineage.back();
+		cur_lineage.resize(groups.size());
+		// now we have the HT entry number for every tuple
+		// compute the actual pointer to the data by adding it to the base HT pointer and multiplying by the tuple size
+		for (idx_t i = 0; i < groups.size(); i++) {
+			const auto group = address_data[i];
+			D_ASSERT(group < total_groups);
+			cur_lineage[i] = group;
+			group_is_set[group] = true;
+			address_data[i] = uintptr_t(data) + group * tuple_size;
+		}
+	} else {
+		// now we have the HT entry number for every tuple
+		// compute the actual pointer to the data by adding it to the base HT pointer and multiplying by the tuple size
+		for (idx_t i = 0; i < groups.size(); i++) {
+			const auto group = address_data[i];
+			D_ASSERT(group < total_groups);
+			group_is_set[group] = true;
+			address_data[i] = uintptr_t(data) + group * tuple_size;
+		}
+	}
+#else
 	// now we have the HT entry number for every tuple
 	// compute the actual pointer to the data by adding it to the base HT pointer and multiplying by the tuple size
 	for (idx_t i = 0; i < groups.size(); i++) {
 		const auto group = address_data[i];
 		D_ASSERT(group < total_groups);
-#ifdef LINEAGE
-    cur_lineage[i] = group;
-#endif
 		group_is_set[group] = true;
 		address_data[i] = uintptr_t(data) + group * tuple_size;
 	}
+#endif
 	// after finding the group location we update the aggregates
 	idx_t payload_idx = 0;
 	auto &aggregates = layout.GetAggregates();
