@@ -29,6 +29,12 @@ void PhysicalStreamingSample::SystemSample(DataChunk &input, DataChunk &result, 
 	if (rand <= percentage) {
 		// rand is smaller than sample_size: output chunk
 		result.Reference(input);
+#ifdef LINEAGE
+		if (input.trace_lineage) {
+			std::cout << "TODO capture input chunk index for SystemSample" << std::endl;
+			reinterpret_cast<SamplingLog*>(input.log_per_thread.get())->lineage.push_back({nullptr, input.size(), 1});
+		}
+#endif
 	}
 }
 
@@ -46,6 +52,12 @@ void PhysicalStreamingSample::BernoulliSample(DataChunk &input, DataChunk &resul
 	}
 	if (result_count > 0) {
 		result.Slice(input, sel, result_count);
+#ifdef LINEAGE
+		if (input.trace_lineage) {
+			std::cout << "capture for BernoulliSample: " << sel.ToString() << std::endl;
+			reinterpret_cast<SamplingLog*>(input.log_per_thread.get())->lineage.push_back({sel.sel_data(), result_count, 0});
+		}
+#endif
 	}
 }
 

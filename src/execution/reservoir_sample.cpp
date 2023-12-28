@@ -46,6 +46,13 @@ unique_ptr<DataChunk> ReservoirSample::GetChunk() {
 void ReservoirSample::ReplaceElement(DataChunk &input, idx_t index_in_chunk) {
 	// replace the entry in the reservoir
 	// 8. The item in R with the minimum key is replaced by item vi
+
+#ifdef LINEAGE
+	if (input.trace_lineage) {
+		std::cout << "Capture for ReservoirSample: " << index_in_chunk << std::endl;
+		reinterpret_cast<SamplingLog*>(input.log_per_thread.get())->lineage.push_back({nullptr, input.size(), 1});
+	}
+#endif
 	for (idx_t col_idx = 0; col_idx < input.ColumnCount(); col_idx++) {
 		reservoir.SetValue(col_idx, base_reservoir_sample.min_entry, input.GetValue(col_idx, index_in_chunk));
 	}

@@ -130,7 +130,11 @@ SourceResultType PhysicalLimitPercent::GetData(ExecutionContext &context, DataCh
 	if (current_offset >= limit) {
 		return SourceResultType::FINISHED;
 	}
-	if (!gstate.data.Scan(state.scan_state, chunk)) {
+	bool ret = gstate.data.Scan(state.scan_state, chunk);
+#ifdef LINEAGE
+	std::cout << " Capture lineage " << std::endl;
+#endif
+	if (!ret) {
 		return SourceResultType::FINISHED;
 	}
 

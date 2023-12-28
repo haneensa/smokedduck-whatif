@@ -497,24 +497,20 @@ public:
   vector<hj_probe_artifact> lineage_binary;
 };
 
-
-// NLJ Log
+// Sampling Log
 //
-struct delim_artifact {
-  buffer_ptr<SelectionData> left;
+struct sample_artifact {
+  buffer_ptr<SelectionData> sel;
   idx_t count;
+  idx_t branch;
 };
 
-
-// Delim Join Log
-//
-class DelimJoinLog : public Log {
+class SamplingLog : public Log {
   public:
-	  DelimJoinLog(idx_t thid) : Log(thid)  {}
+	  SamplingLog(idx_t thid) : Log(thid)  {}
 
   public:
-  vector<delim_artifact> lineage;
+  vector<sample_artifact> lineage;
 };
-
 } // namespace duckdb
 #endif
