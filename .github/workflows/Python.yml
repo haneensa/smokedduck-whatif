@@ -71,7 +71,7 @@ jobs:
       shell: bash
       working-directory: tools/pythonpkg
       run: |
-        python setup.py sdist
+        BUILD_LINEAGE=true python setup.py sdist
         mkdir duckdb_tarball && tar xvf dist/duckdb-*.tar.gz --strip-components=1 -C duckdb_tarball
     - name: Build
       shell: bash
@@ -182,7 +182,7 @@ jobs:
       shell: bash
       run: |
         cd tools/pythonpkg
-        python setup.py sdist
+        BUILD_LINEAGE=true python setup.py sdist
         mkdir duckdb_tarball && tar xvf dist/duckdb-*.tar.gz --strip-components=1 -C duckdb_tarball
         ls duckdb_tarball
         export DISTUTILS_C_COMPILER_LAUNCHER=ccache
@@ -240,7 +240,7 @@ jobs:
         shell: bash
         run: |
           cd tools/pythonpkg
-          python setup.py sdist
+          BUILD_LINEAGE=true python setup.py sdist
           mkdir duckdb_tarball && tar xvf dist/duckdb-*.tar.gz --strip-components=1 -C duckdb_tarball
           export DISTUTILS_C_COMPILER_LAUNCHER=ccache
           # TODO: Use ccache inside container, see https://github.com/pypa/cibuildwheel/issues/1030
@@ -305,7 +305,7 @@ jobs:
         shell: bash
         run: |
           cd tools/pythonpkg
-          python setup.py sdist
+          BUILD_LINEAGE=true python setup.py sdist
           mkdir duckdb_tarball && tar xvf dist/duckdb-*.tar.gz --strip-components=1 -C duckdb_tarball
           export DISTUTILS_C_COMPILER_LAUNCHER=ccache
           # TODO: Use ccache inside container, see https://github.com/pypa/cibuildwheel/issues/1030
