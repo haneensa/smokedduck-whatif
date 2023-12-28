@@ -36,14 +36,14 @@ vector<vector<ColumnDefinition>> OperatorLineage::GetTableColumnTypes() {
   case PhysicalOperatorType::PIECEWISE_MERGE_JOIN: {
 	vector<ColumnDefinition> source;
 
-	if (type == PhysicalOperatorType::PIECEWISE_MERGE_JOIN)
+	if (type == PhysicalOperatorType::PIECEWISE_MERGE_JOIN) {
 	  source.emplace_back("lhs_index", LogicalType::BIGINT);
-	else
-		source.emplace_back("lhs_index", LogicalType::INTEGER);
-	if (type == PhysicalOperatorType::PIECEWISE_MERGE_JOIN)
-		source.emplace_back("rhs_index", LogicalType::BIGINT);
-	else
-		source.emplace_back("rhs_index", LogicalType::INTEGER);
+	  source.emplace_back("rhs_index", LogicalType::BIGINT);
+	} else {
+	  source.emplace_back("lhs_index", LogicalType::INTEGER);
+	  source.emplace_back("rhs_index", LogicalType::INTEGER);
+	}
+
 	source.emplace_back("out_index", LogicalType::INTEGER);
 	res.emplace_back(move(source));
 	break;
@@ -285,12 +285,12 @@ idx_t NLJLog::GetLineageAsChunk(DataChunk &insert_chunk,
                                 idx_t& data_idx,
                                 idx_t &cache_offset, idx_t &cache_size, bool &cache,
                                 shared_ptr<LogIndex> logIdx) {
-  // TODO: add instart offset
   if (data_idx >= output_index.size()) {
 	return 0;
   }
 
   idx_t lsn = output_index[data_idx].first;
+
   if (lsn == 0) { // something is wrong
 	return 0;
   }
@@ -298,8 +298,6 @@ idx_t NLJLog::GetLineageAsChunk(DataChunk &insert_chunk,
   lsn -= 1;
 
   idx_t res_count = lineage[lsn].count;
-  //idx_t out_start = lineage[data_idx].out_start;
-  //idx_t current_row_index = lineage[data_idx].current_row_index;
   Vector lhs_payload(LogicalType::INTEGER);
   Vector rhs_payload(LogicalType::INTEGER);
   if (lineage[lsn].left) {
@@ -331,7 +329,6 @@ idx_t BNLJLog::GetLineageAsChunk(DataChunk &insert_chunk,
                                  idx_t& data_idx,
                                  idx_t &cache_offset, idx_t &cache_size, bool &cache,
                                  shared_ptr<LogIndex> logIdx) {
-  // TODO: add instart offset
   if (data_idx >= output_index.size()) {
 	  return 0;
   }
@@ -398,11 +395,8 @@ idx_t MergeLog::GetLineageAsChunk(DataChunk &insert_chunk,
   // lhs
   if (branch == 1 || branch == 2 || branch == 3) {
 	  Vector temp1(LogicalType::BIGINT, (data_ptr_t)lineage[data_idx].lhs_sort.back().data());
-	  // add in_start
-	  std::cout << "in start :" << lineage[lsn].out_start << std::endl;
 	  auto sel = SelectionVector(lineage[lsn].left->owned_data.get());
 	  temp1.Slice(SelectionVector(lineage[lsn].left->owned_data.get()), res_count);
-	  std::cout << temp1.ToString(res_count) << std::endl;
 	  lhs_payload.Reference(temp1);
   } else if (branch == 4) {
 	  lhs_payload.SetVectorType(VectorType::CONSTANT_VECTOR);
@@ -411,11 +405,8 @@ idx_t MergeLog::GetLineageAsChunk(DataChunk &insert_chunk,
 
   // rhs
   if (branch == 1 || branch == 4) {
-	  // TODO: apply sorting from combine and lhs
-	  std::cout << "state.right_base:" << lineage[lsn].right_chunk_index << std::endl;
 	  Vector temp2(LogicalType::BIGINT, (data_ptr_t)logIdx->sort.data());
 	  temp2.Slice(SelectionVector(lineage[lsn].right->owned_data.get()), res_count);
-	  std::cout << temp2.ToString(res_count) << std::endl;
 	  rhs_payload.Reference(temp2);
   } else if (branch == 2 || branch == 3) {
 	  rhs_payload.SetVectorType(VectorType::CONSTANT_VECTOR);
@@ -424,7 +415,6 @@ idx_t MergeLog::GetLineageAsChunk(DataChunk &insert_chunk,
 
   fillBaseChunk(insert_chunk, res_count, lhs_payload, rhs_payload, global_count);
   data_idx++;
-  std::cout << insert_chunk.ToString() << std::endl;
   return res_count;
 }
 

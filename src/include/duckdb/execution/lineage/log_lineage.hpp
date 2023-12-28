@@ -256,7 +256,7 @@ class NLJLog : public SharedJoinLog {
 	                      idx_t& data_idx,
 	                      idx_t &cache_offset, idx_t &cache_size, bool &cache,
 	                      shared_ptr<LogIndex> logIdx) override;
-
+  void PostProcess(shared_ptr<LogIndex> logIdx) override;
 public:
   vector<nlj_artifact> lineage;
 };
@@ -286,6 +286,8 @@ class BNLJLog : public SharedJoinLog {
 	                      idx_t& data_idx,
 	                      idx_t &cache_offset, idx_t &cache_size, bool &cache,
 	                      shared_ptr<LogIndex> logIdx) override;
+
+  void PostProcess(shared_ptr<LogIndex> logIdx) override;
 
 public:
   vector<bnlj_artifact> lineage;

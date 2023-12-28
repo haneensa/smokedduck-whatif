@@ -13,6 +13,320 @@ statement ok
 PRAGMA threads=1;
 PRAGMA enable_lineage;
 
+# HAVING with condition on group
+query IRI
+SELECT b, SUM(a), LIST(rowid) AS sum FROM test GROUP BY b HAVING b=21 ORDER BY b;
+----
+21	12	[2]
+
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_optimizer;
+
+query I
+SELECT count(*) FROM duckdb_queries_list()
+----
+2
+
+query II
+SELECT * FROM LINEAGE_1_SEQ_SCAN_0_0
+----
+2	0
+
+query II
+SELECT * FROM LINEAGE_1_PERFECT_HASH_GROUP_BY_2_0
+----
+0	0
+
+
+statement ok
+PRAGMA threads=1;
+PRAGMA enable_lineage;
+
+# HAVING with condition on sum
+query IRI
+SELECT b, SUM(a), LIST(rowid) FROM test GROUP BY b HAVING SUM(a) < 20 ORDER BY b;
+----
+21	12	[2]
+
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_optimizer;
+
+query I
+SELECT count(*) FROM duckdb_queries_list()
+----
+4
+
+query II
+SELECT * FROM LINEAGE_3_SEQ_SCAN_0_0
+----
+0	0
+1	1
+2	2
+
+query II
+SELECT * FROM LINEAGE_3_HASH_GROUP_BY_2_0
+----
+0	0
+1	0
+2	1
+
+query II
+SELECT * FROM LINEAGE_3_FILTER_3_0
+----
+1	0
+
+
+statement ok
+PRAGMA threads=1;
+PRAGMA enable_lineage;
+
+# HAVING with condition on ALIAS
+# CONTROVERSIAL: this DOES work in SQLite, but not in PostgreSQL
+query III
+SELECT b, SUM(a) AS sum, LIST(rowid) FROM test GROUP BY b HAVING sum < 20 ORDER BY b;
+----
+21	12	[2]
+
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_optimizer;
+
+
+query I
+SELECT count(*) FROM duckdb_queries_list()
+----
+6
+
+query II
+SELECT * FROM LINEAGE_5_SEQ_SCAN_0_0
+----
+0	0
+1	1
+2	2
+
+query II
+SELECT * FROM LINEAGE_5_HASH_GROUP_BY_2_0
+----
+0	0
+1	0
+2	1
+
+query II
+SELECT * FROM LINEAGE_5_FILTER_3_0
+----
+1	0
+
+
+statement ok
+PRAGMA threads=1;
+PRAGMA enable_lineage;
+
+# HAVING without alias
+query IRI
+SELECT b, SUM(a) AS sum, LIST(rowid) FROM test GROUP BY b HAVING SUM(a) < 20 ORDER BY b;
+----
+21	12	[2]
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_optimizer;
+
+
+query I
+SELECT count(*) FROM duckdb_queries_list()
+----
+8
+
+query II
+SELECT * FROM LINEAGE_7_SEQ_SCAN_0_0
+----
+0	0
+1	1
+2	2
+
+query II
+SELECT * FROM LINEAGE_7_HASH_GROUP_BY_2_0
+----
+0	0
+1	0
+2	1
+
+query II
+SELECT * FROM LINEAGE_7_FILTER_3_0
+----
+1	0
+
+
+statement ok
+PRAGMA threads=1;
+PRAGMA enable_lineage;
+
+# HAVING on column not in aggregate
+query IRI
+SELECT b, SUM(a) AS sum, LIST(rowid) FROM test GROUP BY b HAVING COUNT(*) = 1 ORDER BY b;
+----
+21	12	[2]
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_optimizer;
+
+
+query I
+SELECT count(*) FROM duckdb_queries_list()
+----
+10
+
+query II
+SELECT * FROM LINEAGE_9_SEQ_SCAN_0_0
+----
+0	0
+1	1
+2	2
+
+query II
+SELECT * FROM LINEAGE_9_HASH_GROUP_BY_2_0
+----
+0	0
+1	0
+2	1
+
+query II
+SELECT * FROM LINEAGE_9_FILTER_3_0
+----
+1	0
+
+
+statement ok
+PRAGMA threads=1;
+PRAGMA enable_lineage;
+
+
+# expression in having
+query IRI
+SELECT b, SUM(a), LIST(rowid) FROM test GROUP BY b HAVING SUM(a)+10>28;
+----
+22	24	[0, 1]
+
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_optimizer;
+
+
+query I
+SELECT count(*) FROM duckdb_queries_list()
+----
+12
+
+query II
+SELECT * FROM LINEAGE_11_SEQ_SCAN_0_0
+----
+0	0
+1	1
+2	2
+
+query II
+SELECT * FROM LINEAGE_11_HASH_GROUP_BY_2_0
+----
+0	0
+1	0
+2	1
+
+query II
+SELECT * FROM LINEAGE_11_FILTER_3_0
+----
+0	0
+
+
+statement ok
+PRAGMA threads=1;
+PRAGMA enable_lineage;
+
+# uncorrelated subquery in having
+query IRI
+SELECT b, SUM(a), LIST(rowid) FROM test GROUP BY b HAVING SUM(a)>(SELECT SUM(t.a)*0.5 FROM test t);
+----
+22	24	[0, 1]
+
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_optimizer;
+
+
+query I
+SELECT count(*) FROM duckdb_queries_list()
+----
+14
+
+query II
+SELECT * FROM LINEAGE_13_SEQ_SCAN_0_0
+----
+0	0
+1	1
+2	2
+
+query II
+SELECT * FROM LINEAGE_13_HASH_GROUP_BY_2_0
+----
+0	0
+1	0
+2	1
+
+query II
+SELECT * FROM LINEAGE_13_FILTER_11_0
+----
+0	0
+
+
+query III
+SELECT * FROM LINEAGE_13_CROSS_PRODUCT_10_0
+----
+0	0	0
+1	0	1
+
+
+statement ok
+PRAGMA threads=1;
+PRAGMA enable_lineage;
+
+# correlated subquery in having
+query IR
+SELECT test.b, SUM(a) FROM test GROUP BY test.b HAVING SUM(a)=(SELECT SUM(a) FROM test t WHERE test.b=t.b) ORDER BY test.b;
+----
+21	12.000000
+22	24.000000
+
+statement ok
+PRAGMA disable_lineage;
+PRAGMA disable_optimizer;
+
+
+query I
+SELECT count(*) FROM duckdb_queries_list()
+----
+14
+
+query II
+SELECT * FROM LINEAGE_13_SEQ_SCAN_0_0
+----
+0	0
+1	1
+2	2
+
+query II
+SELECT * FROM LINEAGE_13_HASH_GROUP_BY_2_0
+----
+0	0
+1	0
+2	1
+
 # use outer aggregation in inner subquery
 query IR
 SELECT test.b, SUM(a) FROM test GROUP BY test.b HAVING SUM(a)*2=(SELECT SUM(a)+SUM(t.a) FROM test t WHERE test.b=t.b) ORDER BY test.b

@@ -816,7 +816,7 @@ SourceResultType PhysicalPiecewiseMergeJoin::GetData(ExecutionContext &context, 
 			if (ClientConfig::GetConfig(context.client).trace_lineage) {
 				auto lop = reinterpret_cast<MergeLog*>(lineage_op->GetLog(context.thread.thread_id).get());
 				lop->lineage.push_back({nullptr, {}, rsel.sel_data(),
-										result.size(), state.right_outer_position,
+										result.size(), state.right_outer_position-count,
 										0, 4});
 				lop->output_index.push_back({lop->GetLatestLSN(), 0});
 			}

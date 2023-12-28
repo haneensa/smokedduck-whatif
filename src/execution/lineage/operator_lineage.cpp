@@ -298,6 +298,64 @@ void HashJoinLog::PostProcess(shared_ptr<LogIndex> logIdx) {
   processed = true;
 }
 
+// NLJ
+
+void NLJLog::PostProcess(shared_ptr<LogIndex> logIdx) {
+  if (processed) return;
+
+  for (const auto& lineage_data : output_index) {
+	idx_t lsn = lineage_data.first;
+	idx_t child_offset = lineage_data.second;
+	if (lsn == 0) { // something is wrong
+		continue;
+	}
+
+	lsn -= 1;
+
+	if (lineage[lsn].left != nullptr) {
+		auto vec_ptr = lineage[lsn].left->owned_data.get();
+		idx_t res_count = lineage[lsn].count;
+		for (idx_t i = 0; i < res_count; i++) {
+			*(vec_ptr + i) += child_offset;
+		}
+	}
+
+
+	if (lineage[lsn].right != nullptr && lineage[lsn].current_row_index != 0) {
+		auto vec_ptr = lineage[lsn].right->owned_data.get();
+		idx_t res_count = lineage[lsn].count;
+		for (idx_t i = 0; i < res_count; i++) {
+			*(vec_ptr + i) += lineage[lsn].current_row_index;
+		}
+	}
+  }
+  processed = true;
+}
+
+// BNLJ
+
+void BNLJLog::PostProcess(shared_ptr<LogIndex> logIdx) {
+  if (processed) return;
+
+  for (const auto& lineage_data : output_index) {
+	idx_t lsn = lineage_data.first;
+	idx_t child_offset = lineage_data.second;
+	if (lsn == 0) { // something is wrong
+		continue;
+	}
+
+	lsn -= 1;
+	if (lineage[lsn].sel && lineage[lsn].branch_scanlhs == false &&  lineage[lsn].branch < 2) {
+		auto vec_ptr = lineage[lsn].sel->owned_data.get();
+		idx_t res_count = lineage[lsn].count;
+		for (idx_t i = 0; i < res_count; i++) {
+			*(vec_ptr + i) += child_offset;
+		}
+	}
+  }
+  processed = true;
+}
+
 // Merge Join
 
 void MergeLog::BuildIndexes(shared_ptr<LogIndex> logIdx) {
@@ -307,7 +365,34 @@ void MergeLog::BuildIndexes(shared_ptr<LogIndex> logIdx) {
 }
 
 void MergeLog::PostProcess(shared_ptr<LogIndex> logIdx) {
+  if (processed) return;
 
+  for (const auto& lineage_data : output_index) {
+	idx_t lsn = lineage_data.first;
+	idx_t child_offset = lineage_data.second;
+	if (lsn == 0) { // something is wrong
+		continue;
+	}
+
+	lsn -= 1;
+
+	if (lineage[lsn].left) {
+		auto vec_ptr =lineage[lsn].left->owned_data.get();
+		idx_t res_count = lineage[lsn].count;
+		for (idx_t i = 0; i < res_count; i++) {
+			*(vec_ptr + i) += child_offset;
+		}
+	}
+
+	if (lineage[lsn].right && (lineage[lsn].branch == 1 || lineage[lsn].branch == 4)) {
+		auto vec_ptr =lineage[lsn].right->owned_data.get();
+		idx_t res_count = lineage[lsn].count;
+		for (idx_t i = 0; i < res_count; i++) {
+			*(vec_ptr + i) +=  lineage[lsn].right_chunk_index;
+		}
+	}
+  }
+  processed = true;
 }
 
 // HashAggregateLog
@@ -374,30 +459,6 @@ void HALog::BuildIndexes(shared_ptr<LogIndex> logIdx) {
 	}
 	logIdx->distinct_count[g] = count_so_far;
   }
-
-  /*
-} else if (stage_idx == LINEAGE_FINALIZE) {
-  //dynamic_cast<CollectionLineage &>(*data_woffset->data).Debug();
-  auto lineage_vec = dynamic_cast<CollectionLineage &>(*data_woffset->data).lineage_vec;
-  auto nested_lineage_vec =  dynamic_cast<CollectionLineage &>(*lineage_vec->at(0)).lineage_vec;
-  idx_t res_count =  0;
-  for (idx_t i=0; i < nested_lineage_vec->size(); i++) {
-	  res_count +=  nested_lineage_vec->at(i)->Count();
-	  Vector source_payload(types[0], nested_lineage_vec->at(i)->Process(0));
-	  Vector new_payload(types[1], nested_lineage_vec->at(i)->Process(0));
-	  insert_chunk.data[0].Reference(source_payload);
-	  insert_chunk.data[1].Reference(new_payload);
-	  break;
-  }
-
-  insert_chunk.SetCardinality(res_count);
-  insert_chunk.data[2].Reference(thread_id_vec);
-  global_count += res_count;
-} else {
-}
-break;
-}
-*/
 }
 
 void HALog::PostProcess(shared_ptr<LogIndex> logIdx) {
