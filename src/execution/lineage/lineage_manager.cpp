@@ -74,6 +74,10 @@ void LineageManager::CreateLineageTables(ClientContext &context, PhysicalOperato
 		CreateLineageTables(context, op->children[i].get(), query_id);
 	}
 
+	if (op->type == PhysicalOperatorType::PROJECTION) {
+		return;
+	}
+
 	// Example: LINEAGE_1_HASH_JOIN_3
 	string prefix = "LINEAGE_" + to_string(query_id) + "_" + op->GetName() ;
 	prefix.erase( remove( prefix.begin(), prefix.end(), ' ' ), prefix.end() );
