@@ -56,7 +56,7 @@ class build_ext(CompilerLauncherMixin, _build_ext):
     pass
 
 
-lib_name = 'smokedduck'
+lib_name = 'duckdb'
 
 extensions = ['parquet', 'icu', 'fts', 'tpch', 'tpcds', 'json']
 
@@ -182,9 +182,6 @@ if len(existing_duckdb_dir) == 0:
         (source_list, include_list, original_sources) = package_build.build_package(os.path.join(script_path, lib_name), extensions, False, unity_build)
 
         duckdb_sources = [os.path.sep.join(package_build.get_relative_path(script_path, x).split('/')) for x in source_list]
-        duckdb_sources = [os.path.normpath(source.lstrip('./')) for source in duckdb_sources]
-        print('HERE!!!')
-        print(duckdb_sources)
         duckdb_sources.sort()
 
         original_sources = [os.path.join(lib_name, x) for x in original_sources]
@@ -222,7 +219,7 @@ if len(existing_duckdb_dir) == 0:
     source_files += duckdb_sources
     include_directories = duckdb_includes + include_directories
 
-    libduckdb = Extension(lib_name,
+    libduckdb = Extension('smokedduck',
         include_dirs=include_directories,
         sources=source_files,
         extra_compile_args=toolchain_args,
@@ -240,7 +237,7 @@ else:
     library_dirs = [x[0] for x in result_libraries if x[0] is not None]
     libnames = [x[1] for x in result_libraries if x[1] is not None]
 
-    libduckdb = Extension(lib_name,
+    libduckdb = Extension('smokedduck',
         include_dirs=include_directories,
         sources=main_source_files,
         extra_compile_args=toolchain_args,
@@ -284,7 +281,7 @@ def setup_data_files(data_files):
 data_files = setup_data_files(extra_files + header_files)
 
 setup(
-    name = lib_name,
+    name = 'smokedduck',
     description = 'SmokedDuck - DuckDB fork with fine-grained provenance',
     keywords = 'SmokedDuck DuckDB Database SQL OLAP Provenance',
     # url="https://www.duckdb.org",
