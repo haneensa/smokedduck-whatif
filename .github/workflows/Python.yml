@@ -82,43 +82,43 @@ jobs:
         # TODO: Use ccache inside container, see https://github.com/pypa/cibuildwheel/issues/1030
         cibuildwheel --output-dir wheelhouse --config-file cibw.toml duckdb_tarball
 
-   manylinux-extensions:
-    name: DuckDB Extensions (gcc4)
-    runs-on: ubuntu-latest
-    container: quay.io/pypa/manylinux2014_x86_64
-    needs: linux-python3-9
-
-    steps:
-    - uses: actions/checkout@v3
-      with:
-        fetch-depth: 0
-
-    - uses: ./.github/actions/centos_7_setup
-      with:
-        openssl: 1
-
-    - name: Version Check
-      shell: bash
-      run: |
-        cmake --version
-        ldd --version ldd
-        ls -al
-        pwd
-        echo "$USER"
-
-    - uses: ./.github/actions/build_extensions
-      with:
-        deploy_as: linux_amd64_gcc4
-        s3_id: ${{ secrets.S3_ID }}
-        s3_key: ${{ secrets.S3_KEY }}
-        signing_pk: ${{ secrets.DUCKDB_EXTENSION_SIGNING_PK }}
-        treat_warn_as_error: 0
-
-    - uses: actions/upload-artifact@v3
-      with:
-        name: manylinux-extensions-x86_64
-        path: |
-          build/release/extension/*/*.duckdb_extension
+#   manylinux-extensions:
+#    name: DuckDB Extensions (gcc4)
+#    runs-on: ubuntu-latest
+#    container: quay.io/pypa/manylinux2014_x86_64
+#    needs: linux-python3-9
+#
+#    steps:
+#    - uses: actions/checkout@v3
+#      with:
+#        fetch-depth: 0
+#
+#    - uses: ./.github/actions/centos_7_setup
+#      with:
+#        openssl: 1
+#
+#    - name: Version Check
+#      shell: bash
+#      run: |
+#        cmake --version
+#        ldd --version ldd
+#        ls -al
+#        pwd
+#        echo "$USER"
+#
+#    - uses: ./.github/actions/build_extensions
+#      with:
+#        deploy_as: linux_amd64_gcc4
+#        s3_id: ${{ secrets.S3_ID }}
+#        s3_key: ${{ secrets.S3_KEY }}
+#        signing_pk: ${{ secrets.DUCKDB_EXTENSION_SIGNING_PK }}
+#        treat_warn_as_error: 0
+#
+#    - uses: actions/upload-artifact@v3
+#      with:
+#        name: manylinux-extensions-x86_64
+#        path: |
+#          build/release/extension/*/*.duckdb_extension
 
    linux-python3:
     name: Python 3 Linux
@@ -128,7 +128,7 @@ jobs:
         arch: [i686, x86_64, aarch64]
         python_build: [cp37-*, cp38-*, cp39-*, cp310-*, cp311-*]
         isRelease:
-          - ${{ startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/master' }}
+          - true
         exclude:
           - isRelease: false
             python_build: 'cp38-*'
@@ -136,7 +136,7 @@ jobs:
             python_build: 'cp39-*'
           - isRelease: false
             python_build: 'cp311-*'
-    needs: manylinux-extensions
+    needs: linux-python3-9
     env:
       CIBW_BUILD: ${{ matrix.python_build}}
       CIBW_SKIP: '*-musllinux_aarch64'
@@ -162,16 +162,16 @@ jobs:
       shell: bash
       run: pip install cibuildwheel twine
 
-    - uses: actions/download-artifact@v3
-      if: ${{ matrix.arch == 'x86_64' }}
-      with:
-        name: manylinux-extensions-x86_64
-        path: tools/pythonpkg
-
-    - name: List extensions to be tested
-      shell: bash
-      run: |
-        find tools/pythonpkg -maxdepth 2 -type f -name "*.duckdb_extension"
+#    - uses: actions/download-artifact@v3
+#      if: ${{ matrix.arch == 'x86_64' }}
+#      with:
+#        name: manylinux-extensions-x86_64
+#        path: tools/pythonpkg
+#
+#    - name: List extensions to be tested
+#      shell: bash
+#      run: |
+#        find tools/pythonpkg -maxdepth 2 -type f -name "*.duckdb_extension"
 
     - name: Setup Ccache
       uses: hendrikmuhs/ccache-action@main
@@ -203,7 +203,7 @@ jobs:
         fi
 
    osx-python3:
-      if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/master'
+#      if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/master'
       name: Python 3 OSX
       runs-on: macos-latest
       strategy:
@@ -264,7 +264,7 @@ jobs:
        matrix:
         python_build: [cp36-*, cp37-*, cp38-*, cp39-*, cp310-*, cp311-*]
         isRelease:
-          - ${{ startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/master' }}
+          - true
         exclude:
           - isRelease: false
             python_build: 'cp37-*'
@@ -428,7 +428,7 @@ jobs:
           ${GITHUB_WORKSPACE}/debug-build/bin/python3 -m pytest tests/fast --skiplist TestMemoryLeaks
 
    linux-release-cleanup:
-      if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/master'
+#      if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/master'
       name: PyPi Release Cleanup
       runs-on: ubuntu-20.04
       needs: linux-python3-9

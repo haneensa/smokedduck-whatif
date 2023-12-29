@@ -8,13 +8,13 @@ void OperatorLineage::PostProcess() {
 	// 1. build indexes
 	log_index = make_shared<LogIndex>();
 	for (idx_t i : thread_vec) {
-		std::cout << 'thread id ' << i <<std::endl;
+		std::cout << "thread id " << i <<std::endl;
 		log_per_thread[i]->BuildIndexes(log_index);
 	}
 
 	// 2. adjust offsets for cheaper retrieval
 	for (idx_t i : thread_vec) {
-		std::cout << 'thread id ' << i <<std::endl;
+		std::cout << "thread id " << i <<std::endl;
 		log_per_thread[i]->PostProcess(log_index);
 	}
 
