@@ -325,7 +325,7 @@ class TestDuckMultithread(object):
 
     @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
     def test_execute(self, duckdb_cursor, pandas):
-        pass
+        pass # TODO: charlie uncomment
         # duck_threads = DuckDBThreaded(10,execute_query, pandas)
         # duck_threads.multithread_test()
 

@@ -7,6 +7,8 @@ try:
 except:
     can_run = False
 
+can_run = False  # TODO: charlie remove this line
+
 def munge(cell):
     try:
         cell = round(float(cell), 2)
