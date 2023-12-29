@@ -80,7 +80,6 @@ idx_t OperatorLineage::GetLineageAsChunk(DataChunk &insert_chunk,
     thread_id++;
     cache = true;
     data_idx = 0;
-    // std::cout << "done " << thread_vec.size() << " " << thread_id << " " << data_idx << std::endl;
   }
 
   return insert_chunk.size();
@@ -365,7 +364,6 @@ idx_t BNLJLog::GetLineageAsChunk(DataChunk &insert_chunk,
 
   fillBaseChunk(insert_chunk, res_count, lhs_payload, rhs_payload, global_count);
   data_idx++;
-  std::cout << insert_chunk.ToString() << std::endl;
   return res_count;
 }
     

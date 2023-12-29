@@ -8,13 +8,11 @@ void OperatorLineage::PostProcess() {
 	// 1. build indexes
 	log_index = make_shared<LogIndex>();
 	for (idx_t i : thread_vec) {
-		std::cout << 'thread id ' << i <<std::endl;
 		log_per_thread[i]->BuildIndexes(log_index);
 	}
 
 	// 2. adjust offsets for cheaper retrieval
 	for (idx_t i : thread_vec) {
-		std::cout << 'thread id ' << i <<std::endl;
 		log_per_thread[i]->PostProcess(log_index);
 	}
 
@@ -31,40 +29,28 @@ void OperatorLineage::InitLog(idx_t thread_id, PhysicalOperator* op) {
   // TODO: add lock
   thread_vec.push_back(thread_id);
   if (type ==  PhysicalOperatorType::FILTER) {
-//    std::cout << "filter init log " << thread_id << std::endl;
 	log_per_thread[thread_id] = make_shared<FilterLog>(thread_id);
   } else if (type ==  PhysicalOperatorType::TABLE_SCAN) {
-  //  std::cout << "scan init log " << thread_id << std::endl;
     log_per_thread[thread_id] = make_shared<TableScanLog>(thread_id);
   } else if (type ==  PhysicalOperatorType::LIMIT || type == PhysicalOperatorType::STREAMING_LIMIT) {
-    //std::cout << "limit init log " << thread_id << std::endl;
     log_per_thread[thread_id] = make_shared<LimitLog>(thread_id);
   } else if (type ==  PhysicalOperatorType::ORDER_BY) {
-    //std::cout << "init log orderby " << thread_id << std::endl;
     log_per_thread[thread_id] = make_shared<OrderByLog>(thread_id);
   } else if (type ==  PhysicalOperatorType::CROSS_PRODUCT) {
-    //std::cout << "cross init log " << thread_id << std::endl;
     log_per_thread[thread_id] = make_shared<CrossLog>(thread_id);
   } else if (type ==  PhysicalOperatorType::PIECEWISE_MERGE_JOIN) {
-    //std::cout << "merge init log " << thread_id << std::endl;
     log_per_thread[thread_id] = make_shared<MergeLog>(thread_id);
   } else if (type ==  PhysicalOperatorType::NESTED_LOOP_JOIN) {
-    //std::cout << "nlj init log " << thread_id << std::endl;
     log_per_thread[thread_id] = make_shared<NLJLog>(thread_id);
   } else if (type ==  PhysicalOperatorType::BLOCKWISE_NL_JOIN) {
-    //std::cout << "bnlj init log " << thread_id << std::endl;
     log_per_thread[thread_id] = make_shared<BNLJLog>(thread_id);
   } else if (type ==  PhysicalOperatorType::PERFECT_HASH_GROUP_BY) {
-    //std::cout << "pha init log " << thread_id << std::endl;
     log_per_thread[thread_id] = make_shared<PHALog>(thread_id);
   } else if (type ==  PhysicalOperatorType::HASH_GROUP_BY) {
-	  //std::cout << "ha init log " << thread_id << std::endl;
 	  log_per_thread[thread_id] = make_shared<HALog>(thread_id);
   } else if (type ==  PhysicalOperatorType::HASH_JOIN) {
-    //std::cout << "hj init log " << thread_id << std::endl;
     log_per_thread[thread_id] = make_shared<HashJoinLog>(thread_id);
   } else if (type ==  PhysicalOperatorType::DELIM_JOIN) {
-	//std::cout << "hj init log " << thread_id << std::endl;
 	auto distinct = (PhysicalOperator*)dynamic_cast<PhysicalDelimJoin *>(op)->distinct.get();
 	distinct->lineage_op->InitLog(thread_id);
   } else {
@@ -273,7 +259,6 @@ void HashJoinLog::PostProcess(shared_ptr<LogIndex> logIdx) {
 			for (auto k=0; k < logIdx->index_hj[hash].size(); ++k) {
 				if (logIdx->index_hj[hash][k].second == (data_ptr_t)scatter_idx) {
 					*(vec_ptr + i) = logIdx->index_hj[hash][k].first;
-					std::cout << logIdx->index_hj[hash][k].first << std::endl;
 				}
 			}
 		}
@@ -287,7 +272,6 @@ void HashJoinLog::PostProcess(shared_ptr<LogIndex> logIdx) {
 				for (auto k=0; k < logIdx->index_hj[hash].size(); ++k) {
 				  if (logIdx->index_hj[hash][k].second == right_build_ptr[i]) {
 					  right_val[i] = logIdx->index_hj[hash][k].first;
-					  std::cout << thid << " " << res_count << " " << i << " " << (idx_t) right_val[i] << std::endl;
 				  }
 				}
 			}
