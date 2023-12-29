@@ -282,10 +282,10 @@ data_files = setup_data_files(extra_files + header_files)
 
 setup(
     name = lib_name,
-    description = 'DuckDB embedded database',
-    keywords = 'DuckDB Database SQL OLAP',
-    url="https://www.duckdb.org",
-    long_description = 'See here for an introduction: https://duckdb.org/docs/api/python/overview',
+    description = 'SmokedDuck - DuckDB fork with fine-grained provenance',
+    keywords = 'SmokedDuck DuckDB Database SQL OLAP Provenance',
+    # url="https://www.duckdb.org",
+    # long_description = 'See here for an introduction: https://duckdb.org/docs/api/python/overview',
     license='MIT',
     data_files = data_files,
     packages=[
@@ -297,18 +297,18 @@ setup(
     use_scm_version = setuptools_scm_conf,
     tests_require=['google-cloud-storage', 'mypy', 'pytest'],
     classifiers = [
-        'Topic :: Database :: Database Engines/Servers',
+        'Topic :: Database :: Database Engines/Servers :: Provenance',
         'Intended Audience :: Developers',
         'License :: OSI Approved :: MIT License',
     ],
     ext_modules = [libduckdb],
-    maintainer = "Hannes Muehleisen",
-    maintainer_email = "hannes@cwi.nl",
+    maintainer = "Haneen Mohammed",
+    maintainer_email = "ham2156@columbia.edu",
     cmdclass={"build_ext": build_ext},
-    project_urls={
-        "Documentation": "https://duckdb.org/docs/api/python/overview",
-        "Source": "https://github.com/duckdb/duckdb/blob/master/tools/pythonpkg",
-        "Issues": "https://github.com/duckdb/duckdb/issues",
-        "Changelog": "https://github.com/duckdb/duckdb/releases",
-    },
+    # project_urls={
+    #     "Documentation": "https://duckdb.org/docs/api/python/overview",
+    #     "Source": "https://github.com/duckdb/duckdb/blob/master/tools/pythonpkg",
+    #     "Issues": "https://github.com/duckdb/duckdb/issues",
+    #     "Changelog": "https://github.com/duckdb/duckdb/releases",
+    # },
 )

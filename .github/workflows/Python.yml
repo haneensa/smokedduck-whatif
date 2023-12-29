@@ -1,33 +1,33 @@
 name: Python
 on:
   workflow_dispatch:
-  repository_dispatch:
-  push:
-    branches:
-      - '**'
-      - '!master'
-      - '!feature'
-    tags:
-      - '**'
-    paths-ignore:
-      - '**.md'
-      - 'examples/**'
-      - 'test/**'
-      - 'tools/**'
-      - '!tools/pythonpkg/**'
-      - '.github/workflows/**'
-      - '!.github/workflows/Python.yml'
-      - '.github/config/uncovered_files.csv'
-  pull_request:
-    paths-ignore:
-      - '**.md'
-      - 'examples/**'
-      - 'test/**'
-      - 'tools/**'
-      - '!tools/pythonpkg/**'
-      - '.github/workflows/**'
-      - '!.github/workflows/Python.yml'
-      - '.github/config/uncovered_files.csv'
+#  repository_dispatch:
+#  push:
+#    branches:
+#      - '**'
+#      - '!master'
+#      - '!feature'
+#    tags:
+#      - '**'
+#    paths-ignore:
+#      - '**.md'
+#      - 'examples/**'
+#      - 'test/**'
+#      - 'tools/**'
+#      - '!tools/pythonpkg/**'
+#      - '.github/workflows/**'
+#      - '!.github/workflows/Python.yml'
+#      - '.github/config/uncovered_files.csv'
+#  pull_request:
+#    paths-ignore:
+#      - '**.md'
+#      - 'examples/**'
+#      - 'test/**'
+#      - 'tools/**'
+#      - '!tools/pythonpkg/**'
+#      - '.github/workflows/**'
+#      - '!.github/workflows/Python.yml'
+#      - '.github/config/uncovered_files.csv'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.head_ref || '' }}-${{ github.base_ref || '' }}-${{ github.ref != 'refs/heads/master' || github.sha }}
@@ -193,8 +193,8 @@ jobs:
 
     - name: Deploy
       env:
-        TWINE_USERNAME: 'hfmuehleisen'
-        TWINE_PASSWORD: ${{ secrets.TWINE_PASSWORD }}
+        TWINE_USERNAME: '__token__'
+        TWINE_PASSWORD: ${{ secrets.TWINE_TOKEN }}
       shell: bash
       run: |
         python scripts/asset-upload-gha.py duckdb_python_src.tar.gz=tools/pythonpkg/dist/duckdb-*.tar.gz
@@ -249,8 +249,8 @@ jobs:
 
       - name: Deploy
         env:
-          TWINE_USERNAME: 'hfmuehleisen'
-          TWINE_PASSWORD: ${{ secrets.TWINE_PASSWORD }}
+          TWINE_USERNAME: '__token__'
+          TWINE_PASSWORD: ${{ secrets.TWINE_TOKEN }}
         shell: bash
         run: |
           if [[ "$GITHUB_REF" =~ ^(refs/heads/master|refs/tags/v.+)$ && "$GITHUB_REPOSITORY" = "duckdb/duckdb" ]] ; then
@@ -314,8 +314,8 @@ jobs:
 
       - name: Deploy
         env:
-          TWINE_USERNAME: 'hfmuehleisen'
-          TWINE_PASSWORD: ${{ secrets.TWINE_PASSWORD }}
+          TWINE_USERNAME: '__token__'
+          TWINE_PASSWORD: ${{ secrets.TWINE_TOKEN }}
         shell: bash
         run: |
           if [[ "$GITHUB_REF" =~ ^(refs/heads/master|refs/tags/v.+)$ && "$GITHUB_REPOSITORY" = "duckdb/duckdb" ]] ; then
