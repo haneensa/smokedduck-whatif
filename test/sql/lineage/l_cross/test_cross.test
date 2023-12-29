@@ -46,7 +46,7 @@ SELECT count(distinct lhs_index), count(distinct rhs_index), count(distinct out_
 1072	10	10720
 
 query III
-SELECT lhs_index, rhs_index, out_index FROM LINEAGE_2_CROSS_PRODUCT_6_0
+SELECT lhs_index, rhs_index, out_index FROM LINEAGE_2_CROSS_PRODUCT_4_0
 ----
 0	0	0
 1	0	1
@@ -59,9 +59,9 @@ SELECT lhs_index, rhs_index, out_index FROM LINEAGE_2_CROSS_PRODUCT_6_0
 2	2	8
 
 query III
-SELECT f1.in_index, f2.in_index, c.out_index FROM LINEAGE_2_CROSS_PRODUCT_6_0 c
+SELECT f1.in_index, f2.in_index, c.out_index FROM LINEAGE_2_CROSS_PRODUCT_4_0 c
 JOIN LINEAGE_2_FILTER_1_0 f1 ON (c.lhs_index=f1.out_index)
-JOIN LINEAGE_2_FILTER_4_0 f2 ON (c.rhs_index=f2.out_index)
+JOIN LINEAGE_2_FILTER_3_0 f2 ON (c.rhs_index=f2.out_index)
 ----
 0	0	0
 1	0	1

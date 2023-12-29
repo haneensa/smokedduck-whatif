@@ -311,17 +311,16 @@ PRAGMA disable_optimizer;
 query I
 SELECT count(*) FROM duckdb_queries_list()
 ----
-14
+16
 
 query II
-SELECT * FROM LINEAGE_13_SEQ_SCAN_0_0
+SELECT * FROM LINEAGE_15_FILTER_16_0
 ----
 0	0
 1	1
-2	2
 
 query II
-SELECT * FROM LINEAGE_13_HASH_GROUP_BY_2_0
+SELECT * FROM LINEAGE_15_HASH_GROUP_BY_2_0
 ----
 0	0
 1	0

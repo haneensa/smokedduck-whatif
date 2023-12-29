@@ -81,17 +81,21 @@ PRAGMA disable_profiling;
 PRAGMA threads=1;
 
 query III
-select lhs_index, rhs_index, out_index from LINEAGE_1_NESTED_LOOP_JOIN_2_0;
+select s1.in_index, s2.in_index, j.out_index from LINEAGE_1_NESTED_LOOP_JOIN_2_0 j
+JOIN LINEAGE_1_SEQ_SCAN_0_0 s1 ON (j.lhs_index=s1.out_index)
+JOIN LINEAGE_1_SEQ_SCAN_1_0 s2 ON (j.rhs_index=s2.out_index);
 ----
 10	0	0
 
 query III
-select lhs_index, rhs_index, out_index from LINEAGE_2_NESTED_LOOP_JOIN_2_0;
+select s1.in_index, rhs_index, j.out_index from LINEAGE_2_NESTED_LOOP_JOIN_2_0 j
+JOIN LINEAGE_2_SEQ_SCAN_0_0 s1 ON (j.lhs_index=s1.out_index)
 ----
 10	NULL	0
 
 query III
-select lhs_index, rhs_index, out_index from LINEAGE_3_NESTED_LOOP_JOIN_2_0;
+select s1.in_index, rhs_index, j.out_index from LINEAGE_3_NESTED_LOOP_JOIN_2_0 j
+JOIN LINEAGE_3_SEQ_SCAN_0_0 s1 ON (j.lhs_index=s1.out_index)
 ----
 10	NULL	0
 

@@ -1,4 +1,4 @@
-# name: test/sql/lineage_v2/l_scan/test_hashjoin.test
+# name: test/sql/lineage/l_hashjoin/test_hashjoin_build_null.test
 # description: Test Hash Join, build side has null values that result in creating selection vector during hash table construction
 # group: [l_hashjoin]
 
@@ -41,8 +41,9 @@ PRAGMA disable_lineage;
 PRAGMA disable_optimizer;
 
 query IIII
-select lhs_index, rhs_index, out_index, 0 as thread_id from LINEAGE_1_HASH_JOIN_2_0
-order by out_index
+select lhs_index, s1.in_index, j.out_index, 0 as thread_id from LINEAGE_1_HASH_JOIN_2_0 j
+JOIN LINEAGE_1_SEQ_SCAN_1_0 s1 ON (j.rhs_index=s1.out_index)
+order by j.out_index
 ----
 0	4	0	0
 2	1	1	0

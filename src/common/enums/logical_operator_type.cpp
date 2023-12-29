@@ -22,6 +22,8 @@ string LogicalOperatorToString(LogicalOperatorType type) {
 		return "ANY_JOIN";
 	case LogicalOperatorType::LOGICAL_ASOF_JOIN:
 		return "ASOF_JOIN";
+	case LogicalOperatorType::LOGICAL_DEPENDENT_JOIN:
+		return "DEPENDENT_JOIN";
 	case LogicalOperatorType::LOGICAL_COMPARISON_JOIN:
 		return "COMPARISON_JOIN";
 	case LogicalOperatorType::LOGICAL_DELIM_JOIN:
@@ -48,6 +50,8 @@ string LogicalOperatorToString(LogicalOperatorType type) {
 		return "LIMIT_PERCENT";
 	case LogicalOperatorType::LOGICAL_COPY_TO_FILE:
 		return "COPY_TO_FILE";
+	case LogicalOperatorType::LOGICAL_COPY_DATABASE:
+		return "COPY_DATABASE";
 	case LogicalOperatorType::LOGICAL_JOIN:
 		return "JOIN";
 	case LogicalOperatorType::LOGICAL_CROSS_PRODUCT:
@@ -86,6 +90,8 @@ string LogicalOperatorToString(LogicalOperatorType type) {
 		return "VACUUM";
 	case LogicalOperatorType::LOGICAL_RECURSIVE_CTE:
 		return "REC_CTE";
+	case LogicalOperatorType::LOGICAL_MATERIALIZED_CTE:
+		return "CTE";
 	case LogicalOperatorType::LOGICAL_CTE_REF:
 		return "CTE_SCAN";
 	case LogicalOperatorType::LOGICAL_SHOW:
@@ -100,6 +106,8 @@ string LogicalOperatorToString(LogicalOperatorType type) {
 		return "CREATE_VIEW";
 	case LogicalOperatorType::LOGICAL_CREATE_SCHEMA:
 		return "CREATE_SCHEMA";
+	case LogicalOperatorType::LOGICAL_CREATE_SECRET:
+		return "CREATE_SECRET";
 	case LogicalOperatorType::LOGICAL_ATTACH:
 		return "ATTACH";
 	case LogicalOperatorType::LOGICAL_DETACH:

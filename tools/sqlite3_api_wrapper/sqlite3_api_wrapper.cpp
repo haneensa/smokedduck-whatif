@@ -16,8 +16,9 @@
 #include "utf8proc_wrapper.hpp"
 #include "duckdb/common/box_renderer.hpp"
 #ifdef SHELL_INLINE_AUTOCOMPLETE
-#include "sql_auto_complete-extension.hpp"
+#include "autocomplete_extension.hpp"
 #endif
+#include "shell_extension.hpp"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -110,6 +111,10 @@ int sqlite3_open_v2(const char *filename, /* Database filename (UTF-8) */
 		if (flags & DUCKDB_UNSIGNED_EXTENSIONS) {
 			config.options.allow_unsigned_extensions = true;
 		}
+		if (flags & DUCKDB_UNREDACTED_SECRETS) {
+			config.options.allow_unredacted_secrets = true;
+		}
+
 		config.error_manager->AddCustomError(
 		    ErrorType::UNSIGNED_EXTENSION,
 		    "Extension \"%s\" could not be loaded because its signature is either missing or invalid and unsigned "
@@ -117,8 +122,9 @@ int sqlite3_open_v2(const char *filename, /* Database filename (UTF-8) */
 		    "(e.g. duckdb -unsigned).");
 		pDb->db = make_uniq<DuckDB>(filename, &config);
 #ifdef SHELL_INLINE_AUTOCOMPLETE
-		pDb->db->LoadExtension<SQLAutoCompleteExtension>();
+		pDb->db->LoadExtension<AutocompleteExtension>();
 #endif
+		pDb->db->LoadExtension<ShellExtension>();
 		pDb->con = make_uniq<Connection>(*pDb->db);
 	} catch (const Exception &ex) {
 		if (pDb) {

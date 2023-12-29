@@ -16,6 +16,7 @@
 #ifdef LINEAGE
 #include "duckdb/execution/lineage/lineage_manager.hpp"
 #endif
+#include "duckdb/execution/operator/scan/csv/csv_state_machine_cache.hpp"
 
 namespace duckdb {
 class AttachedDatabase;
@@ -32,7 +33,7 @@ class SchemaCatalogEntry;
 struct RandomEngine;
 
 struct ClientData {
-	ClientData(ClientContext &context);
+	explicit ClientData(ClientContext &context);
 	~ClientData();
 
 	//! Query profiler

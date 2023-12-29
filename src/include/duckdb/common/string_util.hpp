@@ -11,10 +11,22 @@
 #include "duckdb/common/constants.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/vector.hpp"
+#include "duckdb/common/set.hpp"
 
 #include <cstring>
 
 namespace duckdb {
+
+#ifndef DUCKDB_QUOTE_DEFINE
+// Preprocessor trick to allow text to be converted to C-string / string
+// Expecte use is:
+//	#ifdef SOME_DEFINE
+//	string str = DUCKDB_QUOTE_DEFINE(SOME_DEFINE)
+//	...do something with str
+//	#endif SOME_DEFINE
+#define DUCKDB_QUOTE_DEFINE_IMPL(x) #x
+#define DUCKDB_QUOTE_DEFINE(x)      DUCKDB_QUOTE_DEFINE_IMPL(x)
+#endif
 
 /**
  * String Utility Functions
@@ -123,6 +135,7 @@ public:
 
 	//! Join multiple strings into one string. Components are concatenated by the given separator
 	DUCKDB_API static string Join(const vector<string> &input, const string &separator);
+	DUCKDB_API static string Join(const set<string> &input, const string &separator);
 
 	template <class T>
 	static string ToString(const vector<T> &input, const string &separator) {
@@ -155,7 +168,7 @@ public:
 	}
 
 	//! Return a string that formats the give number of bytes
-	DUCKDB_API static string BytesToHumanReadableString(idx_t bytes);
+	DUCKDB_API static string BytesToHumanReadableString(idx_t bytes, idx_t multiplier = 1024);
 
 	//! Convert a string to uppercase
 	DUCKDB_API static string Upper(const string &str);
@@ -170,6 +183,9 @@ public:
 
 	//! Case insensitive equals
 	DUCKDB_API static bool CIEquals(const string &l1, const string &l2);
+
+	//! Case insensitive compare
+	DUCKDB_API static bool CILessThan(const string &l1, const string &l2);
 
 	//! Format a string using printf semantics
 	template <typename... Args>

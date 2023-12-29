@@ -29,7 +29,6 @@ vector<vector<ColumnDefinition>> OperatorLineage::GetTableColumnTypes() {
     break;
   }
   case PhysicalOperatorType::HASH_JOIN:
-  case PhysicalOperatorType::INDEX_JOIN:
   case PhysicalOperatorType::BLOCKWISE_NL_JOIN:
   case PhysicalOperatorType::CROSS_PRODUCT:
   case PhysicalOperatorType::NESTED_LOOP_JOIN:

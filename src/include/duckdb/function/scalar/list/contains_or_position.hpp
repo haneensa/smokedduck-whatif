@@ -113,6 +113,9 @@ void ListContainsOrPosition(DataChunk &args, Vector &result) {
 	case PhysicalType::UINT64:
 		TemplatedContainsOrPosition<uint64_t, T, OP, LIST_ACCESSOR>(args, result);
 		break;
+	case PhysicalType::UINT128:
+		TemplatedContainsOrPosition<uhugeint_t, T, OP, LIST_ACCESSOR>(args, result);
+		break;
 	case PhysicalType::FLOAT:
 		TemplatedContainsOrPosition<float, T, OP, LIST_ACCESSOR>(args, result);
 		break;
@@ -130,7 +133,7 @@ void ListContainsOrPosition(DataChunk &args, Vector &result) {
 		TemplatedContainsOrPosition<int8_t, T, OP, LIST_ACCESSOR>(args, result, true);
 		break;
 	default:
-		throw NotImplementedException("This function has not been implemented for physical type %s",
+		throw NotImplementedException("This function has not been implemented for logical type %s",
 		                              TypeIdToString(physical_type));
 	}
 }

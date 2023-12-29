@@ -16,6 +16,13 @@ statement ok
 PRAGMA enable_lineage;
 
 # standalone limit
+query II
+select i, list(distinct j) from t1 GROUP BY i
+----
+Haneen	[2, 4, 3]
+Omar	[2, 1]
+Mohammed	[1, 2]
+
 query III
 select i, list(j) , list(distinct j) from t1 GROUP BY i
 ----
@@ -30,6 +37,19 @@ PRAGMA threads=1;
 
 query II
 select in_index, out_index from LINEAGE_1_HASH_GROUP_BY_2_0
+order by in_index
+----
+0	0
+1	1
+2	0
+3	2
+4	1
+5	0
+6	2
+7	1
+
+query II
+select in_index, out_index from LINEAGE_2_HASH_GROUP_BY_2_0
 order by in_index
 ----
 0	0

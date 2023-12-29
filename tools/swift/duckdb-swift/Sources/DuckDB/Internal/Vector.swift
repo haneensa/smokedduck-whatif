@@ -51,15 +51,13 @@ private extension Vector {
   func unwrapNull(at index: Int) -> Bool {
     precondition(index < count, "vector index out of bounds")
     let offsetIndex = offset + index
-    let validityMasks = duckdb_vector_get_validity(cvector)
-    guard let validityMasks else { return false }
-    let validityMasksBuffer = UnsafeBufferPointer(
-      start: validityMasks, count: Int(duckdb_vector_size() / 64))
-    let validityEntryIndex = offsetIndex / 64
+    let validityMasksPtr = duckdb_vector_get_validity(cvector)
+    guard let validityMasksPtr else { return false }
+    let validityMaskEntryIndex = offsetIndex / 64
+    let validityMaskEntryPtr = (validityMasksPtr + validityMaskEntryIndex)
     let validityBitIndex = offsetIndex % 64
-    let validityMask = validityMasksBuffer[Int(validityEntryIndex)]
     let validityBit = (DBInt(1) << validityBitIndex)
-    return validityMask & validityBit == 0
+    return validityMaskEntryPtr.pointee & validityBit == 0
   }
   
   func unwrap(_ type: Int.Type, at index: Int) throws -> Int {
@@ -105,6 +103,11 @@ private extension Vector {
   func unwrap(_ type: IntHuge.Type, at index: Int) throws -> IntHuge {
     try assertNonNullTypeMatch(of: type, at: index, withColumnType: .hugeint)
     return unsafelyUnwrapElement(as: duckdb_hugeint.self, at: index) { $0.asIntHuge }
+  }
+  
+  func unwrap(_ type: UIntHuge.Type, at index: Int) throws -> UIntHuge {
+    try assertNonNullTypeMatch(of: type, at: index, withColumnType: .uhugeint)
+    return unsafelyUnwrapElement(as: duckdb_uhugeint.self, at: index) { $0.asUIntHuge }
   }
   
   func unwrap(_ type: UUID.Type, at index: Int) throws -> UUID {
@@ -266,6 +269,7 @@ extension Vector.Element {
   func unwrap<T: PrimitiveDatabaseValue>(_ type: T.Type) throws -> T { try vector.unwrap(type, at: index) }
   func unwrap(_ type: String.Type) throws -> String { try vector.unwrap(type, at: index) }
   func unwrap(_ type: IntHuge.Type) throws -> IntHuge { try vector.unwrap(type, at: index) }
+  func unwrap(_ type: UIntHuge.Type) throws -> UIntHuge { try vector.unwrap(type, at: index) }
   func unwrap(_ type: UUID.Type) throws -> UUID { try vector.unwrap(type, at: index) }
   func unwrap(_ type: Time.Type) throws -> Time { try vector.unwrap(type, at: index) }
   func unwrap(_ type: Date.Type) throws -> Date { try vector.unwrap(type, at: index) }

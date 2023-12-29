@@ -71,7 +71,7 @@ statement ok
 PRAGMA disable_lineage;
 
 query II
-SELECT in_index, out_index FROM LINEAGE_5_FILTER_1_0
+SELECT in_index, out_index FROM LINEAGE_4_FILTER_1_0
 ----
 0	0
 1	1
@@ -160,13 +160,17 @@ SELECT * FROM (SELECT * FROM (SELECT rowid,* FROM integers WHERE (a <> 3 AND a<5
 2	2
 4	4
 
-
-
 statement ok
 PRAGMA disable_lineage;
 
+
+query I
+SELECT count(*) FROM duckdb_queries_list()
+----
+33
+
 query II
-SELECT in_index, out_index FROM LINEAGE_28_FILTER_1_0
+SELECT in_index, out_index FROM LINEAGE_32_FILTER_1_0
 ----
 2	0
 4	1

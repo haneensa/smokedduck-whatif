@@ -1,6 +1,7 @@
 #include "duckdb/storage/table/list_column_data.hpp"
 #include "duckdb/storage/statistics/list_stats.hpp"
-#include "duckdb/transaction/transaction.hpp"
+#include "duckdb/common/serializer/serializer.hpp"
+#include "duckdb/common/serializer/deserializer.hpp"
 #include "duckdb/storage/table/column_checkpoint_state.hpp"
 #include "duckdb/storage/table/append_state.hpp"
 #include "duckdb/storage/table/scan_state.hpp"
@@ -85,20 +86,23 @@ idx_t ListColumnData::ScanCount(ColumnScanState &state, Vector &result, idx_t co
 	D_ASSERT(!updates);
 
 	Vector offset_vector(LogicalType::UBIGINT, count);
-	idx_t scan_count = ScanVector(state, offset_vector, count);
+	idx_t scan_count = ScanVector(state, offset_vector, count, false);
 	D_ASSERT(scan_count > 0);
 	validity.ScanCount(state.child_states[0], result, count);
 
-	auto data = FlatVector::GetData<uint64_t>(offset_vector);
-	auto last_entry = data[scan_count - 1];
+	UnifiedVectorFormat offsets;
+	offset_vector.ToUnifiedFormat(scan_count, offsets);
+	auto data = UnifiedVectorFormat::GetData<uint64_t>(offsets);
+	auto last_entry = data[offsets.sel->get_index(scan_count - 1)];
 
 	// shift all offsets so they are 0 at the first entry
 	auto result_data = FlatVector::GetData<list_entry_t>(result);
 	auto base_offset = state.last_offset;
 	idx_t current_offset = 0;
 	for (idx_t i = 0; i < scan_count; i++) {
+		auto offset_index = offsets.sel->get_index(i);
 		result_data[i].offset = current_offset;
-		result_data[i].length = data[i] - current_offset - base_offset;
+		result_data[i].length = data[offset_index] - current_offset - base_offset;
 		current_offset += result_data[i].length;
 	}
 
@@ -109,6 +113,7 @@ idx_t ListColumnData::ScanCount(ColumnScanState &state, Vector &result, idx_t co
 	if (child_scan_count > 0) {
 		auto &child_entry = ListVector::GetEntry(result);
 		if (child_entry.GetType().InternalType() != PhysicalType::STRUCT &&
+		    child_entry.GetType().InternalType() != PhysicalType::ARRAY &&
 		    state.child_states[1].row_index + child_scan_count > child_column->start + child_column->GetMaxEntry()) {
 			throw InternalException("ListColumnData::ScanCount - internal list scan offset is out of range");
 		}
@@ -128,7 +133,7 @@ void ListColumnData::Skip(ColumnScanState &state, idx_t count) {
 	// note that we only need to read the first and last entry
 	// however, let's just read all "count" entries for now
 	Vector result(LogicalType::UBIGINT, count);
-	idx_t scan_count = ScanVector(state, result, count);
+	idx_t scan_count = ScanVector(state, result, count, false);
 	if (scan_count == 0) {
 		return;
 	}
@@ -318,10 +323,12 @@ public:
 		return stats.ToUnique();
 	}
 
-	void WriteDataPointers(RowGroupWriter &writer) override {
-		ColumnCheckpointState::WriteDataPointers(writer);
-		validity_state->WriteDataPointers(writer);
-		child_state->WriteDataPointers(writer);
+	void WriteDataPointers(RowGroupWriter &writer, Serializer &serializer) override {
+		ColumnCheckpointState::WriteDataPointers(writer, serializer);
+		serializer.WriteObject(101, "validity",
+		                       [&](Serializer &serializer) { validity_state->WriteDataPointers(writer, serializer); });
+		serializer.WriteObject(102, "child_column",
+		                       [&](Serializer &serializer) { child_state->WriteDataPointers(writer, serializer); });
 	}
 };
 
@@ -333,8 +340,8 @@ unique_ptr<ColumnCheckpointState> ListColumnData::CreateCheckpointState(RowGroup
 unique_ptr<ColumnCheckpointState> ListColumnData::Checkpoint(RowGroup &row_group,
                                                              PartialBlockManager &partial_block_manager,
                                                              ColumnCheckpointInfo &checkpoint_info) {
-	auto validity_state = validity.Checkpoint(row_group, partial_block_manager, checkpoint_info);
 	auto base_state = ColumnData::Checkpoint(row_group, partial_block_manager, checkpoint_info);
+	auto validity_state = validity.Checkpoint(row_group, partial_block_manager, checkpoint_info);
 	auto child_state = child_column->Checkpoint(row_group, partial_block_manager, checkpoint_info);
 
 	auto &checkpoint_state = base_state->Cast<ListColumnCheckpointState>();
@@ -343,10 +350,14 @@ unique_ptr<ColumnCheckpointState> ListColumnData::Checkpoint(RowGroup &row_group
 	return base_state;
 }
 
-void ListColumnData::DeserializeColumn(Deserializer &source) {
-	ColumnData::DeserializeColumn(source);
-	validity.DeserializeColumn(source);
-	child_column->DeserializeColumn(source);
+void ListColumnData::DeserializeColumn(Deserializer &deserializer) {
+	ColumnData::DeserializeColumn(deserializer);
+
+	deserializer.ReadObject(101, "validity",
+	                        [&](Deserializer &deserializer) { validity.DeserializeColumn(deserializer); });
+
+	deserializer.ReadObject(102, "child_column",
+	                        [&](Deserializer &deserializer) { child_column->DeserializeColumn(deserializer); });
 }
 
 void ListColumnData::GetColumnSegmentInfo(duckdb::idx_t row_group_index, vector<duckdb::idx_t> col_path,

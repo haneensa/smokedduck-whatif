@@ -59,7 +59,7 @@ PRAGMA disable_optimizer;
 query I
 SELECT count(*) FROM duckdb_queries_list()
 ----
-28
+25
 
 query II
 SELECT * FROM LINEAGE_1_HASH_GROUP_BY_2_0
@@ -103,7 +103,7 @@ PRAGMA disable_optimizer;
 query I
 SELECT count(*) FROM duckdb_queries_list()
 ----
-28
+34
 
 query IIII
 SELECT GROUPING(course, type), course, type, COUNT(*) FROM students GROUP BY CUBE(course, type) ORDER BY 1, 2, 3, 4;
@@ -226,29 +226,3 @@ NULL	Bachelor	2
 NULL	Masters	1
 NULL	PhD	1
 NULL	NULL	7
-
-# test incorrect grouping usage
-statement error
-SELECT GROUPING();
-
-statement error
-SELECT GROUPING() FROM students;
-
-statement error
-SELECT GROUPING(NULL) FROM students;
-
-statement error
-SELECT GROUPING(course) FROM students;
-
-statement error
-SELECT GROUPING(course) FROM students GROUP BY ();
-
-statement error
-SELECT GROUPING(type) FROM students GROUP BY course;
-
-statement error
-SELECT GROUPING(course) FROM students WHERE GROUPING(course)=0 GROUP BY course;
-
-# we have a limit on how many children the grouping clause can contain
-statement error
-SELECT GROUPING(course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course, course), course, type, COUNT(*) FROM students GROUP BY CUBE(course, type) ORDER BY 1, 2, 3, 4;

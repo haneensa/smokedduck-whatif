@@ -19,6 +19,7 @@
 #include "duckdb/planner/expression_iterator.hpp"
 #include "duckdb/planner/expression_binder/index_binder.hpp"
 #include "duckdb/parser/parsed_data/create_index_info.hpp"
+#include "duckdb/catalog/catalog_entry/schema_catalog_entry.hpp"
 
 #include <algorithm>
 
@@ -211,10 +212,10 @@ void Binder::BindGeneratedColumns(BoundCreateTableInfo &info) {
 void Binder::BindDefaultValues(const ColumnList &columns, vector<unique_ptr<Expression>> &bound_defaults) {
 	for (auto &column : columns.Physical()) {
 		unique_ptr<Expression> bound_default;
-		if (column.DefaultValue()) {
+		if (column.HasDefaultValue()) {
 			// we bind a copy of the DEFAULT value because binding is destructive
 			// and we want to keep the original expression around for serialization
-			auto default_copy = column.DefaultValue()->Copy();
+			auto default_copy = column.DefaultValue().Copy();
 			ConstantBinder default_binder(*this, context, "DEFAULT value");
 			default_binder.target_type = column.Type();
 			bound_default = default_binder.Bind(default_copy);
@@ -292,29 +293,6 @@ unique_ptr<BoundCreateTableInfo> Binder::BindCreateTableInfo(unique_ptr<CreateIn
 			ExpressionBinder::TestCollation(context, StringType::GetCollation(column.Type()));
 		}
 		BindLogicalType(context, column.TypeMutable(), &result->schema.catalog);
-		// We add a catalog dependency
-		auto type_dependency = EnumType::GetCatalog(column.Type());
-
-		if (type_dependency) {
-			// Only if the USER comes from a create type
-			if (!schema.catalog.IsTemporaryCatalog()) {
-				// If it is not a TEMP table we add a dependency
-				result->dependencies.AddDependency(*type_dependency);
-			} else {
-				auto enum_type = type_dependency->user_type;
-				auto &enum_entries = EnumType::GetValuesInsertOrder(enum_type);
-				auto enum_size = EnumType::GetSize(enum_type);
-				Vector copy_enum_entries_vec(LogicalType::VARCHAR, enum_size);
-				auto copy_enum_entries_ptr = FlatVector::GetData<string_t>(copy_enum_entries_vec);
-				auto enum_entries_ptr = FlatVector::GetData<string_t>(enum_entries);
-				for (idx_t enum_idx = 0; enum_idx < enum_size; enum_idx++) {
-					copy_enum_entries_ptr[enum_idx] =
-					    StringVector::AddStringOrBlob(copy_enum_entries_vec, enum_entries_ptr[enum_idx]);
-				}
-				auto copy_type = LogicalType::ENUM(EnumType::GetTypeName(enum_type), copy_enum_entries_vec, enum_size);
-				column.SetType(copy_type);
-			}
-		}
 	}
 	result->dependencies.VerifyDependencies(schema.catalog, result->Base().table);
 	properties.allow_stream_result = false;
@@ -325,17 +303,6 @@ unique_ptr<BoundCreateTableInfo> Binder::BindCreateTableInfo(unique_ptr<CreateIn
 	auto &base = info->Cast<CreateTableInfo>();
 	auto &schema = BindCreateSchema(base);
 	return BindCreateTableInfo(std::move(info), schema);
-}
-
-vector<unique_ptr<Expression>> Binder::BindCreateIndexExpressions(TableCatalogEntry &table, CreateIndexInfo &info) {
-	auto index_binder = IndexBinder(*this, this->context, &table, &info);
-	vector<unique_ptr<Expression>> expressions;
-	expressions.reserve(info.expressions.size());
-	for (auto &expr : info.expressions) {
-		expressions.push_back(index_binder.Bind(expr));
-	}
-
-	return expressions;
 }
 
 } // namespace duckdb

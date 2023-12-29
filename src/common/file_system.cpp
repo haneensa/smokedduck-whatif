@@ -23,6 +23,14 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+
+#ifdef __MVS__
+#define _XOPEN_SOURCE_EXTENDED 1
+#include <sys/resource.h>
+// enjoy - https://reviews.llvm.org/D92110
+#define PATH_MAX _XOPEN_PATH_MAX
+#endif
+
 #else
 #include <string>
 #include <sysinfoapi.h>
@@ -46,10 +54,7 @@ FileSystem &FileSystem::GetFileSystem(ClientContext &context) {
 }
 
 bool PathMatched(const string &path, const string &sub_path) {
-	if (path.rfind(sub_path, 0) == 0) {
-		return true;
-	}
-	return false;
+	return path.rfind(sub_path, 0) == 0;
 }
 
 #ifndef _WIN32
@@ -63,11 +68,11 @@ string FileSystem::GetEnvVariable(const string &name) {
 }
 
 bool FileSystem::IsPathAbsolute(const string &path) {
-	auto path_separator = FileSystem::PathSeparator();
+	auto path_separator = PathSeparator(path);
 	return PathMatched(path, path_separator);
 }
 
-string FileSystem::PathSeparator() {
+string FileSystem::PathSeparator(const string &path) {
 	return "/";
 }
 
@@ -79,7 +84,14 @@ void FileSystem::SetWorkingDirectory(const string &path) {
 
 idx_t FileSystem::GetAvailableMemory() {
 	errno = 0;
+
+#ifdef __MVS__
+	struct rlimit limit;
+	int rlim_rc = getrlimit(RLIMIT_AS, &limit);
+	idx_t max_memory = MinValue<idx_t>(limit.rlim_max, UINTPTR_MAX);
+#else
 	idx_t max_memory = MinValue<idx_t>((idx_t)sysconf(_SC_PHYS_PAGES) * (idx_t)sysconf(_SC_PAGESIZE), UINTPTR_MAX);
+#endif
 	if (errno != 0) {
 		return DConstants::INVALID_INDEX;
 	}
@@ -132,7 +144,15 @@ bool FileSystem::IsPathAbsolute(const string &path) {
 	if (StartsWithSingleBackslash(path)) {
 		return true;
 	}
-	// 2) A disk designator with a backslash (e.g., C:\ or C:/)
+	// 2) special "long paths" on windows
+	if (PathMatched(path, "\\\\?\\")) {
+		return true;
+	}
+	// 3) a network path
+	if (PathMatched(path, "\\\\")) {
+		return true;
+	}
+	// 4) A disk designator with a backslash (e.g., C:\ or C:/)
 	auto path_aux = path;
 	path_aux.erase(0, 1);
 	if (PathMatched(path_aux, ":\\") || PathMatched(path_aux, ":/")) {
@@ -152,7 +172,7 @@ string FileSystem::NormalizeAbsolutePath(const string &path) {
 	return result;
 }
 
-string FileSystem::PathSeparator() {
+string FileSystem::PathSeparator(const string &path) {
 	return "\\";
 }
 
@@ -195,11 +215,11 @@ string FileSystem::GetWorkingDirectory() {
 
 string FileSystem::JoinPath(const string &a, const string &b) {
 	// FIXME: sanitize paths
-	return a + PathSeparator() + b;
+	return a + PathSeparator(a) + b;
 }
 
 string FileSystem::ConvertSeparators(const string &path) {
-	auto separator_str = PathSeparator();
+	auto separator_str = PathSeparator(path);
 	char separator = separator_str[0];
 	if (separator == '/') {
 		// on unix-based systems we only accept / as a separator
@@ -214,7 +234,7 @@ string FileSystem::ExtractName(const string &path) {
 		return string();
 	}
 	auto normalized_path = ConvertSeparators(path);
-	auto sep = PathSeparator();
+	auto sep = PathSeparator(path);
 	auto splits = StringUtil::Split(normalized_path, sep);
 	D_ASSERT(!splits.empty());
 	return splits.back();
@@ -329,7 +349,7 @@ bool FileSystem::FileExists(const string &filename) {
 }
 
 bool FileSystem::IsPipe(const string &filename) {
-	throw NotImplementedException("%s: IsPipe is not implemented!", GetName());
+	return false;
 }
 
 void FileSystem::RemoveFile(const string &filename) {
@@ -370,6 +390,10 @@ void FileSystem::UnregisterSubSystem(const string &name) {
 	throw NotImplementedException("%s: Can't unregister a sub system on a non-virtual file system", GetName());
 }
 
+void FileSystem::SetDisabledFileSystems(const vector<string> &names) {
+	throw NotImplementedException("%s: Can't disable file systems on a non-virtual file system", GetName());
+}
+
 vector<string> FileSystem::ListSubSystems() {
 	throw NotImplementedException("%s: Can't list sub systems on a non-virtual file system", GetName());
 }
@@ -378,16 +402,31 @@ bool FileSystem::CanHandleFile(const string &fpath) {
 	throw NotImplementedException("%s: CanHandleFile is not implemented!", GetName());
 }
 
+static string LookupExtensionForPattern(const string &pattern) {
+	for (const auto &entry : EXTENSION_FILE_PREFIXES) {
+		if (StringUtil::StartsWith(pattern, entry.name)) {
+			return entry.extension;
+		}
+	}
+	return "";
+}
+
 vector<string> FileSystem::GlobFiles(const string &pattern, ClientContext &context, FileGlobOptions options) {
 	auto result = Glob(pattern);
 	if (result.empty()) {
-		string required_extension;
-		if (FileSystem::IsRemoteFile(pattern)) {
-			required_extension = "httpfs";
-		}
+		string required_extension = LookupExtensionForPattern(pattern);
 		if (!required_extension.empty() && !context.db->ExtensionIsLoaded(required_extension)) {
-			// an extension is required to read this file but it is not loaded - try to load it
-			ExtensionHelper::LoadExternalExtension(context, required_extension);
+			auto &dbconfig = DBConfig::GetConfig(context);
+			if (!ExtensionHelper::CanAutoloadExtension(required_extension) ||
+			    !dbconfig.options.autoload_known_extensions) {
+				auto error_message =
+				    "File " + pattern + " requires the extension " + required_extension + " to be loaded";
+				error_message =
+				    ExtensionHelper::AddExtensionInstallHintToErrorMsg(context, error_message, required_extension);
+				throw MissingExtensionException(error_message);
+			}
+			// an extension is required to read this file, but it is not loaded - try to load it
+			ExtensionHelper::AutoLoadExtension(context, required_extension);
 			// success! glob again
 			// check the extension is loaded just in case to prevent an infinite loop here
 			if (!context.db->ExtensionIsLoaded(required_extension)) {
@@ -466,6 +505,10 @@ bool FileHandle::CanSeek() {
 	return file_system.CanSeek();
 }
 
+bool FileHandle::IsPipe() {
+	return file_system.IsPipe(path);
+}
+
 string FileHandle::ReadLine() {
 	string result;
 	char buffer[1];
@@ -501,7 +544,7 @@ FileType FileHandle::GetType() {
 }
 
 bool FileSystem::IsRemoteFile(const string &path) {
-	const string prefixes[] = {"http://", "https://", "s3://"};
+	const string prefixes[] = {"http://", "https://", "s3://", "s3a://", "s3n://", "gcs://", "gs://", "r2://"};
 	for (auto &prefix : prefixes) {
 		if (StringUtil::StartsWith(path, prefix)) {
 			return true;

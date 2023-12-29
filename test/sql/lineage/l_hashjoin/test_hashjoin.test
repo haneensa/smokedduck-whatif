@@ -1,4 +1,4 @@
-# name: test/sql/lineage_v2/l_scan/test_hashjoin.test
+# name: test/sql/lineage/l_hashjoin/test_hashjoin.test
 # description: Test Hash Join
 # group: [l_hashjoin]
 
@@ -148,8 +148,9 @@ NULL	1	9	0
 3	NULL	11	0
 
 query IIII
-select rhs_index, lhs_index, out_index, 0 as thread_id from LINEAGE_4_HASH_JOIN_2_0
-order by out_index
+select r.in_index, lhs_index, j.out_index, 0 as thread_id from LINEAGE_4_HASH_JOIN_2_0 j
+JOIN LINEAGE_4_SEQ_SCAN_1_0 r ON (j.rhs_index=r.out_index)
+order by j.out_index
 ----
 4	0	0	0
 1	2	1	0

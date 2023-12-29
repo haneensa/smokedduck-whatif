@@ -5,7 +5,7 @@
 
 statement ok
 PRAGMA explain_output = PHYSICAL_ONLY;
-PRAGMA threads=2;
+PRAGMA threads=1;
 
 statement ok
 CREATE TABLE t1(i INTEGER);

@@ -31,7 +31,7 @@ PRAGMA disable_optimizer;
 query I
 SELECT count(*) FROM duckdb_queries_list()
 ----
-12
+11
 
 
 query II
@@ -70,11 +70,11 @@ PRAGMA disable_optimizer;
 query I
 SELECT count(*) FROM duckdb_queries_list()
 ----
-24
+22
 
 
 query II
-SELECT * FROM  LINEAGE_23_ORDER_BY_3_0
+SELECT * FROM  LINEAGE_21_ORDER_BY_3_0
 ----
 2	0
 0	1
@@ -82,7 +82,7 @@ SELECT * FROM  LINEAGE_23_ORDER_BY_3_0
 
 
 query II
-SELECT * FROM LINEAGE_23_HASH_GROUP_BY_2_0
+SELECT * FROM LINEAGE_21_HASH_GROUP_BY_2_0
 ----
 0	0
 3	0
@@ -107,18 +107,18 @@ PRAGMA disable_optimizer;
 query I
 SELECT count(*) FROM duckdb_queries_list()
 ----
-36
+33
 
 
 query II
-SELECT * FROM  LINEAGE_35_ORDER_BY_3_0
+SELECT * FROM  LINEAGE_32_ORDER_BY_3_0
 ----
 0	0
 1	1
 
 
 query II
-SELECT * FROM LINEAGE_35_HASH_GROUP_BY_2_0
+SELECT * FROM LINEAGE_32_HASH_GROUP_BY_2_0
 ----
 0	0
 2	0
@@ -143,18 +143,18 @@ PRAGMA disable_optimizer;
 query I
 SELECT count(*) FROM duckdb_queries_list()
 ----
-48
+44
 
 
 query II
-SELECT * FROM  LINEAGE_47_ORDER_BY_3_0
+SELECT * FROM  LINEAGE_43_ORDER_BY_3_0
 ----
 1	0
 0	1
 
 
 query II
-SELECT * FROM LINEAGE_47_HASH_GROUP_BY_2_0
+SELECT * FROM LINEAGE_43_HASH_GROUP_BY_2_0
 ----
 0	0
 1	0
@@ -181,24 +181,24 @@ PRAGMA disable_optimizer;
 query I
 SELECT count(*) FROM duckdb_queries_list()
 ----
-60
+55
 
 
 query II
-SELECT * FROM  LINEAGE_59_ORDER_BY_5_0
+SELECT * FROM  LINEAGE_54_ORDER_BY_5_0
 ----
 0	0
 1	1
 
 
 query II
-SELECT * FROM LINEAGE_59_HASH_GROUP_BY_4_0
+SELECT * FROM LINEAGE_54_HASH_GROUP_BY_4_0
 ----
 0	0
 1	1
 
 query II
-SELECT * FROM LINEAGE_59_HASH_GROUP_BY_2_0
+SELECT * FROM LINEAGE_54_HASH_GROUP_BY_2_0
 ----
 0	0
 2	0

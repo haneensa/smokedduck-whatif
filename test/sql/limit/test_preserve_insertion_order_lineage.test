@@ -64,10 +64,10 @@ PRAGMA disable_lineage;
 query I
 SELECT count(*) FROM duckdb_queries_list()
 ----
-24
+22
 
 query II
-SELECT in_index, out_index FROM LINEAGE_23_STREAMING_LIMIT_1_0
+SELECT in_index, out_index FROM LINEAGE_21_STREAMING_LIMIT_1_0
 ----
 500000	0
 500001	1
@@ -116,10 +116,10 @@ PRAGMA disable_optimizer;
 query I
 SELECT count(*) FROM duckdb_queries_list()
 ----
-36
+33
 
 query II
-SELECT * FROM LINEAGE_35_STREAMING_LIMIT_3_0
+SELECT * FROM LINEAGE_32_STREAMING_LIMIT_3_0
 ----
 0	0
 1	1
@@ -127,7 +127,7 @@ SELECT * FROM LINEAGE_35_STREAMING_LIMIT_3_0
 3	3
 
 query II
-SELECT * FROM LINEAGE_35_FILTER_1_0
+SELECT * FROM LINEAGE_32_FILTER_1_0
 ----
 337	0
 195723	1
@@ -135,7 +135,7 @@ SELECT * FROM LINEAGE_35_FILTER_1_0
 994375	3
 
 query II
-SELECT f.in_index, l.out_index FROM LINEAGE_35_STREAMING_LIMIT_3_0 as l JOIN LINEAGE_35_FILTER_1_0 as f
+SELECT f.in_index, l.out_index FROM LINEAGE_32_STREAMING_LIMIT_3_0 as l JOIN LINEAGE_32_FILTER_1_0 as f
 ON (l.in_index=f.out_index)
 ----
 337	0

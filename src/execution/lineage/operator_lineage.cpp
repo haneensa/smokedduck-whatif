@@ -279,7 +279,7 @@ void HashJoinLog::PostProcess(shared_ptr<LogIndex> logIdx) {
 		}
 	} else {
 		data_ptr_t* right_build_ptr = lineage_binary[lsn].right.get();
-		if (logIdx->right_val_log[thid][lsn].get() == nullptr) {
+		if (logIdx->right_val_log[thid][lsn].get() == nullptr && right_build_ptr != nullptr) {
 			unique_ptr<sel_t[]>  right_val(new sel_t[res_count]);
 			for (idx_t i=0; i < res_count; i++) {
 				std::uintptr_t addrValue = reinterpret_cast<std::uintptr_t>(right_build_ptr[i]);
@@ -489,6 +489,18 @@ void HALog::PostProcess(shared_ptr<LogIndex> logIdx) {
 		}
 		count_so_far += res_count;
 		//}
+	}
+  }
+
+  // handle flush move
+  for (idx_t g=0; g < flushmove_log.size(); g++) {
+	idx_t res_count = flushmove_log[g].count;
+	auto payload = flushmove_log[g].src.get();
+	auto sink_payload = flushmove_log[g].sink.get();
+	for (idx_t j=0; j < res_count; ++j) {
+			logIdx->ha_hash_index[sink_payload[j]].insert(logIdx->ha_hash_index[sink_payload[j]].end(),
+				                                          logIdx->ha_hash_index[payload[j]].begin(),
+				                                          logIdx->ha_hash_index[payload[j]].end());
 	}
   }
   processed = true;

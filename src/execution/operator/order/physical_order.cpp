@@ -104,9 +104,9 @@ SinkResultType PhysicalOrder::Sink(ExecutionContext &context, DataChunk &chunk, 
 	return SinkResultType::NEED_MORE_INPUT;
 }
 
-void PhysicalOrder::Combine(ExecutionContext &context, GlobalSinkState &gstate_p, LocalSinkState &lstate_p) const {
-	auto &gstate = gstate_p.Cast<OrderGlobalSinkState>();
-	auto &lstate = lstate_p.Cast<OrderLocalSinkState>();
+SinkCombineResultType PhysicalOrder::Combine(ExecutionContext &context, OperatorSinkCombineInput &input) const {
+	auto &gstate = input.global_state.Cast<OrderGlobalSinkState>();
+	auto &lstate = input.local_state.Cast<OrderLocalSinkState>();
 #ifdef LINEAGE
 	if (ClientConfig::GetConfig(context.client).trace_lineage)
 		lstate.local_sort_state.log_per_thread = lineage_op->GetLog(context.thread.thread_id);
@@ -116,6 +116,8 @@ void PhysicalOrder::Combine(ExecutionContext &context, GlobalSinkState &gstate_p
 	if (lstate.local_sort_state.log_per_thread )
 		lstate.local_sort_state.log_per_thread = nullptr;
 #endif
+
+	return SinkCombineResultType::FINISHED;
 }
 
 class PhysicalOrderMergeTask : public ExecutorTask {
@@ -174,8 +176,8 @@ public:
 };
 
 SinkFinalizeType PhysicalOrder::Finalize(Pipeline &pipeline, Event &event, ClientContext &context,
-                                         GlobalSinkState &gstate_p) const {
-	auto &state = gstate_p.Cast<OrderGlobalSinkState>();
+                                         OperatorSinkFinalizeInput &input) const {
+	auto &state = input.global_state.Cast<OrderGlobalSinkState>();
 	auto &global_sort_state = state.global_sort_state;
 
 	if (global_sort_state.sorted_blocks.empty()) {

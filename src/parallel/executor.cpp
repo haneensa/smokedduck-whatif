@@ -3,6 +3,7 @@
 #include "duckdb/execution/execution_context.hpp"
 #include "duckdb/execution/operator/helper/physical_result_collector.hpp"
 #include "duckdb/execution/operator/set/physical_recursive_cte.hpp"
+#include "duckdb/execution/operator/set/physical_cte.hpp"
 #include "duckdb/execution/physical_operator.hpp"
 #include "duckdb/main/client_context.hpp"
 #include "duckdb/main/client_data.hpp"
@@ -106,7 +107,7 @@ void Executor::SchedulePipeline(const shared_ptr<MetaPipeline> &meta_pipeline, S
 			                                  group_stack.pipeline_finish_event, base_stack.pipeline_complete_event);
 
 			// dependencies: base_finish -> pipeline_event -> group_finish
-			pipeline_stack.pipeline_event.AddDependency(base_stack.pipeline_event);
+			pipeline_stack.pipeline_event.AddDependency(base_stack.pipeline_finish_event);
 			group_stack.pipeline_finish_event.AddDependency(pipeline_stack.pipeline_event);
 
 			// add pipeline stack to event map
@@ -267,6 +268,10 @@ void Executor::AddRecursiveCTE(PhysicalOperator &rec_cte) {
 	recursive_ctes.push_back(rec_cte);
 }
 
+void Executor::AddMaterializedCTE(PhysicalOperator &mat_cte) {
+	materialized_ctes.push_back(mat_cte);
+}
+
 void Executor::ReschedulePipelines(const vector<shared_ptr<MetaPipeline>> &pipelines_p,
                                    vector<shared_ptr<Event>> &events_p) {
 	ScheduleEventData event_data(pipelines_p, events_p, false);
@@ -310,9 +315,9 @@ void Executor::VerifyPipelines() {
 #endif
 }
 
-void Executor::Initialize(unique_ptr<PhysicalOperator> physical_plan) {
+void Executor::Initialize(unique_ptr<PhysicalOperator> physical_plan_p) {
 	Reset();
-	owned_plan = std::move(physical_plan);
+	owned_plan = std::move(physical_plan_p);
 	InitializeInternal(*owned_plan);
 }
 
@@ -342,6 +347,12 @@ void Executor::InitializeInternal(PhysicalOperator &plan) {
 		for (auto &rec_cte_ref : recursive_ctes) {
 			auto &rec_cte = rec_cte_ref.get().Cast<PhysicalRecursiveCTE>();
 			rec_cte.recursive_meta_pipeline->Ready();
+		}
+
+		// ready materialized cte pipelines too
+		for (auto &mat_cte_ref : materialized_ctes) {
+			auto &mat_cte = mat_cte_ref.get().Cast<PhysicalCTE>();
+			mat_cte.recursive_meta_pipeline->Ready();
 		}
 
 		// set root pipelines, i.e., all pipelines that end in the final sink
@@ -381,6 +392,10 @@ void Executor::CancelTasks() {
 			auto &rec_cte = rec_cte_ref.get().Cast<PhysicalRecursiveCTE>();
 			rec_cte.recursive_meta_pipeline.reset();
 		}
+		for (auto &mat_cte_ref : materialized_ctes) {
+			auto &mat_cte = mat_cte_ref.get().Cast<PhysicalCTE>();
+			mat_cte.recursive_meta_pipeline.reset();
+		}
 		pipelines.clear();
 		root_pipelines.clear();
 		to_be_rescheduled_tasks.clear();
@@ -400,42 +415,42 @@ void Executor::CancelTasks() {
 void Executor::WorkOnTasks() {
 	auto &scheduler = TaskScheduler::GetScheduler(context);
 
-	shared_ptr<Task> task;
-	while (scheduler.GetTaskFromProducer(*producer, task)) {
-		auto res = task->Execute(TaskExecutionMode::PROCESS_ALL);
+	shared_ptr<Task> task_from_producer;
+	while (scheduler.GetTaskFromProducer(*producer, task_from_producer)) {
+		auto res = task_from_producer->Execute(TaskExecutionMode::PROCESS_ALL);
 		if (res == TaskExecutionResult::TASK_BLOCKED) {
-			task->Deschedule();
+			task_from_producer->Deschedule();
 		}
-		task.reset();
+		task_from_producer.reset();
 	}
 }
 
-void Executor::RescheduleTask(shared_ptr<Task> &task) {
+void Executor::RescheduleTask(shared_ptr<Task> &task_p) {
 	// This function will spin lock until the task provided is added to the to_be_rescheduled_tasks
 	while (true) {
 		lock_guard<mutex> l(executor_lock);
 		if (cancelled) {
 			return;
 		}
-		auto entry = to_be_rescheduled_tasks.find(task.get());
+		auto entry = to_be_rescheduled_tasks.find(task_p.get());
 		if (entry != to_be_rescheduled_tasks.end()) {
 			auto &scheduler = TaskScheduler::GetScheduler(context);
-			to_be_rescheduled_tasks.erase(task.get());
-			scheduler.ScheduleTask(GetToken(), task);
+			to_be_rescheduled_tasks.erase(task_p.get());
+			scheduler.ScheduleTask(GetToken(), task_p);
 			break;
 		}
 	}
 }
 
-void Executor::AddToBeRescheduled(shared_ptr<Task> &task) {
+void Executor::AddToBeRescheduled(shared_ptr<Task> &task_p) {
 	lock_guard<mutex> l(executor_lock);
 	if (cancelled) {
 		return;
 	}
-	if (to_be_rescheduled_tasks.find(task.get()) != to_be_rescheduled_tasks.end()) {
+	if (to_be_rescheduled_tasks.find(task_p.get()) != to_be_rescheduled_tasks.end()) {
 		return;
 	}
-	to_be_rescheduled_tasks[task.get()] = std::move(task);
+	to_be_rescheduled_tasks[task_p.get()] = std::move(task_p);
 }
 
 bool Executor::ExecutionIsFinished() {
@@ -443,6 +458,8 @@ bool Executor::ExecutionIsFinished() {
 }
 
 PendingExecutionResult Executor::ExecuteTask() {
+	// Only executor should return NO_TASKS_AVAILABLE
+	D_ASSERT(execution_result != PendingExecutionResult::NO_TASKS_AVAILABLE);
 	if (execution_result != PendingExecutionResult::RESULT_NOT_READY) {
 		return execution_result;
 	}
@@ -452,6 +469,10 @@ PendingExecutionResult Executor::ExecuteTask() {
 		// there are! if we don't already have a task, fetch one
 		if (!task) {
 			scheduler.GetTaskFromProducer(*producer, task);
+		}
+		if (!task && !HasError()) {
+			// there are no tasks to be scheduled and there are tasks blocked
+			return PendingExecutionResult::NO_TASKS_AVAILABLE;
 		}
 		if (task) {
 			// if we have a task, partially process it
@@ -500,7 +521,7 @@ void Executor::Reset() {
 	root_pipeline_idx = 0;
 	completed_pipelines = 0;
 	total_pipelines = 0;
-	exceptions.clear();
+	error_manager.Reset();
 	pipelines.clear();
 	events.clear();
 	to_be_rescheduled_tasks.clear();
@@ -533,35 +554,32 @@ vector<LogicalType> Executor::GetTypes() {
 }
 
 void Executor::PushError(PreservedError exception) {
-	lock_guard<mutex> elock(error_lock);
 	// interrupt execution of any other pipelines that belong to this executor
 	context.interrupted = true;
 	// push the exception onto the stack
-	exceptions.push_back(std::move(exception));
+	error_manager.PushError(std::move(exception));
 }
 
 bool Executor::HasError() {
-	lock_guard<mutex> elock(error_lock);
-	return !exceptions.empty();
+	return error_manager.HasError();
 }
 
 void Executor::ThrowException() {
-	lock_guard<mutex> elock(error_lock);
-	D_ASSERT(!exceptions.empty());
-	auto &entry = exceptions[0];
-	entry.Throw();
+	error_manager.ThrowException();
 }
 
 void Executor::Flush(ThreadContext &tcontext) {
 	profiler->Flush(tcontext.profiler);
 }
 
-bool Executor::GetPipelinesProgress(double &current_progress) { // LCOV_EXCL_START
+bool Executor::GetPipelinesProgress(double &current_progress, uint64_t &current_cardinality,
+                                    uint64_t &total_cardinality) { // LCOV_EXCL_START
 	lock_guard<mutex> elock(executor_lock);
 
 	vector<double> progress;
 	vector<idx_t> cardinality;
-	idx_t total_cardinality = 0;
+	total_cardinality = 0;
+	current_cardinality = 0;
 	for (auto &pipeline : pipelines) {
 		double child_percentage;
 		idx_t child_cardinality;
@@ -573,9 +591,16 @@ bool Executor::GetPipelinesProgress(double &current_progress) { // LCOV_EXCL_STA
 		cardinality.push_back(child_cardinality);
 		total_cardinality += child_cardinality;
 	}
+	if (total_cardinality == 0) {
+		return true;
+	}
 	current_progress = 0;
+
 	for (size_t i = 0; i < progress.size(); i++) {
+		D_ASSERT(progress[i] <= 100);
+		current_cardinality += double(progress[i]) * double(cardinality[i]) / double(100);
 		current_progress += progress[i] * double(cardinality[i]) / double(total_cardinality);
+		D_ASSERT(current_cardinality <= total_cardinality);
 	}
 	return true;
 } // LCOV_EXCL_STOP

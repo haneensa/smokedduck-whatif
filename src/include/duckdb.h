@@ -100,6 +100,8 @@ typedef enum DUCKDB_TYPE {
 	DUCKDB_TYPE_INTERVAL,
 	// duckdb_hugeint
 	DUCKDB_TYPE_HUGEINT,
+	// duckdb_uhugeint
+	DUCKDB_TYPE_UHUGEINT,
 	// const char*
 	DUCKDB_TYPE_VARCHAR,
 	// duckdb_blob
@@ -179,6 +181,11 @@ typedef struct {
 } duckdb_hugeint;
 
 typedef struct {
+	uint64_t lower;
+	uint64_t upper;
+} duckdb_uhugeint;
+
+typedef struct {
 	uint8_t width;
 	uint8_t scale;
 
@@ -190,6 +197,11 @@ typedef struct {
 	idx_t size;
 } duckdb_string;
 
+typedef struct {
+	double percentage;
+	uint64_t rows_processed;
+	uint64_t total_rows_to_process;
+} duckdb_query_progress_type;
 /*
     The internal data representation of a VARCHAR/BLOB column
 */
@@ -279,6 +291,9 @@ typedef struct _duckdb_appender {
 typedef struct _duckdb_arrow {
 	void *__arrw;
 } * duckdb_arrow;
+typedef struct _duckdb_arrow_stream {
+	void *__arrwstr;
+} * duckdb_arrow_stream;
 typedef struct _duckdb_config {
 	void *__cnfg;
 } * duckdb_config;
@@ -305,15 +320,55 @@ typedef enum { DuckDBSuccess = 0, DuckDBError = 1 } duckdb_state;
 typedef enum {
 	DUCKDB_PENDING_RESULT_READY = 0,
 	DUCKDB_PENDING_RESULT_NOT_READY = 1,
-	DUCKDB_PENDING_ERROR = 2
+	DUCKDB_PENDING_ERROR = 2,
+	DUCKDB_PENDING_NO_TASKS_AVAILABLE = 3
 } duckdb_pending_state;
+
+typedef enum {
+	DUCKDB_RESULT_TYPE_INVALID,
+	DUCKDB_RESULT_TYPE_CHANGED_ROWS,
+	DUCKDB_RESULT_TYPE_NOTHING,
+	DUCKDB_RESULT_TYPE_QUERY_RESULT,
+} duckdb_result_type;
+
+typedef enum {
+	DUCKDB_STATEMENT_TYPE_INVALID,
+	DUCKDB_STATEMENT_TYPE_SELECT,
+	DUCKDB_STATEMENT_TYPE_INSERT,
+	DUCKDB_STATEMENT_TYPE_UPDATE,
+	DUCKDB_STATEMENT_TYPE_EXPLAIN,
+	DUCKDB_STATEMENT_TYPE_DELETE,
+	DUCKDB_STATEMENT_TYPE_PREPARE,
+	DUCKDB_STATEMENT_TYPE_CREATE,
+	DUCKDB_STATEMENT_TYPE_EXECUTE,
+	DUCKDB_STATEMENT_TYPE_ALTER,
+	DUCKDB_STATEMENT_TYPE_TRANSACTION,
+	DUCKDB_STATEMENT_TYPE_COPY,
+	DUCKDB_STATEMENT_TYPE_ANALYZE,
+	DUCKDB_STATEMENT_TYPE_VARIABLE_SET,
+	DUCKDB_STATEMENT_TYPE_CREATE_FUNC,
+	DUCKDB_STATEMENT_TYPE_DROP,
+	DUCKDB_STATEMENT_TYPE_EXPORT,
+	DUCKDB_STATEMENT_TYPE_PRAGMA,
+	DUCKDB_STATEMENT_TYPE_SHOW,
+	DUCKDB_STATEMENT_TYPE_VACUUM,
+	DUCKDB_STATEMENT_TYPE_CALL,
+	DUCKDB_STATEMENT_TYPE_SET,
+	DUCKDB_STATEMENT_TYPE_LOAD,
+	DUCKDB_STATEMENT_TYPE_RELATION,
+	DUCKDB_STATEMENT_TYPE_EXTENSION,
+	DUCKDB_STATEMENT_TYPE_LOGICAL_PLAN,
+	DUCKDB_STATEMENT_TYPE_ATTACH,
+	DUCKDB_STATEMENT_TYPE_DETACH,
+	DUCKDB_STATEMENT_TYPE_MULTI,
+} duckdb_statement_type;
 
 //===--------------------------------------------------------------------===//
 // Open/Connect
 //===--------------------------------------------------------------------===//
 
 /*!
-Creates a new database or opens an existing database file stored at the the given path.
+Creates a new database or opens an existing database file stored at the given path.
 If no path is given a new in-memory database is created instead.
 The instantiated database should be closed with 'duckdb_close'
 
@@ -324,7 +379,7 @@ The instantiated database should be closed with 'duckdb_close'
 DUCKDB_API duckdb_state duckdb_open(const char *path, duckdb_database *out_database);
 
 /*!
-Extended version of duckdb_open. Creates a new database or opens an existing database file stored at the the given path.
+Extended version of duckdb_open. Creates a new database or opens an existing database file stored at the given path.
 
 * path: Path to the database file on disk, or `nullptr` or `:memory:` to open an in-memory database.
 * out_database: The result database object.
@@ -356,6 +411,21 @@ The instantiated connection should be closed using 'duckdb_disconnect'
 * returns: `DuckDBSuccess` on success or `DuckDBError` on failure.
 */
 DUCKDB_API duckdb_state duckdb_connect(duckdb_database database, duckdb_connection *out_connection);
+
+/*!
+Interrupt running query
+
+* connection: The connection to interruot
+*/
+DUCKDB_API void duckdb_interrupt(duckdb_connection connection);
+
+/*!
+Get progress of the running query
+
+* connection: The working connection
+* returns: -1 if no progress or a percentage of the progress
+*/
+DUCKDB_API duckdb_query_progress_type duckdb_query_progress(duckdb_connection connection);
 
 /*!
 Closes the specified connection and de-allocates all memory allocated for that connection.
@@ -476,6 +546,14 @@ Returns `DUCKDB_TYPE_INVALID` if the column is out of range.
 * returns: The column type of the specified column.
 */
 DUCKDB_API duckdb_type duckdb_column_type(duckdb_result *result, idx_t col);
+
+/*!
+Returns the statement type of the statement that was executed
+
+* result: The result object to fetch the statement type from.
+ * returns: duckdb_statement_type value or DUCKDB_STATEMENT_TYPE_INVALID
+ */
+DUCKDB_API duckdb_statement_type duckdb_result_statement_type(duckdb_result result);
 
 /*!
 Returns the logical column type of the specified column.
@@ -608,6 +686,14 @@ Returns the number of data chunks present in the result.
 */
 DUCKDB_API idx_t duckdb_result_chunk_count(duckdb_result result);
 
+/*!
+Returns the return_type of the given result, or DUCKDB_RETURN_TYPE_INVALID on error
+
+* result: The result object
+* returns: The return_type
+ */
+DUCKDB_API duckdb_result_type duckdb_result_return_type(duckdb_result result);
+
 // Safe fetch functions
 // These functions will perform conversions if necessary.
 // On failure (e.g. if conversion cannot be performed or if the value is NULL) a default value is returned.
@@ -643,6 +729,11 @@ DUCKDB_API int64_t duckdb_value_int64(duckdb_result *result, idx_t col, idx_t ro
  * returns: The duckdb_hugeint value at the specified location, or 0 if the value cannot be converted.
  */
 DUCKDB_API duckdb_hugeint duckdb_value_hugeint(duckdb_result *result, idx_t col, idx_t row);
+
+/*!
+ * returns: The duckdb_uhugeint value at the specified location, or 0 if the value cannot be converted.
+ */
+DUCKDB_API duckdb_uhugeint duckdb_value_uhugeint(duckdb_result *result, idx_t col, idx_t row);
 
 /*!
  * returns: The duckdb_decimal value at the specified location, or 0 if the value cannot be converted.
@@ -860,6 +951,27 @@ If the conversion fails because the double value is too big, or the width/scale 
 DUCKDB_API duckdb_decimal duckdb_double_to_decimal(double val, uint8_t width, uint8_t scale);
 
 //===--------------------------------------------------------------------===//
+// Unsigned Hugeint Helpers
+//===--------------------------------------------------------------------===//
+/*!
+Converts a duckdb_uhugeint object (as obtained from a `DUCKDB_TYPE_UHUGEINT` column) into a double.
+
+* val: The uhugeint value.
+* returns: The converted `double` element.
+*/
+DUCKDB_API double duckdb_uhugeint_to_double(duckdb_uhugeint val);
+
+/*!
+Converts a double value to a duckdb_uhugeint object.
+
+If the conversion fails because the double value is too big the result will be 0.
+
+* val: The double value.
+* returns: The converted `duckdb_uhugeint` element.
+*/
+DUCKDB_API duckdb_uhugeint duckdb_double_to_uhugeint(double val);
+
+//===--------------------------------------------------------------------===//
 // Decimal Helpers
 //===--------------------------------------------------------------------===//
 /*!
@@ -927,6 +1039,16 @@ Returns 0 if the query was not successfully prepared.
 DUCKDB_API idx_t duckdb_nparams(duckdb_prepared_statement prepared_statement);
 
 /*!
+Returns the name used to identify the parameter
+The returned string should be freed using `duckdb_free`.
+
+Returns NULL if the index is out of range for the provided prepared statement.
+
+* prepared_statement: The prepared statement for which to get the parameter name from.
+*/
+DUCKDB_API const char *duckdb_parameter_name(duckdb_prepared_statement prepared_statement, idx_t index);
+
+/*!
 Returns the parameter type for the parameter at the given index.
 
 Returns `DUCKDB_TYPE_INVALID` if the parameter index is out of range or the statement was not successfully prepared.
@@ -941,6 +1063,26 @@ DUCKDB_API duckdb_type duckdb_param_type(duckdb_prepared_statement prepared_stat
 Clear the params bind to the prepared statement.
 */
 DUCKDB_API duckdb_state duckdb_clear_bindings(duckdb_prepared_statement prepared_statement);
+
+/*!
+Returns the statement type of the statement to be executed
+
+ * statement: The prepared statement.
+ * returns: duckdb_statement_type value or DUCKDB_STATEMENT_TYPE_INVALID
+ */
+DUCKDB_API duckdb_statement_type duckdb_prepared_statement_type(duckdb_prepared_statement statement);
+
+/*!
+Binds a value to the prepared statement at the specified index.
+*/
+DUCKDB_API duckdb_state duckdb_bind_value(duckdb_prepared_statement prepared_statement, idx_t param_idx,
+                                          duckdb_value val);
+
+/*!
+Retrieve the index of the parameter for the prepared statement, identified by name
+*/
+DUCKDB_API duckdb_state duckdb_bind_parameter_index(duckdb_prepared_statement prepared_statement, idx_t *param_idx_out,
+                                                    const char *name);
 
 /*!
 Binds a bool value to the prepared statement at the specified index.
@@ -968,10 +1110,15 @@ Binds an int64_t value to the prepared statement at the specified index.
 DUCKDB_API duckdb_state duckdb_bind_int64(duckdb_prepared_statement prepared_statement, idx_t param_idx, int64_t val);
 
 /*!
-Binds an duckdb_hugeint value to the prepared statement at the specified index.
+Binds a duckdb_hugeint value to the prepared statement at the specified index.
 */
 DUCKDB_API duckdb_state duckdb_bind_hugeint(duckdb_prepared_statement prepared_statement, idx_t param_idx,
                                             duckdb_hugeint val);
+/*!
+Binds an duckdb_uhugeint value to the prepared statement at the specified index.
+*/
+DUCKDB_API duckdb_state duckdb_bind_uhugeint(duckdb_prepared_statement prepared_statement, idx_t param_idx,
+                                             duckdb_uhugeint val);
 /*!
 Binds a duckdb_decimal value to the prepared statement at the specified index.
 */
@@ -999,12 +1146,12 @@ Binds an uint64_t value to the prepared statement at the specified index.
 DUCKDB_API duckdb_state duckdb_bind_uint64(duckdb_prepared_statement prepared_statement, idx_t param_idx, uint64_t val);
 
 /*!
-Binds an float value to the prepared statement at the specified index.
+Binds a float value to the prepared statement at the specified index.
 */
 DUCKDB_API duckdb_state duckdb_bind_float(duckdb_prepared_statement prepared_statement, idx_t param_idx, float val);
 
 /*!
-Binds an double value to the prepared statement at the specified index.
+Binds a double value to the prepared statement at the specified index.
 */
 DUCKDB_API duckdb_state duckdb_bind_double(duckdb_prepared_statement prepared_statement, idx_t param_idx, double val);
 
@@ -1069,6 +1216,20 @@ DUCKDB_API duckdb_state duckdb_execute_prepared(duckdb_prepared_statement prepar
                                                 duckdb_result *out_result);
 
 /*!
+Executes the prepared statement with the given bound parameters, and returns an optionally-streaming query result.
+To determine if the resulting query was in fact streamed, use `duckdb_result_is_streaming`
+
+This method can be called multiple times for each prepared statement, and the parameters can be modified
+between calls to this function.
+
+* prepared_statement: The prepared statement to execute.
+* out_result: The query result.
+* returns: `DuckDBSuccess` on success or `DuckDBError` on failure.
+*/
+DUCKDB_API duckdb_state duckdb_execute_prepared_streaming(duckdb_prepared_statement prepared_statement,
+                                                          duckdb_result *out_result);
+
+/*!
 Executes the prepared statement with the given bound parameters, and returns an arrow query result.
 
 * prepared_statement: The prepared statement to execute.
@@ -1077,6 +1238,31 @@ Executes the prepared statement with the given bound parameters, and returns an 
 */
 DUCKDB_API duckdb_state duckdb_execute_prepared_arrow(duckdb_prepared_statement prepared_statement,
                                                       duckdb_arrow *out_result);
+
+/*!
+Scans the Arrow stream and creates a view with the given name.
+
+* connection: The connection on which to execute the scan.
+* table_name: Name of the temporary view to create.
+* arrow: Arrow stream wrapper.
+* returns: `DuckDBSuccess` on success or `DuckDBError` on failure.
+*/
+DUCKDB_API duckdb_state duckdb_arrow_scan(duckdb_connection connection, const char *table_name,
+                                          duckdb_arrow_stream arrow);
+
+/*!
+Scans the Arrow array and creates a view with the given name.
+
+* connection: The connection on which to execute the scan.
+* table_name: Name of the temporary view to create.
+* arrow_schema: Arrow schema wrapper.
+* arrow_array: Arrow array wrapper.
+* out_stream: Output array stream that wraps around the passed schema, for releasing/deleting once done.
+* returns: `DuckDBSuccess` on success or `DuckDBError` on failure.
+*/
+DUCKDB_API duckdb_state duckdb_arrow_array_scan(duckdb_connection connection, const char *table_name,
+                                                duckdb_arrow_schema arrow_schema, duckdb_arrow_array arrow_array,
+                                                duckdb_arrow_stream *out_stream);
 
 //===--------------------------------------------------------------------===//
 // Extract Statements
@@ -1201,6 +1387,15 @@ Otherwise, all remaining tasks must be executed first.
 */
 DUCKDB_API duckdb_state duckdb_execute_pending(duckdb_pending_result pending_result, duckdb_result *out_result);
 
+/*!
+Returns whether a duckdb_pending_state is finished executing. For example if `pending_state` is
+DUCKDB_PENDING_RESULT_READY, this function will return true.
+
+* pending_state: The pending state on which to decide whether to finish execution.
+* returns: Boolean indicating pending execution should be considered finished.
+*/
+DUCKDB_API bool duckdb_pending_execution_is_finished(duckdb_pending_state pending_state);
+
 //===--------------------------------------------------------------------===//
 // Value Interface
 //===--------------------------------------------------------------------===//
@@ -1237,6 +1432,25 @@ Creates a value from an int64
 DUCKDB_API duckdb_value duckdb_create_int64(int64_t val);
 
 /*!
+Creates a struct value from a type and an array of values
+
+* type: The type of the struct
+* values: The values for the struct fields
+* returns: The value. This must be destroyed with `duckdb_destroy_value`.
+*/
+DUCKDB_API duckdb_value duckdb_create_struct_value(duckdb_logical_type type, duckdb_value *values);
+
+/*!
+Creates a list value from a type and an array of values of length `value_count`
+
+* type: The type of the list
+* values: The values for the list
+* value_count: The number of values in the list
+* returns: The value. This must be destroyed with `duckdb_destroy_value`.
+*/
+DUCKDB_API duckdb_value duckdb_create_list_value(duckdb_logical_type type, duckdb_value *values, idx_t value_count);
+
+/*!
 Obtains a string representation of the given value.
 The result must be destroyed with `duckdb_free`.
 
@@ -1269,6 +1483,15 @@ This should not be used with `DUCKDB_TYPE_DECIMAL`.
 DUCKDB_API duckdb_logical_type duckdb_create_logical_type(duckdb_type type);
 
 /*!
+Returns the alias of a duckdb_logical_type, if one is set, else `NULL`
+You must free the result.
+
+* type: The logical type to return the alias of
+* returns: The alias or `NULL`
+ */
+DUCKDB_API char *duckdb_logical_type_get_alias(duckdb_logical_type type);
+
+/*!
 Creates a list type from its child type.
 The resulting type should be destroyed with `duckdb_destroy_logical_type`.
 
@@ -1296,6 +1519,29 @@ The resulting type should be destroyed with `duckdb_destroy_logical_type`.
 */
 DUCKDB_API duckdb_logical_type duckdb_create_union_type(duckdb_logical_type member_types, const char **member_names,
                                                         idx_t member_count);
+
+/*!
+Creates a STRUCT type from the passed member name and type arrays.
+The resulting type should be destroyed with `duckdb_destroy_logical_type`.
+
+* member_types: The array of types that the struct should consist of.
+* member_names: The array of names that the struct should consist of.
+* member_count: The number of members that were specified for both arrays.
+* returns: The logical type.
+*/
+DUCKDB_API duckdb_logical_type duckdb_create_struct_type(duckdb_logical_type *member_types, const char **member_names,
+                                                         idx_t member_count);
+
+/*!
+Creates an ENUM type from the passed member name array.
+The resulting type should be destroyed with `duckdb_destroy_logical_type`.
+
+* enum_name: The name of the enum.
+* member_names: The array of names that the enum should consist of.
+* member_count: The number of elements that were specified in the array.
+* returns: The logical type.
+*/
+DUCKDB_API duckdb_logical_type duckdb_create_enum_type(const char **member_names, idx_t member_count);
 
 /*!
 Creates a `duckdb_logical_type` of type decimal with the specified width and scale
@@ -1653,7 +1899,7 @@ DUCKDB_API duckdb_vector duckdb_struct_vector_get_child(duckdb_vector vector, id
 /*!
 Returns whether or not a row is valid (i.e. not NULL) in the given validity mask.
 
-* validity: The validity mask, as obtained through `duckdb_data_chunk_get_validity`
+* validity: The validity mask, as obtained through `duckdb_vector_get_validity`
 * row: The row index
 * returns: true if the row is valid, false otherwise
 */
@@ -1662,10 +1908,10 @@ DUCKDB_API bool duckdb_validity_row_is_valid(uint64_t *validity, idx_t row);
 /*!
 In a validity mask, sets a specific row to either valid or invalid.
 
-Note that `duckdb_data_chunk_ensure_validity_writable` should be called before calling `duckdb_data_chunk_get_validity`,
+Note that `duckdb_vector_ensure_validity_writable` should be called before calling `duckdb_vector_get_validity`,
 to ensure that there is a validity mask to write to.
 
-* validity: The validity mask, as obtained through `duckdb_data_chunk_get_validity`.
+* validity: The validity mask, as obtained through `duckdb_vector_get_validity`.
 * row: The row index
 * valid: Whether or not to set the row to valid, or invalid
 */
@@ -2171,6 +2417,10 @@ DUCKDB_API duckdb_state duckdb_append_uint32(duckdb_appender appender, uint32_t 
 Append a uint64_t value to the appender.
 */
 DUCKDB_API duckdb_state duckdb_append_uint64(duckdb_appender appender, uint64_t value);
+/*!
+Append a duckdb_uhugeint value to the appender.
+*/
+DUCKDB_API duckdb_state duckdb_append_uhugeint(duckdb_appender appender, duckdb_uhugeint value);
 
 /*!
 Append a float value to the appender.
@@ -2256,7 +2506,25 @@ Fetch the internal arrow schema from the arrow result.
 DUCKDB_API duckdb_state duckdb_query_arrow_schema(duckdb_arrow result, duckdb_arrow_schema *out_schema);
 
 /*!
-Fetch an internal arrow array from the arrow result.
+Fetch the internal arrow schema from the prepared statement.
+
+* result: The prepared statement to fetch the schema from.
+* out_schema: The output schema.
+* returns: `DuckDBSuccess` on success or `DuckDBError` on failure.
+*/
+DUCKDB_API duckdb_state duckdb_prepared_arrow_schema(duckdb_prepared_statement prepared,
+                                                     duckdb_arrow_schema *out_schema);
+/*!
+Convert a data chunk into an arrow struct array.
+
+* result: The result object the data chunk have been fetched from.
+* chunk: The data chunk to convert.
+* out_array: The output array.
+*/
+DUCKDB_API void duckdb_result_arrow_array(duckdb_result result, duckdb_data_chunk chunk, duckdb_arrow_array *out_array);
+
+/*!
+Fetch an internal arrow struct array from the arrow result.
 
 This function can be called multiple time to get next chunks, which will free the previous out_array.
 So consume the out_array before calling this function again.

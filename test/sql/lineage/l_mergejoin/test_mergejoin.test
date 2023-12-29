@@ -456,7 +456,9 @@ PRAGMA disable_optimizer;
 
 
 query III
-select rhs_index, lhs_index, out_index  from LINEAGE_1_PIECEWISE_MERGE_JOIN_2_0
+select s2.in_index, s1.in_index, j.out_index from LINEAGE_1_PIECEWISE_MERGE_JOIN_2_0 j
+JOIN LINEAGE_1_SEQ_SCAN_0_0 s1 ON (j.lhs_index=s1.out_index)
+JOIN LINEAGE_1_SEQ_SCAN_1_0 s2 ON (j.rhs_index=s2.out_index);
 ----
 8	15	0
 7	15	1
@@ -840,7 +842,8 @@ NULL	7	13
 
 
 query III
-select rhs_index, lhs_index, out_index  from LINEAGE_6_PIECEWISE_MERGE_JOIN_2_0
+select rhs_index, s1.in_index, j.out_index from LINEAGE_6_PIECEWISE_MERGE_JOIN_2_0 j
+JOIN LINEAGE_6_SEQ_SCAN_0_0 s1 ON (j.lhs_index=s1.out_index)
 ----
 NULL	0	0
 NULL	1	1

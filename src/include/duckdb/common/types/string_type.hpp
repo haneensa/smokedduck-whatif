@@ -80,7 +80,11 @@ public:
 	}
 
 	const char *GetPrefix() const {
-		return value.pointer.prefix;
+		return value.inlined.inlined;
+	}
+
+	char *GetPrefixWriteable() const {
+		return (char *)value.inlined.inlined;
 	}
 
 	idx_t GetSize() const {
@@ -93,6 +97,11 @@ public:
 
 	explicit operator string() const {
 		return GetString();
+	}
+
+	char *GetPointer() const {
+		D_ASSERT(!IsInlined());
+		return value.pointer.ptr;
 	}
 
 	void SetPointer(char *new_ptr) {
