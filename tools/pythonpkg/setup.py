@@ -56,7 +56,7 @@ class build_ext(CompilerLauncherMixin, _build_ext):
     pass
 
 
-lib_name = 'duckdb'
+lib_name = 'smokedduck'
 
 extensions = ['parquet', 'icu', 'fts', 'tpch', 'tpcds', 'json']
 
