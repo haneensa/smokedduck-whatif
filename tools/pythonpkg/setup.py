@@ -297,7 +297,7 @@ setup(
     use_scm_version = setuptools_scm_conf,
     tests_require=['google-cloud-storage', 'mypy', 'pytest'],
     classifiers = [
-        'Topic :: Database :: Database Engines/Servers :: Provenance',
+        'Topic :: Database :: Database Engines/Servers',
         'Intended Audience :: Developers',
         'License :: OSI Approved :: MIT License',
     ],
