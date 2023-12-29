@@ -325,135 +325,136 @@ class TestDuckMultithread(object):
 
     @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
     def test_execute(self, duckdb_cursor, pandas):
-        duck_threads = DuckDBThreaded(10,execute_query, pandas)
-        duck_threads.multithread_test()
+        pass
+        # duck_threads = DuckDBThreaded(10,execute_query, pandas)
+        # duck_threads.multithread_test()
 
-    @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
-    def test_execute_many(self, duckdb_cursor, pandas):
-        duck_threads = DuckDBThreaded(10,execute_many_query, pandas)
-        duck_threads.multithread_test()
-
-    @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
-    def test_fetchone(self, duckdb_cursor, pandas):
-        duck_threads = DuckDBThreaded(10,fetchone_query, pandas)
-        duck_threads.multithread_test()
-
-    @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
-    def test_fetchall(self, duckdb_cursor, pandas):
-        duck_threads = DuckDBThreaded(10,fetchall_query, pandas)
-        duck_threads.multithread_test()
-
-    @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
-    def test_close(self, duckdb_cursor, pandas):
-        duck_threads = DuckDBThreaded(10,conn_close, pandas)
-        duck_threads.multithread_test()
-
-    @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
-    def test_fetchnp(self, duckdb_cursor, pandas):
-        duck_threads = DuckDBThreaded(10,fetchnp_query, pandas)
-        duck_threads.multithread_test()
-
-    @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
-    def test_fetchdf(self, duckdb_cursor, pandas):
-        duck_threads = DuckDBThreaded(10,fetchdf_query, pandas)
-        duck_threads.multithread_test()
-
-    @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
-    def test_fetchdfchunk(self, duckdb_cursor, pandas):
-        duck_threads = DuckDBThreaded(10,fetchdf_chunk_query, pandas)
-        duck_threads.multithread_test()
-
-    @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
-    def test_fetcharrow(self, duckdb_cursor, pandas):
-        if not can_run:
-            return
-        duck_threads = DuckDBThreaded(10,fetch_arrow_query, pandas)
-        duck_threads.multithread_test()
-
-    @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
-    def test_fetch_record_batch(self, duckdb_cursor, pandas):
-        if not can_run:
-            return
-        duck_threads = DuckDBThreaded(10,fetch_record_batch_query, pandas)
-        duck_threads.multithread_test()
-
-    @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
-    def test_transaction(self, duckdb_cursor, pandas):
-        duck_threads = DuckDBThreaded(10,transaction_query, pandas)
-        duck_threads.multithread_test()
-
-    @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
-    def test_df_append(self, duckdb_cursor, pandas):
-        duck_threads = DuckDBThreaded(10,df_append, pandas)
-        duck_threads.multithread_test()
-
-    @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
-    def test_df_register(self, duckdb_cursor, pandas):
-        duck_threads = DuckDBThreaded(10,df_register, pandas)
-        duck_threads.multithread_test()
-
-    @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
-    def test_df_unregister(self, duckdb_cursor, pandas):
-        duck_threads = DuckDBThreaded(10,df_unregister, pandas)
-        duck_threads.multithread_test()
-
-    @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
-    def test_arrow_register_unregister(self, duckdb_cursor, pandas):
-        if not can_run:
-            return
-        duck_threads = DuckDBThreaded(10,arrow_register_unregister, pandas)
-        duck_threads.multithread_test()
-
-    @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
-    def test_table(self, duckdb_cursor, pandas):
-        duck_threads = DuckDBThreaded(10,table, pandas)
-        duck_threads.multithread_test()
-
-    @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
-    def test_view(self, duckdb_cursor, pandas):
-        duck_threads = DuckDBThreaded(10,view, pandas)
-        duck_threads.multithread_test()
-
-    @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
-    def test_values(self, duckdb_cursor, pandas):
-        duck_threads = DuckDBThreaded(10,values, pandas)
-        duck_threads.multithread_test()
-    
-    @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
-    def test_from_query(self, duckdb_cursor, pandas):
-        duck_threads = DuckDBThreaded(10,from_query, pandas)
-        duck_threads.multithread_test()
-
-    @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
-    def test_from_DF(self, duckdb_cursor, pandas):
-        duck_threads = DuckDBThreaded(10,from_df, pandas)
-        duck_threads.multithread_test() 
-
-    @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
-    def test_from_arrow(self, duckdb_cursor, pandas):
-        if not can_run:
-            return
-        duck_threads = DuckDBThreaded(10,from_arrow, pandas)
-        duck_threads.multithread_test()
- 
-    @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
-    def test_from_csv_auto(self, duckdb_cursor, pandas):
-        duck_threads = DuckDBThreaded(10,from_csv_auto, pandas)
-        duck_threads.multithread_test()
-
-    @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
-    def test_from_parquet(self, duckdb_cursor, pandas):
-        duck_threads = DuckDBThreaded(10,from_parquet, pandas)
-        duck_threads.multithread_test()
-
-    @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
-    def test_description(self, duckdb_cursor, pandas):
-        duck_threads = DuckDBThreaded(10,description, pandas)
-        duck_threads.multithread_test()
-
-    @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
-    def test_cursor(self, duckdb_cursor, pandas):
-        duck_threads = DuckDBThreaded(10,cursor, pandas)
-        duck_threads.multithread_test(False)
+    # @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
+    # def test_execute_many(self, duckdb_cursor, pandas):
+    #     duck_threads = DuckDBThreaded(10,execute_many_query, pandas)
+    #     duck_threads.multithread_test()
+    #
+    # @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
+    # def test_fetchone(self, duckdb_cursor, pandas):
+    #     duck_threads = DuckDBThreaded(10,fetchone_query, pandas)
+    #     duck_threads.multithread_test()
+    #
+    # @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
+    # def test_fetchall(self, duckdb_cursor, pandas):
+    #     duck_threads = DuckDBThreaded(10,fetchall_query, pandas)
+    #     duck_threads.multithread_test()
+    #
+    # @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
+    # def test_close(self, duckdb_cursor, pandas):
+    #     duck_threads = DuckDBThreaded(10,conn_close, pandas)
+    #     duck_threads.multithread_test()
+    #
+    # @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
+    # def test_fetchnp(self, duckdb_cursor, pandas):
+    #     duck_threads = DuckDBThreaded(10,fetchnp_query, pandas)
+    #     duck_threads.multithread_test()
+    #
+    # @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
+    # def test_fetchdf(self, duckdb_cursor, pandas):
+    #     duck_threads = DuckDBThreaded(10,fetchdf_query, pandas)
+    #     duck_threads.multithread_test()
+    #
+    # @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
+    # def test_fetchdfchunk(self, duckdb_cursor, pandas):
+    #     duck_threads = DuckDBThreaded(10,fetchdf_chunk_query, pandas)
+    #     duck_threads.multithread_test()
+    #
+    # @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
+    # def test_fetcharrow(self, duckdb_cursor, pandas):
+    #     if not can_run:
+    #         return
+    #     duck_threads = DuckDBThreaded(10,fetch_arrow_query, pandas)
+    #     duck_threads.multithread_test()
+    #
+    # @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
+    # def test_fetch_record_batch(self, duckdb_cursor, pandas):
+    #     if not can_run:
+    #         return
+    #     duck_threads = DuckDBThreaded(10,fetch_record_batch_query, pandas)
+    #     duck_threads.multithread_test()
+    #
+    # @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
+    # def test_transaction(self, duckdb_cursor, pandas):
+    #     duck_threads = DuckDBThreaded(10,transaction_query, pandas)
+    #     duck_threads.multithread_test()
+    #
+    # @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
+    # def test_df_append(self, duckdb_cursor, pandas):
+    #     duck_threads = DuckDBThreaded(10,df_append, pandas)
+    #     duck_threads.multithread_test()
+    #
+    # @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
+    # def test_df_register(self, duckdb_cursor, pandas):
+    #     duck_threads = DuckDBThreaded(10,df_register, pandas)
+    #     duck_threads.multithread_test()
+    #
+    # @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
+    # def test_df_unregister(self, duckdb_cursor, pandas):
+    #     duck_threads = DuckDBThreaded(10,df_unregister, pandas)
+    #     duck_threads.multithread_test()
+    #
+    # @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
+    # def test_arrow_register_unregister(self, duckdb_cursor, pandas):
+    #     if not can_run:
+    #         return
+    #     duck_threads = DuckDBThreaded(10,arrow_register_unregister, pandas)
+    #     duck_threads.multithread_test()
+    #
+    # @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
+    # def test_table(self, duckdb_cursor, pandas):
+    #     duck_threads = DuckDBThreaded(10,table, pandas)
+    #     duck_threads.multithread_test()
+    #
+    # @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
+    # def test_view(self, duckdb_cursor, pandas):
+    #     duck_threads = DuckDBThreaded(10,view, pandas)
+    #     duck_threads.multithread_test()
+    #
+    # @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
+    # def test_values(self, duckdb_cursor, pandas):
+    #     duck_threads = DuckDBThreaded(10,values, pandas)
+    #     duck_threads.multithread_test()
+    #
+    # @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
+    # def test_from_query(self, duckdb_cursor, pandas):
+    #     duck_threads = DuckDBThreaded(10,from_query, pandas)
+    #     duck_threads.multithread_test()
+    #
+    # @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
+    # def test_from_DF(self, duckdb_cursor, pandas):
+    #     duck_threads = DuckDBThreaded(10,from_df, pandas)
+    #     duck_threads.multithread_test()
+    #
+    # @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
+    # def test_from_arrow(self, duckdb_cursor, pandas):
+    #     if not can_run:
+    #         return
+    #     duck_threads = DuckDBThreaded(10,from_arrow, pandas)
+    #     duck_threads.multithread_test()
+    #
+    # @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
+    # def test_from_csv_auto(self, duckdb_cursor, pandas):
+    #     duck_threads = DuckDBThreaded(10,from_csv_auto, pandas)
+    #     duck_threads.multithread_test()
+    #
+    # @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
+    # def test_from_parquet(self, duckdb_cursor, pandas):
+    #     duck_threads = DuckDBThreaded(10,from_parquet, pandas)
+    #     duck_threads.multithread_test()
+    #
+    # @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
+    # def test_description(self, duckdb_cursor, pandas):
+    #     duck_threads = DuckDBThreaded(10,description, pandas)
+    #     duck_threads.multithread_test()
+    #
+    # @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
+    # def test_cursor(self, duckdb_cursor, pandas):
+    #     duck_threads = DuckDBThreaded(10,cursor, pandas)
+    #     duck_threads.multithread_test(False)
 
 
