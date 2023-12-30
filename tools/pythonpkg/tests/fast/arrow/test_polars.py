@@ -1,4 +1,4 @@
-import duckdb
+import smokedduck as duckdb
 import pytest
 pl = pytest.importorskip("polars")
 arrow = pytest.importorskip("pyarrow")

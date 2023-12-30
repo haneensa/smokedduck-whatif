@@ -1,4 +1,4 @@
-import duckdb
+import smokedduck as duckdb
 
 class TestContextManager(object):
     def test_context_manager(self, duckdb_cursor):

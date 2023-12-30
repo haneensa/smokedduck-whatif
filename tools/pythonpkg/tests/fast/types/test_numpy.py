@@ -1,4 +1,4 @@
-import duckdb
+import smokedduck as duckdb
 import numpy as np
 import datetime
 import pytest

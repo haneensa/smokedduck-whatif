@@ -1,4 +1,4 @@
-import duckdb
+import smokedduck as duckdb
 import os
 import pytest
 pd = pytest.importorskip("pandas")
@@ -10,7 +10,7 @@ import datetime
 import numpy as np
 import cmath
 
-from duckdb.typing import *
+from smokedduck.typing import *
 
 class TestRemoveFunction(object):
     def test_not_created(self):

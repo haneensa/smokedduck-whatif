@@ -1,5 +1,5 @@
 import pandas as pd
-import duckdb
+import smokedduck as duckdb
 import numpy as np
 
 class TestPandasStride(object):

@@ -1,6 +1,6 @@
 # cursor description
 
-import duckdb
+import smokedduck as duckdb
 import tempfile
 import os
 import pytest

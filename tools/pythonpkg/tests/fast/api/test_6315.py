@@ -1,4 +1,4 @@
-import duckdb
+import smokedduck as duckdb
 
 class Test6315(object):
     def test_6315(self, duckdb_cursor):

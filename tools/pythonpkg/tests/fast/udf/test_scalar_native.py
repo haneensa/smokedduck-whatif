@@ -1,9 +1,9 @@
-import duckdb
+import smokedduck as duckdb
 import os
 import pandas as pd
 import pytest
 
-from duckdb.typing import *
+from smokedduck.typing import *
 
 class TestNativeUDF(object):
     def test_default_conn(self):

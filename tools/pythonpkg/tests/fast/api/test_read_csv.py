@@ -3,7 +3,7 @@ import numpy
 import datetime
 import pandas
 import pytest
-import duckdb
+import smokedduck as duckdb
 from io import StringIO, BytesIO
 
 def TestFile(name):

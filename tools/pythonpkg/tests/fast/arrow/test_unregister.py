@@ -1,7 +1,7 @@
 import pytest
 import tempfile
 import gc
-import duckdb
+import smokedduck as duckdb
 import os
 try:
     import pyarrow

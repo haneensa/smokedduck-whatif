@@ -1,4 +1,4 @@
-import duckdb
+import smokedduck as duckdb
 
 class TestRAPIFunctions(object):
     def test_rapi_str_print(self):

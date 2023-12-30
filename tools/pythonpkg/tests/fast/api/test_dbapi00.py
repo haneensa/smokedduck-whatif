@@ -2,7 +2,7 @@
 
 import numpy
 import pytest
-import duckdb
+import smokedduck as duckdb
 from conftest import NumpyPandas, ArrowPandas
 
 def assert_result_equal(result):

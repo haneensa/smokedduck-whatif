@@ -1,4 +1,4 @@
-import duckdb
+import smokedduck as duckdb
 import os
 import pytest
 pd = pytest.importorskip("pandas")
@@ -8,7 +8,7 @@ import pyarrow.compute as pc
 import uuid
 import datetime
 
-from duckdb.typing import *
+from smokedduck.typing import *
 
 class TestPyArrowUDF(object):
 

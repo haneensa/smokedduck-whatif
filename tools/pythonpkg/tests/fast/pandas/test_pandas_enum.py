@@ -1,6 +1,6 @@
 import pandas as pd
 import pytest
-import duckdb
+import smokedduck as duckdb
 
 class TestPandasEnum(object):
     def test_3480(self, duckdb_cursor):

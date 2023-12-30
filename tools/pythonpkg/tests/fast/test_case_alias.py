@@ -1,7 +1,7 @@
 import pandas
 import numpy as np
 import datetime
-import duckdb
+import smokedduck as duckdb
 import pytest
 from conftest import NumpyPandas, ArrowPandas
 
@@ -11,7 +11,7 @@ class TestCaseAlias(object):
         pass # TODO: charlie uncomment
         # import numpy as np
         # import datetime
-        # import duckdb
+        # import smokedduck as duckdb
         #
         # con = duckdb.connect(':memory:')
         #

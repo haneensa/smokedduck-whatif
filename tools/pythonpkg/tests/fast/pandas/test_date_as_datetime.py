@@ -1,5 +1,5 @@
 import pandas as pd
-import duckdb
+import smokedduck as duckdb
 import datetime
 import pytest
 

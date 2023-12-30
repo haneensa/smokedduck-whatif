@@ -1,4 +1,4 @@
-import duckdb
+import smokedduck as duckdb
 
 class Test3728(object):
     def test_3728_describe_enum(self, duckdb_cursor):

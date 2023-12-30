@@ -1,5 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
-import duckdb
+import smokedduck as duckdb
 import pytest
 
 pyarrow = pytest.importorskip('pyarrow')

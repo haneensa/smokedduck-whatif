@@ -1,4 +1,4 @@
-import duckdb
+import smokedduck as duckdb
 import os
 import math
 from pytest import mark, fixture, importorskip

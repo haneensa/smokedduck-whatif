@@ -1,7 +1,7 @@
 # simple DB API testcase
 
 import pytest
-import duckdb
+import smokedduck as duckdb
 
 
 class TestDBAPICursor(object):

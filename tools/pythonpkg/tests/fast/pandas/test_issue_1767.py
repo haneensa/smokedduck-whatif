@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import duckdb
+import smokedduck as duckdb
 import numpy
 import pytest
 from conftest import NumpyPandas, ArrowPandas

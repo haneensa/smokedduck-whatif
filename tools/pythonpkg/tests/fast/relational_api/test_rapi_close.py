@@ -1,4 +1,4 @@
-import duckdb
+import smokedduck as duckdb
 import pytest
 
 # A closed connection should invalidate all relation's methods

@@ -1,6 +1,6 @@
 import numpy as np
 import datetime
-import duckdb
+import smokedduck as duckdb
 import pytest
 
 def assert_nullness(items, null_indices):

@@ -1,5 +1,5 @@
 import pytest
-import duckdb
+import smokedduck as duckdb
 import numpy as np
 import sys
 from conftest import NumpyPandas, ArrowPandas

@@ -1,8 +1,8 @@
-import duckdb
+import smokedduck as duckdb
 import pytest
 
 pa = pytest.importorskip("pyarrow")
-from duckdb.typing import *
+from smokedduck.typing import *
 
 class TestArrowBufferSize(object):
     def test_arrow_buffer_size(self):

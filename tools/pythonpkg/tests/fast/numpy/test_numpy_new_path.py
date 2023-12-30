@@ -3,7 +3,7 @@
 """
 
 import numpy as np
-import duckdb
+import smokedduck as duckdb
 from datetime import timedelta
 import pytest
 

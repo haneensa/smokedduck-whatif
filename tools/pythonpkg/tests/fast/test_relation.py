@@ -1,11 +1,11 @@
-import duckdb
+import smokedduck as duckdb
 import numpy as np
 import tempfile
 import os
 import pandas as pd
 import pytest
 
-from duckdb.typing import BIGINT, VARCHAR, TINYINT, BOOLEAN
+from smokedduck.typing import BIGINT, VARCHAR, TINYINT, BOOLEAN
 
 def get_relation(conn):
     test_df = pd.DataFrame.from_dict({"i":[1, 2, 3, 4], "j":["one", "two", "three", "four"]})

@@ -1,4 +1,4 @@
-import duckdb
+import smokedduck as duckdb
 import numpy
 
 def check_result(duckdb_cursor,value, type):

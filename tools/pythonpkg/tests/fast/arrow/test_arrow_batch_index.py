@@ -1,7 +1,7 @@
-import duckdb
+import smokedduck as duckdb
 import pytest
 import pandas as pd
-import duckdb
+import smokedduck as duckdb
 try:
     import pyarrow as pa
     can_run = True

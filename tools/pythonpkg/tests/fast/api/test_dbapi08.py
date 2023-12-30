@@ -1,7 +1,7 @@
 # test fetchdf with various types
 import numpy
 import pytest
-import duckdb
+import smokedduck as duckdb
 from conftest import NumpyPandas, ArrowPandas
 
 class TestType(object):

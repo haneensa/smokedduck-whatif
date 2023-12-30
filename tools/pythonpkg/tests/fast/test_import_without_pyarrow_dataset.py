@@ -6,7 +6,7 @@ pyarrow = pytest.importorskip("pyarrow")
 class TestImportWithoutPyArrowDataset:
 	def test_import(self, monkeypatch: pytest.MonkeyPatch):
 		monkeypatch.setitem(sys.modules, "pyarrow.dataset", None)
-		import duckdb
+		import smokedduck as duckdb
 		# We should be able to import duckdb even when pyarrow.dataset is missing
 		con = duckdb.connect()
 		rel = con.query('select 1')

@@ -1,4 +1,4 @@
-import duckdb
+import smokedduck as duckdb
 from pandas import DataFrame
 import pytest
 
