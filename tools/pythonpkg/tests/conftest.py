@@ -3,7 +3,7 @@ import pytest
 import shutil
 from os.path import abspath, join, dirname, normpath
 import glob
-from smokedduck import duckdb
+import smokedduck as duckdb
 from packaging.version import Version
 
 try:
