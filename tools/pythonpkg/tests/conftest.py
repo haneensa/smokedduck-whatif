@@ -8,7 +8,9 @@ from packaging.version import Version
 
 try:
     import pandas
-    pyarrow_dtype = pandas.core.arrays.arrow.dtype.ArrowDtype
+    # TODO: charlie uncomment and use original ArrowDtype
+    # pyarrow_dtype = pandas.core.arrays.arrow.dtype.ArrowDtype
+    pyarrow_dtype = None
 except:
     pyarrow_dtype = None
 
