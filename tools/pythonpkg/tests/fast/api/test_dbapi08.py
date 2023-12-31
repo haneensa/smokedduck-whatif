@@ -5,7 +5,7 @@ import smokedduck as duckdb
 from conftest import NumpyPandas, ArrowPandas
 
 class TestType(object):
-    @pytest.mark.parametrize('pandas', [NumpyPandas(), ArrowPandas()])
+    @pytest.mark.parametrize('pandas', [NumpyPandas()])
     def test_fetchdf(self, pandas):
         pass # TODO: charlie uncomment
         # con = duckdb.connect()
