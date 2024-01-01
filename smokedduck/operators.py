@@ -2,12 +2,23 @@ from abc import ABC, abstractmethod
 from typing import Callable
 
 class Op(ABC):
-    def __init__(self, query_id: int, op: str, op_id: int, parent_join_cond: str) -> None:
+    def __init__(self, query_id: int, op: str, op_id: int, parent_join_cond: str, node: str, parent_join_type) -> None:
         self.single_op_table_name = f"LINEAGE_{query_id}_{op}_{op_id}_0"
         self.id = op_id
         self.is_root = parent_join_cond is None
         self.parent_join_cond = parent_join_cond
         self.is_agg_child = False
+        
+        self.extra = node['extra']
+        print(self.extra)
+        self.join_type = ''
+        self.parent_join_type = parent_join_type
+        if "RIGHT" in self.extra:
+            self.join_type = 'right'
+        if len(self.parent_join_type) > 0:
+            self.join_type = 'right'
+
+        print(self.join_type)
 
     @abstractmethod
     def get_name(self) -> str:
@@ -19,6 +30,10 @@ class Op(ABC):
 
     @abstractmethod
     def get_child_join_conds(self) -> list:
+        pass
+    
+    @abstractmethod
+    def get_child_join_cond_type(self) -> str:
         pass
 
     @abstractmethod
@@ -30,26 +45,33 @@ class Op(ABC):
         pass
 
 class SingleOp(Op):
-    def __init__(self, query_id: int, name: str, op_id: int, parent_join_cond: str) -> None:
-        super().__init__(query_id, name, op_id, parent_join_cond)
+    def __init__(self, query_id: int, name: str, op_id: int, parent_join_cond: str, node: dict, parent_join_type: str) -> None:
+        super().__init__(query_id, name, op_id, parent_join_cond, node, parent_join_type)
 
     @abstractmethod
     def get_name(self) -> str:
         pass
 
     def get_from_string(self) -> str:
+        print("***** " , self.single_op_table_name, self.parent_join_type)
         if self.is_root:
             return self.single_op_table_name
         else:
             if self.is_agg_child:
                 return "JOIN "  + self.single_op_table_name \
                     + " ON " + self.parent_join_cond + " = " + "0"
+            elif self.parent_join_type == 'right':
+                return "LEFT JOIN " + self.single_op_table_name \
+                    + " ON " + self.parent_join_cond + " = " + self.single_op_table_name + ".out_index"
             else:
                 return "JOIN " + self.single_op_table_name \
                     + " ON " + self.parent_join_cond + " = " + self.single_op_table_name + ".out_index"
 
     def get_child_join_conds(self) -> list:
         return [self.single_op_table_name + ".in_index"]
+    
+    def get_child_join_cond_type(self) -> str:
+        return self.join_type
 
     def get_out_index(self) -> str:
         if self.is_agg_child:
@@ -60,15 +82,15 @@ class SingleOp(Op):
         return self.single_op_table_name + ".in_index"
 
 class Limit(SingleOp):
-    def __init__(self, query_id: int, op_id: int, parent_join_cond: str) -> None:
-        super().__init__(query_id, self.get_name(), op_id, parent_join_cond)
+    def __init__(self, query_id: int, op_id: int, parent_join_cond: str, node: dict, parent_join_type: str) -> None:
+        super().__init__(query_id, self.get_name(), op_id, parent_join_cond, node, parent_join_type)
 
     def get_name(self) -> str:
         return "LIMIT"
 
 class ColScan(SingleOp):
-    def __init__(self, query_id: int, op_id: int, parent_join_cond: str) -> None:
-        super().__init__(query_id, self.get_name(), op_id, parent_join_cond)
+    def __init__(self, query_id: int, op_id: int, parent_join_cond: str, node: dict, parent_join_type: str) -> None:
+        super().__init__(query_id, self.get_name(), op_id, parent_join_cond, node, parent_join_type)
 
     def get_name(self) -> str:
         return "COLUMN_DATA_SCAN"
@@ -76,68 +98,68 @@ class ColScan(SingleOp):
 
 
 class StreamingLimit(SingleOp):
-    def __init__(self, query_id: int, op_id: int, parent_join_cond: str) -> None:
-        super().__init__(query_id, self.get_name(), op_id, parent_join_cond)
+    def __init__(self, query_id: int, op_id: int, parent_join_cond: str, node: dict, parent_join_type: str) -> None:
+        super().__init__(query_id, self.get_name(), op_id, parent_join_cond, node, parent_join_type)
 
     def get_name(self) -> str:
         return "STREAMING_LIMIT"
 
 
 class Filter(SingleOp):
-    def __init__(self, query_id: int, op_id: int, parent_join_cond: str) -> None:
-        super().__init__(query_id, self.get_name(), op_id, parent_join_cond)
+    def __init__(self, query_id: int, op_id: int, parent_join_cond: str, node: dict, parent_join_type: str) -> None:
+        super().__init__(query_id, self.get_name(), op_id, parent_join_cond, node, parent_join_type)
 
     def get_name(self) -> str:
         return "FILTER"
 
 
 class OrderBy(SingleOp):
-    def __init__(self, query_id: int, op_id: int, parent_join_cond: str) -> None:
-        super().__init__(query_id, self.get_name(), op_id, parent_join_cond)
+    def __init__(self, query_id: int, op_id: int, parent_join_cond: str, node: dict, parent_join_type: str) -> None:
+        super().__init__(query_id, self.get_name(), op_id, parent_join_cond, node, parent_join_type)
 
     def get_name(self) -> str:
         return "ORDER_BY"
 
 
 class Projection(SingleOp):
-    def __init__(self, query_id: int, op_id: int, parent_join_cond: str) -> None:
-        super().__init__(query_id, self.get_name(), op_id, parent_join_cond)
+    def __init__(self, query_id: int, op_id: int, parent_join_cond: str, node: dict, parent_join_type: str) -> None:
+        super().__init__(query_id, self.get_name(), op_id, parent_join_cond, node, parent_join_type)
 
     def get_name(self) -> str:
         return "PROJECTION"
 
 
 class TableScan(SingleOp):
-    def __init__(self, query_id: int, op_id: int, parent_join_cond: str) -> None:
-        super().__init__(query_id, self.get_name(), op_id, parent_join_cond)
+    def __init__(self, query_id: int, op_id: int, parent_join_cond: str, node: dict, parent_join_type: str) -> None:
+        super().__init__(query_id, self.get_name(), op_id, parent_join_cond, node, parent_join_type)
 
     def get_name(self) -> str:
         return "SEQ_SCAN"
 
 
 class GroupBy(SingleOp):
-    def __init__(self, query_id: int, op_id: int, parent_join_cond: str) -> None:
-        super().__init__(query_id, self.get_name(), op_id, parent_join_cond)
+    def __init__(self, query_id: int, op_id: int, parent_join_cond: str, node: dict, parent_join_type: str) -> None:
+        super().__init__(query_id, self.get_name(), op_id, parent_join_cond, node, parent_join_type)
 
 class HashGroupBy(SingleOp):
-    def __init__(self, query_id: int, op_id: int, parent_join_cond: str) -> None:
-        super().__init__(query_id, self.get_name(), op_id, parent_join_cond)
+    def __init__(self, query_id: int, op_id: int, parent_join_cond: str, node: dict, parent_join_type: str) -> None:
+        super().__init__(query_id, self.get_name(), op_id, parent_join_cond, node, parent_join_type)
 
     def get_name(self) -> str:
         return "HASH_GROUP_BY"
 
 
 class PerfectHashGroupBy(SingleOp):
-    def __init__(self, query_id: int, op_id: int, parent_join_cond: str) -> None:
-        super().__init__(query_id, self.get_name(), op_id, parent_join_cond)
+    def __init__(self, query_id: int, op_id: int, parent_join_cond: str, node: dict, parent_join_type: str) -> None:
+        super().__init__(query_id, self.get_name(), op_id, parent_join_cond, node, parent_join_type)
 
     def get_name(self) -> str:
         return "PERFECT_HASH_GROUP_BY"
 
 
 class StandardJoin(Op):
-    def __init__(self, query_id: int, name: str, op_id: int, parent_join_cond: str) -> None:
-        super().__init__(query_id, name, op_id, parent_join_cond)
+    def __init__(self, query_id: int, name: str, op_id: int, parent_join_cond: str, node: dict, parent_join_type: str) -> None:
+        super().__init__(query_id, name, op_id, parent_join_cond, node, parent_join_type)
 
     @abstractmethod
     def get_name(self) -> str:
@@ -145,6 +167,9 @@ class StandardJoin(Op):
 
     def get_child_join_conds(self) -> list:
         return [self.single_op_table_name + ".lhs_index", self.single_op_table_name + ".rhs_index"]
+    
+    def get_child_join_cond_type(self) -> str:
+        return self.join_type
 
     def get_out_index(self) -> str:
         if self.is_agg_child:
@@ -158,55 +183,62 @@ class StandardJoin(Op):
             return self.single_op_table_name + ".rhs_index"
 
     def get_from_string(self) -> str:
+        print("***** " , self.parent_join_type)
         if self.is_root:
             return  self.single_op_table_name
+        elif self.is_agg_child:
+            return "JOIN "  + self.single_op_table_name \
+                + " ON " + self.parent_join_cond + " = " + "0"
+        elif self.parent_join_type == 'right':
+            return "LEFT JOIN " + self.single_op_table_name \
+                    + " ON " + self.parent_join_cond + " = " + self.single_op_table_name + ".out_index"
         else:
             return "JOIN " + self.single_op_table_name \
                     + " ON " + self.parent_join_cond + " = " + self.single_op_table_name + ".out_index"
 
 
 class HashJoin(StandardJoin):
-    def __init__(self, query_id: int, op_id: int, parent_join_cond: str) -> None:
-        super().__init__(query_id, self.get_name(), op_id, parent_join_cond)
+    def __init__(self, query_id: int, op_id: int, parent_join_cond: str, node: dict, parent_join_type: str) -> None:
+        super().__init__(query_id, self.get_name(), op_id, parent_join_cond, node, parent_join_type)
 
     def get_name(self) -> str:
         return "HASH_JOIN"
-
+    
 
 class BlockwiseNLJoin(StandardJoin):
-    def __init__(self, query_id: int, op_id: int, parent_join_cond: str) -> None:
-        super().__init__(query_id, self.get_name(), op_id, parent_join_cond)
+    def __init__(self, query_id: int, op_id: int, parent_join_cond: str, node: dict, parent_join_type: str) -> None:
+        super().__init__(query_id, self.get_name(), op_id, parent_join_cond, node, parent_join_type)
 
     def get_name(self) -> str:
         return "BLOCKWISE_NL_JOIN"
 
 
 class PiecewiseMergeJoin(StandardJoin):
-    def __init__(self, query_id: int, op_id: int, parent_join_cond: str) -> None:
-        super().__init__(query_id, self.get_name(), op_id, parent_join_cond)
+    def __init__(self, query_id: int, op_id: int, parent_join_cond: str, node: dict, parent_join_type: str) -> None:
+        super().__init__(query_id, self.get_name(), op_id, parent_join_cond, node, parent_join_type)
 
     def get_name(self) -> str:
         return "PIECEWISE_MERGE_JOIN"
 
 
 class CrossProduct(StandardJoin):
-    def __init__(self, query_id: int, op_id: int, parent_join_cond: str) -> None:
-        super().__init__(query_id, self.get_name(), op_id, parent_join_cond)
+    def __init__(self, query_id: int, op_id: int, parent_join_cond: str, node: dict, parent_join_type: str) -> None:
+        super().__init__(query_id, self.get_name(), op_id, parent_join_cond, node, parent_join_type)
 
     def get_name(self) -> str:
         return "CROSS_PRODUCT"
 
 
 class NestedLoopJoin(StandardJoin):
-    def __init__(self, query_id: int, op_id: int, parent_join_cond: str) -> None:
-        super().__init__(query_id, self.get_name(), op_id, parent_join_cond)
+    def __init__(self, query_id: int, op_id: int, parent_join_cond: str, node: dict, parent_join_type: str) -> None:
+        super().__init__(query_id, self.get_name(), op_id, parent_join_cond, node, parent_join_type)
 
     def get_name(self) -> str:
         return "NESTED_LOOP_JOIN"
 
 class UngroupedAggregate(SingleOp):
-    def __init__(self, query_id: int, op_id: int, parent_join_cond: str) -> None:
-        super().__init__(query_id, self.get_name(), op_id, parent_join_cond)
+    def __init__(self, query_id: int, op_id: int, parent_join_cond: str, node: dict, parent_join_type: str) -> None:
+        super().__init__(query_id, self.get_name(), op_id, parent_join_cond, node, parent_join_type)
 
     def get_name(self) -> str:
         return "UNGROUPED_AGGREGATE"
@@ -215,35 +247,35 @@ class UngroupedAggregate(SingleOp):
         return ""
 
 class OperatorFactory():
-    def get_op(self, op_str: str, query_id: int, parent_join_cond: str) -> Op:
+    def get_op(self, op_str: str, query_id: int, parent_join_cond: str, node: dict, parent_join_type: str) -> Op:
         op, op_id = op_str.rsplit("_", 1)
         if op == 'LIMIT':
-            return Limit(query_id, op_id, parent_join_cond)
+            return Limit(query_id, op_id, parent_join_cond, node, parent_join_type)
         elif op == 'STREAMING_LIMIT':
-            return StreamingLimit(query_id, op_id, parent_join_cond)
+            return StreamingLimit(query_id, op_id, parent_join_cond, node, parent_join_type)
         elif op == 'FILTER':
-            return Filter(query_id, op_id, parent_join_cond)
+            return Filter(query_id, op_id, parent_join_cond, node, parent_join_type)
         elif op == 'ORDER_BY':
-            return OrderBy(query_id, op_id, parent_join_cond)
+            return OrderBy(query_id, op_id, parent_join_cond, node, parent_join_type)
         elif op == 'PROJECTION':
-            return Projection(query_id, op_id, parent_join_cond)
+            return Projection(query_id, op_id, parent_join_cond, node, parent_join_type)
         elif op == 'SEQ_SCAN':
-            return TableScan(query_id, op_id, parent_join_cond)
+            return TableScan(query_id, op_id, parent_join_cond, node, parent_join_type)
         elif op == 'HASH_GROUP_BY':
-            return HashGroupBy(query_id, op_id, parent_join_cond)
+            return HashGroupBy(query_id, op_id, parent_join_cond, node, parent_join_type)
         elif op == 'PERFECT_HASH_GROUP_BY':
-            return PerfectHashGroupBy(query_id, op_id, parent_join_cond)
+            return PerfectHashGroupBy(query_id, op_id, parent_join_cond, node, parent_join_type)
         elif op == 'HASH_JOIN':
-            return HashJoin(query_id, op_id, parent_join_cond)
+            return HashJoin(query_id, op_id, parent_join_cond, node, parent_join_type)
         elif op == 'BLOCKWISE_NL_JOIN':
-            return BlockwiseNLJoin(query_id, op_id, parent_join_cond)
+            return BlockwiseNLJoin(query_id, op_id, parent_join_cond, node, parent_join_type)
         elif op == 'PIECEWISE_MERGE_JOIN':
-            return PiecewiseMergeJoin(query_id, op_id, parent_join_cond)
+            return PiecewiseMergeJoin(query_id, op_id, parent_join_cond, node, parent_join_type)
         elif op == 'CROSS_PRODUCT':
-            return CrossProduct(query_id, op_id, parent_join_cond)
+            return CrossProduct(query_id, op_id, parent_join_cond, node, parent_join_type)
         elif op == 'NESTED_LOOP_JOIN':
-            return NestedLoopJoin(query_id, op_id, parent_join_cond)
+            return NestedLoopJoin(query_id, op_id, parent_join_cond, node, parent_join_type)
         elif op == 'UNGROUPED_AGGREGATE':
-            return UngroupedAggregate(query_id, op_id, parent_join_cond)
+            return UngroupedAggregate(query_id, op_id, parent_join_cond, node, parent_join_type)
         else:
             raise Exception('Found unhandled operator', op)

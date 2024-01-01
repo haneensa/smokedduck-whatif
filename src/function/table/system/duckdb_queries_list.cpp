@@ -48,6 +48,40 @@ unique_ptr<GlobalTableFunctionState> DuckDBQueriesListInit(ClientContext &contex
 	return std::move(result);
 }
 
+static string JSONSanitize(const string &text) {
+	string result;
+	result.reserve(text.size());
+	for (idx_t i = 0; i < text.size(); i++) {
+		switch (text[i]) {
+		case '\b':
+			result += "\\b";
+			break;
+		case '\f':
+			result += "\\f";
+			break;
+		case '\n':
+			result += "\\n";
+			break;
+		case '\r':
+			result += "\\r";
+			break;
+		case '\t':
+			result += "\\t";
+			break;
+		case '"':
+			result += "\\\"";
+			break;
+		case '\\':
+			result += "\\\\";
+			break;
+		default:
+			result += text[i];
+			break;
+		}
+	}
+	return result;
+}
+
 string PlanToString(PhysicalOperator *op) {
 	string child_str;
 	for (idx_t i = 0; i < op->children.size(); i++) {
@@ -56,7 +90,7 @@ string PlanToString(PhysicalOperator *op) {
 			child_str += ",";
 		}
 	}
-	return "{\"name\": \"" + op->GetName() + "\",\"children\": [" + child_str + "],\"table\": \"" + op->lineage_op->table_name + "\"}";
+	return "{\"name\": \"" + op->GetName() + "\",\"children\": [" + child_str + "],\"table\": \"" + op->lineage_op->table_name +  "\",\"extra\": \"" + JSONSanitize(op->ParamsToString())+ "\"}";
 }
 
 //! Create table to store executed queries with their IDs

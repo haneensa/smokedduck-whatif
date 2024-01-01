@@ -34,6 +34,7 @@ public:
 	unordered_map<data_ptr_t, vector<idx_t>> ha_hash_index;
 	unordered_map<data_ptr_t, vector<idx_t>> ha_distinct_hash_index;
 	unordered_map<idx_t, idx_t> distinct_count;
+	unordered_map<idx_t, idx_t> grouping_set_count;
 
 
 	// HJ: Specialized Index

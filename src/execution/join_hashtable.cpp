@@ -223,18 +223,20 @@ void JoinHashTable::Build(PartitionedTupleDataAppendState &append_state, DataChu
 	    auto ptrs = FlatVector::GetData<data_ptr_t>( append_state.chunk_state.row_locations);
 	    // key_locations_lineage: value is out_index, offset is in_index
       unique_ptr<data_ptr_t[]> key_locations_lineage(new data_ptr_t[source_chunk.size()]);
-	    if ( append_state.partition_entries.size() == 1) {
-        std::copy(ptrs, ptrs + source_chunk.size(), key_locations_lineage.get());
+        auto log = reinterpret_cast<HashJoinLog*>(keys.log_per_thread.get());
+	    if ( append_state.partition_entries.size() == 1 || append_state.fixed_partition_entries.size() == 1) {
+        std::copy(ptrs, ptrs + added_count, key_locations_lineage.get());
+        log->lineage_build.push_back({nullptr, added_count,
+            keys.size(), move(key_locations_lineage), 0});
 	    } else {
 	        for (idx_t i = 0; i < added_count; i++) {
 	            auto idx = append_state.partition_sel.get_index(i);
 	            key_locations_lineage[i] = ptrs[i];
-				sel.set_index(i, idx);
+              sel.set_index(i, idx);
 	        }
+          log->lineage_build.push_back({sel.sel_data(), added_count,
+              keys.size(), move(key_locations_lineage), 0});
 	    }
-		auto log = reinterpret_cast<HashJoinLog*>(keys.log_per_thread.get());
-		log->lineage_build.push_back({sel.sel_data(), added_count,
-        keys.size(), move(key_locations_lineage), 0});
 	}
 #endif
 }

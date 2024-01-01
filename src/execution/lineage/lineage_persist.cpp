@@ -504,7 +504,7 @@ idx_t HALog::GetLineageAsChunk(DataChunk &insert_chunk,
 	idx_t scan_count = scan_log[lsn].count;
 	if (current_key >= scan_count) {
 		data_idx++;
-    	key_offset += current_key;
+    key_offset += current_key;
 		current_key = 0;
 		return 0;
 	}

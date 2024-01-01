@@ -17,7 +17,7 @@ def get_query(
     # Check that both forward table and forward ids are set together
     assert forward_table is None or (forward_table is not None and forward_ids is not None)
 
-    topmost_op, _, projections, froms = _generate_lineage_query(plan, id, prov_model, None, operator_factory)
+    topmost_op, _, projections, froms = _generate_lineage_query(plan, id, prov_model, None, operator_factory, "")
 
     ret = "SELECT "
     ret += prov_model.from_prefix()
@@ -70,7 +70,8 @@ def _generate_lineage_query(
         query_id: int,
         prov_model: ProvenanceModel,
         parent_join_cond: str,
-        operator_factory: OperatorFactory
+        operator_factory: OperatorFactory,
+        parent_join_type: str
 ) -> (Op, list, list, list):
     children = plan_node['children']
     projections = []
@@ -78,15 +79,15 @@ def _generate_lineage_query(
     found_names = []
     name_set = set()
 
-    op = operator_factory.get_op(plan_node['name'], query_id, parent_join_cond)
+    op = operator_factory.get_op(plan_node['name'], query_id, parent_join_cond, plan_node, parent_join_type)
 
     while op.get_name() == "PROJECTION":
         plan_node = children[0]
         children = plan_node['children']
-        op = operator_factory.get_op(plan_node['name'], query_id, parent_join_cond)
+        op = operator_factory.get_op(plan_node['name'], query_id, parent_join_cond, plan_node, parent_join_type)
 
     if op.get_name() == "UNGROUPED_AGGREGATE":
-        agg_child_op = operator_factory.get_op(children[0]['name'], query_id, parent_join_cond)
+        agg_child_op = operator_factory.get_op(children[0]['name'], query_id, parent_join_cond, children[0], parent_join_type)
         agg_child_op.is_root = op.is_root
         op = agg_child_op
         children = plan_node['children'][0]['children']
@@ -95,11 +96,12 @@ def _generate_lineage_query(
         while op.get_name() == "PROJECTION":
             plan_node = children[0]
             children = plan_node['children']
-            op = operator_factory.get_op(plan_node['name'], query_id, parent_join_cond)
-            op.is_agg_child = True
-            op.is_root = agg_child_op.is_root
+            op = operator_factory.get_op(plan_node['name'], query_id, parent_join_cond, plan_node, parent_join_type)
+        op.is_agg_child = True
+        op.is_root = agg_child_op.is_root
 
     child_join_conds = op.get_child_join_conds()
+    join_type = op.get_child_join_cond_type()
     assert len(children) == len(child_join_conds) or op.get_name() == 'SEQ_SCAN'
 
     froms.extend(prov_model.get_froms(plan_node, query_id, op))
@@ -111,7 +113,7 @@ def _generate_lineage_query(
             continue
 
         _, child_names, child_projections, child_froms = _generate_lineage_query(children[i], query_id,
-                                                                                 prov_model, child_join_conds[i], operator_factory)
+                                                                                 prov_model, child_join_conds[i], operator_factory, join_type)
 
         projections.extend(child_projections)
         froms.extend(child_froms)

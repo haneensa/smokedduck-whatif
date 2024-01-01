@@ -23,7 +23,7 @@ void OperatorLineage::InitLog(idx_t thread_id, PhysicalOperator* op) {
   if (trace_lineage == false) return;
 
   if (log_per_thread.find(thread_id) != log_per_thread.end()) {
-    std::cout << "doublicate " << thread_id << std::endl;
+    //std::cout << "doublicate " << thread_id << std::endl;
     return;
   }
   // TODO: add lock
@@ -233,6 +233,7 @@ void HashJoinLog::BuildIndexes(shared_ptr<LogIndex> logIdx) {
 
 void HashJoinLog::PostProcess(shared_ptr<LogIndex> logIdx) {
   if (processed) return;
+  idx_t total = 0;
   logIdx->right_val_log[thid].resize(GetLatestLSN()  + logIdx->right_val_log[thid].size() );
   for (idx_t i=0; i < output_index.size(); ++i) {
 	idx_t lsn = output_index[i].first;
@@ -262,6 +263,7 @@ void HashJoinLog::PostProcess(shared_ptr<LogIndex> logIdx) {
 				}
 			}
 		}
+    total += res_count;
 	} else {
 		data_ptr_t* right_build_ptr = lineage_binary[lsn].right.get();
 		if (logIdx->right_val_log[thid][lsn].get() == nullptr && right_build_ptr != nullptr) {
@@ -396,9 +398,13 @@ idx_t HALog::ChunksCount() {
 void HALog::BuildIndexes(shared_ptr<LogIndex> logIdx) {
   // TODO: detect if finalize exist
   // build side
+  //std::cout << "Build Indexes: " << grouping_set.size() << std::endl;
   for (auto g=0; g < grouping_set.size(); g++) {
 	auto size = grouping_set[g].size();
-	idx_t count_so_far = 0;
+	if (logIdx->grouping_set_count.find(g) == logIdx->grouping_set_count.end()) {
+		logIdx->grouping_set_count[g] = 0;
+	}
+	idx_t count_so_far = logIdx->grouping_set_count[g];
 	for (idx_t i=0; i < size; i++) {
 		//if (sink_log[i].branch == 0) {
 		auto lsn = grouping_set[g][i];
@@ -411,10 +417,13 @@ void HALog::BuildIndexes(shared_ptr<LogIndex> logIdx) {
 		auto payload = addchunk_log[lsn].addchunk_lineage.get();
 		for (idx_t j=0; j < res_count; ++j) {
 			logIdx->ha_hash_index[payload[j]].push_back(j + count_so_far);
+      //std::cout << "payload: " << (idx_t)payload[j] << " -> " << j + count_so_far << std::endl;
 		}
 		count_so_far += res_count;
 		//}
 	}
+	logIdx->grouping_set_count[g] = count_so_far;
+ // std::cout << g << " count: " <<  count_so_far << std::endl;
   }
   // go over distinct_scan, distinct_sink
   // for each element in distinct sink, add it to HT. with value as distinct_ht[distinct_index[i]]
@@ -448,6 +457,7 @@ void HALog::BuildIndexes(shared_ptr<LogIndex> logIdx) {
 void HALog::PostProcess(shared_ptr<LogIndex> logIdx) {
   if (grouping_set.empty() == false) return;
 
+  //std::cout << "distinct_scan: " << distinct_scan.size() << std::endl;
   // go over distinct_scan, distinct_sink
   // for each element in distinct sink, add it to HT. with value as distinct_ht[distinct_index[i]]
   for (auto g=0; g < distinct_scan.size(); g++) {
@@ -477,16 +487,36 @@ void HALog::PostProcess(shared_ptr<LogIndex> logIdx) {
   }
 
   // handle flush move
+  //  std::cout << "flushmove_log: " << flushmove_log.size() << std::endl;
+  std::unordered_map<data_ptr_t, std::set<data_ptr_t>> set_test;
+
+  unordered_map<data_ptr_t, vector<idx_t>> ha_hash_index_final;
+
+  idx_t total = 0;
   for (idx_t g=0; g < flushmove_log.size(); g++) {
 	idx_t res_count = flushmove_log[g].count;
 	auto payload = flushmove_log[g].src.get();
 	auto sink_payload = flushmove_log[g].sink.get();
 	for (idx_t j=0; j < res_count; ++j) {
-			logIdx->ha_hash_index[sink_payload[j]].insert(logIdx->ha_hash_index[sink_payload[j]].end(),
-				                                          logIdx->ha_hash_index[payload[j]].begin(),
-				                                          logIdx->ha_hash_index[payload[j]].end());
+      //std::cout << g << " " << j << " flush: " << total << " "<< j << " " <<  (idx_t)sink_payload[j] << " " <<
+      //(idx_t)payload[j] << " "<< ha_hash_index_final[sink_payload[j]].size() << " " <<
+			//	                                          logIdx->ha_hash_index[payload[j]].size() << std::endl;
+      if (ha_hash_index_final[sink_payload[j]].size() != 0) {
+        std::cout << "dublicate" << std::endl;
+      }
+      if (set_test[sink_payload[j]].find(payload[j]) == set_test[sink_payload[j]].end()) {
+			  total += logIdx->ha_hash_index[payload[j]].size();
+        ha_hash_index_final[sink_payload[j]].insert(ha_hash_index_final[sink_payload[j]].end(),
+                                                   logIdx->ha_hash_index[payload[j]].begin(),
+                                                  logIdx->ha_hash_index[payload[j]].end());
+      }
+      set_test[sink_payload[j]].insert(payload[j]);
+
 	}
   }
+  if (ha_hash_index_final.size() > 0)
+    logIdx->ha_hash_index = std::move(ha_hash_index_final);
+  //std::cout << " total : " << total << std::endl;
   processed = true;
 
 }

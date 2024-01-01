@@ -3,11 +3,16 @@ import pandas as pd
 
 # Creating connection
 con = smokedduck.connect(':default:')
-con.execute('CALL dbgen(sf=0.1);')
+con.execute('CALL dbgen(sf=1);')
+con.execute('pragma threads=1')
+# 4: right semi join
+# 17, 0.1 single?
+# 20 is totally weird it has single and semi join and right semi
+# 21 has anti and right_semi
 
-subset = [2, 4, 11, 17, 21, 22]
-fix_list = [11, 16, 20]
-qid = "02"
+# scale: 4, 22, 20
+fix_list = [4, 17, 20, 21]
+qid = "17"
 print(f"############# Testing {qid} ###########")
 query_file = f"queries/tpch/tpch_{qid}.sql"
 logical_file = f"queries/perm/q{qid}.sql"
@@ -15,13 +20,9 @@ with open(query_file, "r") as f:
     sql = " ".join(f.read().split())
 print(sql)
 
-# nested queries: 16 (empty, distinct)
-# check: 2, 4,  11, 15, 17, 18, 20, 21, 22
-
 # Printing lineage that was captured from base query
-print(con.execute(sql, capture_lineage='lineage').df())
+print(con.execute(sql, capture_lineage='lineage').df().to_string())
 lineage = con.lineage().df()
-
 with open(logical_file, "r") as f:
     logical_sql = " ".join(f.read().split())
 
@@ -39,7 +40,8 @@ print(lineage)
 print(logical_lineage)
 logical_lineage= logical_lineage.astype(lineage.dtypes)
 print(lineage.isin(logical_lineage).all().all())
-df_all = logical_lineage.merge(lineage, on=list(logical_lineage.columns), how='left', indicator=True)
+print(logical_lineage.isin(lineage).all().all())
+df_all = lineage.merge(logical_lineage, on=list(logical_lineage.columns), how='left', indicator=True)
 right_only = df_all[ df_all['_merge'] == "right_only"]
 print(right_only)
 left_only = df_all[ df_all['_merge'] == "left_only"]

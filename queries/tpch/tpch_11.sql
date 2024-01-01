@@ -22,4 +22,5 @@ HAVING
         WHERE
             ps_suppkey = s_suppkey
             AND s_nationkey = n_nationkey
-            AND n_name = 'GERMANY');
+            AND n_name = 'GERMANY')
+ORDER BY ps_partkey

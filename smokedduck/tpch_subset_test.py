@@ -3,12 +3,12 @@ import pandas as pd
 
 # Creating connection
 con = smokedduck.connect(':default:')
-con.execute('CALL dbgen(sf=0.1);')
+con.execute('CALL dbgen(sf=0.5);')
 
-
-fix_list = [11, 13, 16, 20, 22]
-for i in range(1, 23):
-    if i in fix_list:
+# 22 is too slow
+skip_list = [4, 20, 21]
+for i in range(22, 23):
+    if i in skip_list:
         print(f"############# {i} SKIP ###########")
         continue
     qid = str(i).zfill(2)
