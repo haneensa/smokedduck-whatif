@@ -39,4 +39,5 @@ SELECT out_index-1 as out_index, p_rid as part, s_rid as supplier, s_rid2 as sup
           FROM partsupp, supplier, nation, region
           WHERE p_partkey = ps_partkey AND s_suppkey = ps_suppkey AND s_nationkey = n_nationkey
               AND n_regionkey = r_regionkey AND r_name = 'EUROPE')
+  LIMIT 100
   ) as joins2 on (group1.min_ps_supplycost=joins2.ps_supplycost)

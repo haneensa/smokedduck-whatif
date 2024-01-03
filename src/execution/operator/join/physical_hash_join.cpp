@@ -525,8 +525,10 @@ OperatorResultType PhysicalHashJoin::ExecuteInternal(ExecutionContext &context, 
 		D_ASSERT(!sink.external);
 #ifdef LINEAGE
 		chunk.trace_lineage = ClientConfig::GetConfig(context.client).trace_lineage;
-		if (chunk.trace_lineage)
+		if (chunk.trace_lineage) {
 			chunk.log_per_thread = lineage_op->GetLog(context.thread.thread_id);
+      chunk.log_per_thread->out_offset = state.in_start;
+    }
 #endif
 		auto result = sink.perfect_join_executor->ProbePerfectHashTable(context, input, chunk, *state.perfect_hash_join_state);
 #ifdef LINEAGE
@@ -539,8 +541,10 @@ OperatorResultType PhysicalHashJoin::ExecuteInternal(ExecutionContext &context, 
 	if (state.scan_structure) {
 #ifdef LINEAGE
 		state.join_keys.trace_lineage = ClientConfig::GetConfig(context.client).trace_lineage;
-		if (state.join_keys.trace_lineage)
+		if (state.join_keys.trace_lineage) {
 			state.join_keys.log_per_thread = lineage_op->GetLog(context.thread.thread_id);
+      state.join_keys.log_per_thread->out_offset = state.in_start;
+    }
 #endif
 		// still have elements remaining (i.e. we got >STANDARD_VECTOR_SIZE elements in the previous probe)
 		state.scan_structure->Next(state.join_keys, input, chunk);
@@ -567,8 +571,10 @@ OperatorResultType PhysicalHashJoin::ExecuteInternal(ExecutionContext &context, 
 
 #ifdef LINEAGE
 	state.join_keys.trace_lineage = ClientConfig::GetConfig(context.client).trace_lineage;
-	if (state.join_keys.trace_lineage)
+	if (state.join_keys.trace_lineage) {
   		state.join_keys.log_per_thread = lineage_op->GetLog(context.thread.thread_id);
+      state.join_keys.log_per_thread->out_offset = state.in_start;
+  }
 #endif
 
 	// perform the actual probe

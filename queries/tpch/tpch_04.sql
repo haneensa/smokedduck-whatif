@@ -15,4 +15,4 @@ WHERE
             l_orderkey = o_orderkey
             AND l_commitdate < l_receiptdate)
 GROUP BY
-    o_orderpriority;
+    o_orderpriority

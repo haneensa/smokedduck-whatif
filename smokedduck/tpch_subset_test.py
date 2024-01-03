@@ -3,11 +3,10 @@ import pandas as pd
 
 # Creating connection
 con = smokedduck.connect(':default:')
-con.execute('CALL dbgen(sf=0.5);')
+con.execute('CALL dbgen(sf=0.1);')
 
-# 22 is too slow
-skip_list = [4, 20, 21]
-for i in range(22, 23):
+skip_list = []
+for i in range(1, 23):
     if i in skip_list:
         print(f"############# {i} SKIP ###########")
         continue
@@ -20,6 +19,7 @@ for i in range(22, 23):
         # Printing lineage that was captured from base query
         con.execute(sql, capture_lineage='lineage')
         lineage = con.lineage().df()
+        print(lineage)
         with open(logical_file, "r") as f:
             logical_sql = " ".join(f.read().split())
 
@@ -36,7 +36,7 @@ for i in range(22, 23):
         right_only = df_all[ df_all['_merge'] == "right_only"]
         left_only = df_all[ df_all['_merge'] == "left_only"]
         both = df_all[ df_all['_merge'] == "both"]
-        if len(left_only) < 0:
+        if len(left_only) > 0:
             print(right_only)
             print(left_only)
             print(both)

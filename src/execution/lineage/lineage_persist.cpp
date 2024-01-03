@@ -196,7 +196,7 @@ idx_t OrderByLog::GetLineageAsChunk(DataChunk &insert_chunk,
     cache = false;
     cache_size = 0;
     cache_offset = 0;
-	return 0;
+	  return 0;
   }
   
   idx_t res_count = lineage[data_idx].size();
@@ -211,13 +211,13 @@ idx_t OrderByLog::GetLineageAsChunk(DataChunk &insert_chunk,
       cache = false;
     }
 
-    ptr += cache_offset;
+	  ptr = (data_ptr_t)(lineage[data_idx].data() + cache_offset);
 		cache_offset += res_count;
 
     if (!cache) {
       cache_offset = 0;
       cache_size = 0;
-	  data_idx++;
+	    data_idx++;
     }
   } else {
     if (res_count > STANDARD_VECTOR_SIZE) {
@@ -226,8 +226,8 @@ idx_t OrderByLog::GetLineageAsChunk(DataChunk &insert_chunk,
       res_count = STANDARD_VECTOR_SIZE;
       cache_offset += res_count;
     } else {
-	  data_idx++;
-	}
+	    data_idx++;
+    }
   }
   insert_chunk.SetCardinality(res_count);
   Vector in_index(LogicalType::BIGINT, ptr); // TODO: add offset
@@ -437,48 +437,93 @@ idx_t HashJoinLog::GetLineageAsChunk(DataChunk &insert_chunk,
   idx_t res_count = lineage_binary[lsn].count;
   data_ptr_t left_ptr = (data_ptr_t)lineage_binary[lsn].left.get();
   Vector lhs_payload(LogicalType::INTEGER);
-
-  // Left side / probe side
-
-  // check if all lhs is included
-
-  if (left_ptr == nullptr || lineage_binary[lsn].branch == 2) {
-    if (res_count == STANDARD_VECTOR_SIZE || lineage_binary[lsn].branch == 2) {
-      lhs_payload.Sequence(global_count, 1, res_count); // out_index
-    } else {
-      lhs_payload.SetVectorType(VectorType::CONSTANT_VECTOR);
-      ConstantVector::SetNull(lhs_payload, true);
-    }
-  } else {
-    // TODO:  add in_start offset
-    Vector temp(LogicalType::INTEGER, left_ptr);
-    lhs_payload.Reference(temp);
-  }
-  
   Vector rhs_payload(LogicalType::INTEGER);
   data_ptr_t right_ptr;
 
-  if (lineage_binary[lsn].branch == 1) {
-	right_ptr = (data_ptr_t)lineage_binary[lsn].perfect_right.get();
-	Vector temp(LogicalType::INTEGER, right_ptr);
-	rhs_payload.Reference(temp);
+  idx_t branch = lineage_binary[lsn].branch;
+  if (branch == 3) {
+    if (global_count == 0) key_offset = 0;
+    if (current_key >= res_count) {
+      key_offset += current_key;
+      data_idx++;
+      current_key = 0;
+      cache = true;
+      return 0;
+    }
+
+    data_ptr_t* right_build_ptr = lineage_binary[lsn].right.get();
+    std::vector<sel_t>& la = logIdx->semiright[right_build_ptr[current_key]];
+    idx_t end_offset = la.size() - offset_within_key;
+    if (end_offset > STANDARD_VECTOR_SIZE) {
+      end_offset = STANDARD_VECTOR_SIZE;
+    }
+    if ( la.size() == 0) {
+      lhs_payload.SetVectorType(VectorType::CONSTANT_VECTOR);
+      ConstantVector::SetNull(lhs_payload, true);
+      Vector temp(LogicalType::INTEGER, (data_ptr_t)logIdx->right_val_log[thid][lsn].get());
+      rhs_payload.Reference(temp);
+    } else {
+      data_ptr_t ptr = (data_ptr_t)(la.data() + offset_within_key);
+      Vector temp(LogicalType::INTEGER, ptr);
+      lhs_payload.Reference(temp);
+      Vector rhs_temp(Value::Value::INTEGER(logIdx->right_val_log[thid][lsn][current_key]));
+      rhs_payload.Reference(rhs_temp);
+    }
+
+    insert_chunk.SetCardinality(end_offset);
+    insert_chunk.data[0].Reference(lhs_payload);
+    insert_chunk.data[1].Reference(rhs_payload);
+    Vector out_index(Value::Value::INTEGER(current_key+key_offset));
+    insert_chunk.data[2].Reference(out_index);
+    offset_within_key += end_offset;
+    if (offset_within_key >= la.size()) {
+      offset_within_key = 0;
+      current_key++;
+    }
+    if (current_key >= res_count) {
+      cache = false;
+      key_offset += current_key;
+		  current_key = 0;
+      data_idx++;
+    } else {
+      cache = true;
+    }
+    return end_offset;  
   } else {
-	data_ptr_t* right_build_ptr = lineage_binary[lsn].right.get();
+    if (left_ptr == nullptr || branch == 2) {
+      if (res_count == STANDARD_VECTOR_SIZE || branch == 2) {
+        lhs_payload.Sequence(global_count, 1, res_count); // out_index
+      } else {
+        lhs_payload.SetVectorType(VectorType::CONSTANT_VECTOR);
+        ConstantVector::SetNull(lhs_payload, true);
+      }
+    } else {
+      Vector temp(LogicalType::INTEGER, left_ptr);
+      lhs_payload.Reference(temp);
+    }
+    
+    if (branch == 1) {
+      right_ptr = (data_ptr_t)lineage_binary[lsn].perfect_right.get();
+      Vector temp(LogicalType::INTEGER, right_ptr);
+      rhs_payload.Reference(temp);
+    } else {
+      data_ptr_t* right_build_ptr = lineage_binary[lsn].right.get();
+      // Right side / build side
+      if (right_build_ptr == nullptr) {
+        rhs_payload.SetVectorType(VectorType::CONSTANT_VECTOR);
+        ConstantVector::SetNull(rhs_payload, true);
+      } else {
+        Vector temp(LogicalType::INTEGER, (data_ptr_t)logIdx->right_val_log[thid][lsn].get());
+        rhs_payload.Reference(temp);
+      }
+    }
 
-	// Right side / build side
-	if (right_build_ptr == nullptr) {
-	  rhs_payload.SetVectorType(VectorType::CONSTANT_VECTOR);
-	  ConstantVector::SetNull(rhs_payload, true);
-	} else {
-	  Vector temp(LogicalType::INTEGER, (data_ptr_t)logIdx->right_val_log[thid][lsn].get());
-	  rhs_payload.Reference(temp);
-	}
+    fillBaseChunk(insert_chunk, res_count, lhs_payload, rhs_payload, global_count);
+    data_idx++;
+
+    return res_count;
   }
-
-  fillBaseChunk(insert_chunk, res_count, lhs_payload, rhs_payload, global_count);
-  data_idx++;
-
-  return res_count;
+	
 }
 
 // Hash Agg

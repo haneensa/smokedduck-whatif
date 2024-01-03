@@ -563,11 +563,15 @@ void ScanStructure::NextInnerJoin(DataChunk &keys, DataChunk &left, DataChunk &r
       
 		  unique_ptr<sel_t[]> left = nullptr;
 		  if (result_count < STANDARD_VECTOR_SIZE) {
-			left = unique_ptr<sel_t[]>(new sel_t[result_count]);
-			std::copy(result_vector.data(), result_vector.data() + result_count, left.get());
+        left = unique_ptr<sel_t[]>(new sel_t[result_count]);
+        std::copy(result_vector.data(), result_vector.data() + result_count, left.get());
 		  }
 		  auto log = reinterpret_cast<HashJoinLog*>(keys.log_per_thread.get());
-		  log->lineage_binary.push_back({move(left), move(key_locations_lineage), nullptr, 0, result_count, 0});
+		  if (ht.join_type != JoinType::RIGHT_SEMI && ht.join_type != JoinType::RIGHT_ANTI) {
+		    log->lineage_binary.push_back({move(left), move(key_locations_lineage), nullptr, 0, result_count, log->out_offset});
+      } else {
+		    log->lineage_binary_semiright.push_back({move(left), move(key_locations_lineage), nullptr, 0, result_count, log->out_offset});
+      }
 		}
 #endif
 		AdvancePointers();
@@ -949,13 +953,17 @@ void JoinHashTable::ScanFullOuter(JoinHTScanState &state, Vector &addresses, Dat
 		data_collection->Gather(addresses, sel_vector, found_entries, col_no, vector, sel_vector);
 	}
 #ifdef LINEAGE
-	if (result.trace_lineage) {
+	if (result.trace_lineage && found_entries > 0) {
 		unique_ptr<data_ptr_t[]> key_locations_lineage(new data_ptr_t[found_entries]);
 		for (idx_t i = 0; i < found_entries; i++) {
 			key_locations_lineage[i] = (data_ptr_t)key_locations[i];
 		}
     auto log = reinterpret_cast<HashJoinLog*>(result.log_per_thread.get());
-    log->lineage_binary.push_back({nullptr, move(key_locations_lineage), nullptr, 0, found_entries, 0});
+    idx_t branch = 0;
+		if (match_propagation_value) {
+      branch = 3;
+    }
+    log->lineage_binary.push_back({nullptr, move(key_locations_lineage), nullptr, branch, found_entries, 0});
 		log->output_index.push_back({log->GetLatestLSN(), 0});
 	}
 #endif

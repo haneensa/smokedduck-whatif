@@ -96,7 +96,6 @@ void FilterLog::PostProcess(shared_ptr<LogIndex> logIdx) {
       }
     }
   }
-  processed = true;
 }
 
 // TableScanLog
@@ -137,7 +136,6 @@ void TableScanLog::PostProcess(shared_ptr<LogIndex> logIdx) {
       }
     }
   }
-  processed = true;
 }
 
 // LimitLog
@@ -225,9 +223,21 @@ void HashJoinLog::BuildIndexes(shared_ptr<LogIndex> logIdx) {
   }
 
   if (lineage_finalize.size() > 0) {
-	for (idx_t i=0; i < lineage_finalize.back().added_count; i++) {
-	  logIdx->perfect_hash_join_finalize[ lineage_finalize.back().sel->owned_data[i] ] = lineage_finalize.back().scatter[i];
-	}
+    for (idx_t i=0; i < lineage_finalize.back().added_count; i++) {
+      logIdx->perfect_hash_join_finalize[ lineage_finalize.back().sel->owned_data[i] ] = lineage_finalize.back().scatter[i];
+    }
+  }
+
+
+  // lineage_binary_semiright
+  for (idx_t i=0; i < lineage_binary_semiright.size(); ++i) {
+    auto res_count = lineage_binary_semiright[i].count;
+    auto out_offset = lineage_binary_semiright[i].out_offset;
+		data_ptr_t* right_build_ptr = lineage_binary_semiright[i].right.get();
+	  auto left_ptr = lineage_binary_semiright[i].left.get();
+    for (idx_t j=0; j < res_count; j++) {
+      logIdx->semiright[ right_build_ptr[j] ].push_back( left_ptr[j]  + out_offset );
+    }
   }
 }
 
@@ -281,7 +291,6 @@ void HashJoinLog::PostProcess(shared_ptr<LogIndex> logIdx) {
 		}
 	}
   }
-  processed = true;
 }
 
 // NLJ
@@ -315,7 +324,6 @@ void NLJLog::PostProcess(shared_ptr<LogIndex> logIdx) {
 		}
 	}
   }
-  processed = true;
 }
 
 // BNLJ
@@ -339,7 +347,6 @@ void BNLJLog::PostProcess(shared_ptr<LogIndex> logIdx) {
 		}
 	}
   }
-  processed = true;
 }
 
 // Merge Join
@@ -378,7 +385,6 @@ void MergeLog::PostProcess(shared_ptr<LogIndex> logIdx) {
 		}
 	}
   }
-  processed = true;
 }
 
 // HashAggregateLog
@@ -517,7 +523,6 @@ void HALog::PostProcess(shared_ptr<LogIndex> logIdx) {
   if (ha_hash_index_final.size() > 0)
     logIdx->ha_hash_index = std::move(ha_hash_index_final);
   //std::cout << " total : " << total << std::endl;
-  processed = true;
 
 }
 // Perfect HashAggregateLog
@@ -534,7 +539,10 @@ idx_t PHALog::ChunksCount() {
 }
 
 void PHALog::BuildIndexes(shared_ptr<LogIndex> logIdx) {
-  idx_t count_so_far = 0;
+	if (logIdx->grouping_set_count.find(0) == logIdx->grouping_set_count.end()) {
+		logIdx->grouping_set_count[0] = 0;
+	}
+	idx_t count_so_far = logIdx->grouping_set_count[0];
   for (idx_t i=0; i < build_lineage.size(); i++) {
 	vector<uint32_t> &payload = build_lineage[i];
 	for (idx_t i = 0; i < payload.size(); ++i) {
@@ -543,6 +551,7 @@ void PHALog::BuildIndexes(shared_ptr<LogIndex> logIdx) {
 	}
 	count_so_far += payload.size();
   }
+	logIdx->grouping_set_count[0] = count_so_far;
 }
 
 

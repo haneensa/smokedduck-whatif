@@ -44,6 +44,8 @@ public:
 	idx_t arraySize = 0;
 	vector<idx_t> hj_array;
 	vector<vector<std::pair<idx_t, data_ptr_t>>> index_hj;
+  // TODO: substitute sel_t with 
+  std::unordered_map< data_ptr_t , std::vector< sel_t > > semiright;
 
 	// Merge Join
 	vector<idx_t> sort;
@@ -51,7 +53,7 @@ public:
 
 class Log {
 public:
-	Log(idx_t thid) : thid(thid), processed(false)  {}
+	Log(idx_t thid) : thid(thid), processed(false), out_offset(0)  {}
   	virtual idx_t GetLatestLSN() { return 0; };
   	virtual idx_t  GetLineageAsChunk(DataChunk &insert_chunk,
 	                                idx_t& global_count, idx_t& local_count,
@@ -72,7 +74,8 @@ public:
 	idx_t thid;
 	vector<std::pair<idx_t, idx_t>> output_index;
 	vector<std::pair<idx_t, idx_t>> cached_output_index;
-  	bool processed;
+  bool processed;
+  idx_t out_offset;
 };
 
 // TableScanLog
@@ -496,6 +499,11 @@ public:
   vector<hj_finalize_artifact> lineage_finalize;
 
   vector<hj_probe_artifact> lineage_binary;
+  vector<hj_probe_artifact> lineage_binary_semiright;
+  
+  idx_t current_key=0;
+  idx_t key_offset=0;
+  idx_t offset_within_key=0;
 };
 
 // Sampling Log

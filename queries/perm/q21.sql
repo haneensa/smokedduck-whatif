@@ -1,5 +1,5 @@
-  select out_index-1 as out_index,l2.rowid as lineitem_2,
-    supplier_rowid as supplier, lineitem_rowid as lineitem,
+  select out_index-1 as out_index,l2.rowid as lineitem,
+    supplier_rowid as supplier, lineitem_rowid as lineitem_2,
     orders_rowid as orders, nation_rowid as nation
   from (
       SELECT s_name, count(*) AS numwait,

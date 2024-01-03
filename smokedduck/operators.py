@@ -10,15 +10,12 @@ class Op(ABC):
         self.is_agg_child = False
         
         self.extra = node['extra']
-        print(self.extra)
         self.join_type = ''
         self.parent_join_type = parent_join_type
         if "RIGHT" in self.extra:
             self.join_type = 'right'
         if len(self.parent_join_type) > 0:
             self.join_type = 'right'
-
-        print(self.join_type)
 
     @abstractmethod
     def get_name(self) -> str:
@@ -53,7 +50,6 @@ class SingleOp(Op):
         pass
 
     def get_from_string(self) -> str:
-        print("***** " , self.single_op_table_name, self.parent_join_type)
         if self.is_root:
             return self.single_op_table_name
         else:

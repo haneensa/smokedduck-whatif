@@ -2,8 +2,6 @@
   FROM (
     SELECT o_orderpriority, count(*) AS order_count,
         ROW_NUMBER() OVER (ORDER BY (SELECT 1)) AS out_index
-    FROM (
-      SELECT o_orderpriority
       FROM orders
       WHERE o_orderdate >= CAST('1993-07-01' AS date)
           AND o_orderdate < CAST('1993-10-01' AS date)
@@ -11,7 +9,6 @@
                        WHERE l_commitdate < l_receiptdate
                          and l_orderkey=o_orderkey
                       )
-    )
     GROUP BY o_orderpriority
   ) as groups join (
     SELECT orders.rowid as o_rid, o_orderpriority, o_orderkey

@@ -1,8 +1,13 @@
-SELECT lineitem.rowid, part.rowid, p_partkey
+SELECT
+    o_orderpriority
 FROM
-    lineitem,
-    part
+    orders
 WHERE
-    p_partkey = l_partkey
-    AND p_brand = 'Brand#23'
-    AND p_container = 'MED BOX'
+    EXISTS (
+        SELECT
+            *
+        FROM
+            lineitem
+        WHERE
+            l_orderkey = o_orderkey
+            AND l_commitdate < l_receiptdate)
