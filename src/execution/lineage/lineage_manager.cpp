@@ -74,10 +74,6 @@ void LineageManager::CreateLineageTables(ClientContext &context, PhysicalOperato
 		CreateLineageTables(context, op->children[i].get(), query_id);
 	}
 
-	if (op->type == PhysicalOperatorType::PROJECTION) {
-		return;
-	}
-
 	// Example: LINEAGE_1_HASH_JOIN_3
 	string prefix = "LINEAGE_" + to_string(query_id) + "_" + op->GetName() ;
 	prefix.erase( remove( prefix.begin(), prefix.end(), ' ' ), prefix.end() );
@@ -86,19 +82,21 @@ void LineageManager::CreateLineageTables(ClientContext &context, PhysicalOperato
 	auto binder = Binder::CreateBinder(context);
 	auto &catalog = Catalog::GetCatalog(context, catalog_name);
 	auto table_column_types = op->lineage_op->GetTableColumnTypes();
-	for (idx_t i = 0; i < table_column_types.size(); i++) {
-		if (table_column_types[i].size() == 0) continue;
+	if (op->type != PhysicalOperatorType::PROJECTION) {
+    for (idx_t i = 0; i < table_column_types.size(); i++) {
+      if (table_column_types[i].size() == 0) continue;
 
-		// Example: LINEAGE_1_HASH_JOIN_3_0
-		string table_name = prefix + "_" + to_string(i);
-		// Create Table
-		auto create_info = make_uniq<CreateTableInfo>(catalog_name, DEFAULT_SCHEMA, table_name);
-		for (idx_t col_i = 0; col_i < table_column_types[i].size(); col_i++) {
-			create_info->columns.AddColumn(move(table_column_types[i][col_i]));
-		}
-		table_lineage_op[table_name] = op->lineage_op;
-		DuckTableEntry* table = (DuckTableEntry*)catalog.CreateTable(context, move(create_info)).get();
-	}
+      // Example: LINEAGE_1_HASH_JOIN_3_0
+      string table_name = prefix + "_" + to_string(i);
+      // Create Table
+      auto create_info = make_uniq<CreateTableInfo>(catalog_name, DEFAULT_SCHEMA, table_name);
+      for (idx_t col_i = 0; col_i < table_column_types[i].size(); col_i++) {
+        create_info->columns.AddColumn(move(table_column_types[i][col_i]));
+      }
+      table_lineage_op[table_name] = op->lineage_op;
+      DuckTableEntry* table = (DuckTableEntry*)catalog.CreateTable(context, move(create_info)).get();
+    }
+  }
 
 	// persist intermediate values
 	if (persist_intermediate || CheckIfShouldPersistForKSemimodule(op)) {
