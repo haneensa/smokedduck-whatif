@@ -545,7 +545,6 @@ void GroupedAggregateHashTable::Combine(TupleDataCollection &other_data, optiona
 			ptrs = FlatVector::GetData<data_ptr_t>( fm_state.group_addresses);
 			unique_ptr<data_ptr_t[]> dst_addresses_copy(new data_ptr_t[fm_state.groups.size()]);
 			std::copy(ptrs, ptrs + fm_state.groups.size() , dst_addresses_copy.get());
-			ptrs = FlatVector::GetData<data_ptr_t>( fm_state.group_addresses);
 			auto lop = reinterpret_cast<HALog*>(log_per_thread.get());
 			lop->flushmove_log.push_back({move(src_addresses_copy), move(dst_addresses_copy), fm_state.groups.size()});
 		}

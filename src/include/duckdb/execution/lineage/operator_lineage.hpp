@@ -56,8 +56,6 @@ public:
   unordered_map<idx_t, shared_ptr<Log>> log_per_thread;
   shared_ptr<LogIndex> log_index;
   vector<idx_t> thread_vec;
-  //! ensures we add the rowid column just once during the first time we read it and no more
-  idx_t intermediate_chunk_processed_counter = 0;
   //! intermediate relation
   ChunkCollection chunk_collection;
   idx_t cache_offset;
@@ -65,6 +63,11 @@ public:
   //! Name of the scanned table if a scan
   string table_name;
   bool processed;
+  mutex glock;
+
+  //! fade
+  vector<idx_t> annotations;
+  idx_t n_interventions = 1;
 };
 
 

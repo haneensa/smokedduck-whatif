@@ -117,6 +117,16 @@ static void PragmaDisableOptimizer(ClientContext &context, const FunctionParamet
 }
 
 #ifdef LINEAGE
+
+static void PragmaRecompute(ClientContext &context, const FunctionParameters &parameters) {
+	int qid = parameters.values[0].GetValue<int>();
+	int k = parameters.values[1].GetValue<int>();
+	int distinct = parameters.values[3].GetValue<int>();
+	std::cout << "\nRecompute " << qid << " " << k << " " <<  parameters.values[2].ToString() << std::endl;
+	// takes in query id, attributes to intervene on, conjunctive only or conjunctive and disjunction, or random
+	context.client_data->lineage_manager->Why(qid, k,  parameters.values[2].ToString(), distinct);
+}
+
 static void PragmaEnableLineage(ClientContext &context, const FunctionParameters &parameters) {
 	context.client_data->lineage_manager->trace_lineage = true;
 	ClientConfig::GetConfig(context).trace_lineage = true;
@@ -158,6 +168,7 @@ static void PragmaClearLineage(ClientContext &context, const FunctionParameters 
 void PragmaFunctions::RegisterFunction(BuiltinFunctions &set) {
 	RegisterEnableProfiling(set);
 #ifdef LINEAGE
+	set.AddFunction(PragmaFunction::PragmaCall("Why", PragmaRecompute, {LogicalType::INTEGER, LogicalType::INTEGER, LogicalType::VARCHAR, LogicalType::INTEGER}));
     set.AddFunction(PragmaFunction::PragmaStatement("enable_lineage", PragmaEnableLineage));
 	set.AddFunction(PragmaFunction::PragmaStatement("disable_lineage", PragmaDisableLineage));
 	set.AddFunction(PragmaFunction::PragmaStatement("enable_intermediate_tables", PragmaEnableIntermediateTables));

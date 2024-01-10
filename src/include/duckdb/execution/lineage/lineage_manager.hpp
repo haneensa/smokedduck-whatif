@@ -54,6 +54,8 @@ public:
 		return current_lop;
 	}
 
+	void Why(int qid, int k, string columns_spec, int distinct);
+
 private:
 	//! cached operator lineage to be accessed from function calls that don't have access to operator members
 	shared_ptr<OperatorLineage> current_lop;

@@ -1,14 +1,15 @@
 #ifdef LINEAGE
 #include "duckdb/execution/lineage/lineage_manager.hpp"
 
+#include "duckdb/catalog/catalog_entry/duck_table_entry.hpp"
+#include "duckdb/execution/operator/helper/physical_execute.hpp"
+#include "duckdb/execution/operator/join/physical_delim_join.hpp"
 #include "duckdb/execution/operator/scan/physical_table_scan.hpp"
 #include "duckdb/main/client_context.hpp"
 #include "duckdb/parser/parsed_data/create_table_info.hpp"
 #include "duckdb/parser/statement/create_statement.hpp"
 #include "duckdb/planner/parsed_data/bound_create_table_info.hpp"
-#include "duckdb/catalog/catalog_entry/duck_table_entry.hpp"
-#include "duckdb/execution/operator/join/physical_delim_join.hpp"
-#include "duckdb/execution/operator/helper/physical_execute.hpp"
+
 #include <utility>
 
 namespace duckdb {
@@ -129,6 +130,7 @@ void LineageManager::StoreQueryLineage(ClientContext &context, unique_ptr<Physic
 bool LineageManager::CheckIfShouldPersistForKSemimodule(PhysicalOperator *op) {
 	return persist_k_semimodule && op->child_of_aggregate;
 }
+
 
 } // namespace duckdb
 #endif

@@ -346,7 +346,7 @@ void TupleDataCollection::CopyRows(TupleDataChunkState &chunk_state, TupleDataCh
 			FastMemcpy(target_heap_locations[i], source_heap_locations[idx], heap_sizes[idx]);
 		}
 
-		// Recompute pointers after copying the data
+		// Why pointers after copying the data
 		TupleDataAllocator::RecomputeHeapPointers(input.heap_locations, append_sel, target_locations,
 		                                          chunk_state.heap_locations, 0, append_count, layout, 0);
 	}
