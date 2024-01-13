@@ -3,6 +3,7 @@
 #include "duckdb/catalog/catalog.hpp"
 #include "duckdb/catalog/catalog_entry/schema_catalog_entry.hpp"
 #include "duckdb/catalog/catalog_entry/view_catalog_entry.hpp"
+#include "duckdb/execution/operator/join/physical_delim_join.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/main/client_context.hpp"
 #include "duckdb/main/client_data.hpp"
@@ -93,6 +94,26 @@ string PlanToString(PhysicalOperator *op) {
 	return "{\"name\": \"" + op->GetName() + "\",\"children\": [" + child_str + "],\"table\": \"" + op->lineage_op->table_name +  "\",\"extra\": \"" + JSONSanitize(op->ParamsToString())+ "\"}";
 }
 
+void PostProcess(PhysicalOperator *op) {
+	// massage the data to make it easier to query
+	// for hash join, build hash table on the build side that map the address to id
+	// for group by, build hash table on the unique groups
+	if (op->lineage_op) {
+		op->lineage_op->PostProcess();
+	}
+
+	if (op->type == PhysicalOperatorType::DELIM_JOIN) {
+		PostProcess( dynamic_cast<PhysicalDelimJoin *>(op)->children[0].get());
+		PostProcess( dynamic_cast<PhysicalDelimJoin *>(op)->join.get());
+		PostProcess( (PhysicalOperator *)dynamic_cast<PhysicalDelimJoin *>(op)->distinct.get());
+		return;
+	}
+
+	for (idx_t i = 0; i < op->children.size(); i++) {
+		PostProcess(op->children[i].get());
+	}
+}
+
 //! Create table to store executed queries with their IDs
 //! Table name: queries_list
 //! Schema: (INT query_id, varchar query)
@@ -106,9 +127,15 @@ void DuckDBQueriesListFunction(ClientContext &context, TableFunctionInput &data_
 	// start returning values
 	// either fill up the chunk or return all the remaining columns
 	idx_t count = 0;
-  std::vector<idx_t> stats(3, 0);
+  	std::vector<idx_t> stats(3, 0);
 	while (data.offset < query_to_id.size() && count < STANDARD_VECTOR_SIZE) {
 		string query = query_to_id[data.offset];
+		auto plan = context.client_data->lineage_manager->queryid_to_plan[data.offset].get();
+		std::vector<idx_t> stats(3, 0);//GetStats(plan);
+		clock_t start = clock();
+		PostProcess(plan);
+		clock_t end = clock();
+
 		idx_t col = 0;
 		// query_id, INT
 		output.SetValue(col++, count,Value::INTEGER(data.offset));
@@ -125,13 +152,11 @@ void DuckDBQueriesListFunction(ClientContext &context, TableFunctionInput &data_
 		output.SetValue(col++, count,Value::INTEGER(stats[1]));
 
     // postprocess_time
-    float postprocess_time = 0.0;//((float) end - start) / CLOCKS_PER_SEC;
-		output.SetValue(col++, count,Value::FLOAT(postprocess_time));
+	float postprocess_time = ((float) end - start) / CLOCKS_PER_SEC;
+	output.SetValue(col++, count,Value::FLOAT(postprocess_time));
 
     // plan, VARCHAR
-		output.SetValue(col++, count, PlanToString(
-		                                  context.client_data->lineage_manager->queryid_to_plan[data.offset].get()
-		                                  ));
+		output.SetValue(col++, count, PlanToString(plan ));
 
 		count++;
 		data.offset++;
