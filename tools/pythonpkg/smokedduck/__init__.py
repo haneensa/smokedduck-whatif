@@ -404,4 +404,14 @@ _exported_symbols.extend([
     "TimeTimeZoneValue",
 ])
 
+from .provenance.smokedduck import (
+    SmokedDuck,
+    prov_connect,
+)
+
+_exported_symbols.extend([
+    "SmokedDuck",
+    "prov_connect",
+])
+
 __all__ = _exported_symbols
