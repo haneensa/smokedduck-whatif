@@ -1,18 +1,136 @@
 #ifdef LINEAGE
 #include "duckdb/execution/lineage/lineage_manager.hpp"
 
+#include "duckdb/catalog/catalog_entry/duck_table_entry.hpp"
+#include "duckdb/execution/operator/helper/physical_execute.hpp"
+#include "duckdb/execution/operator/join/physical_delim_join.hpp"
+#include "duckdb/execution/operator/join/physical_join.hpp"
 #include "duckdb/execution/operator/scan/physical_table_scan.hpp"
 #include "duckdb/main/client_context.hpp"
 #include "duckdb/parser/parsed_data/create_table_info.hpp"
 #include "duckdb/parser/statement/create_statement.hpp"
 #include "duckdb/planner/parsed_data/bound_create_table_info.hpp"
-#include "duckdb/catalog/catalog_entry/duck_table_entry.hpp"
-#include "duckdb/execution/operator/join/physical_delim_join.hpp"
-#include "duckdb/execution/operator/helper/physical_execute.hpp"
 #include <utility>
 
 namespace duckdb {
 class PhysicalDelimJoin;
+
+struct Projections {
+	string in_index;
+	string alias;
+	string orig_table_name;
+};
+
+struct Join {
+	string left_table;
+	string right_table;
+	bool is_agg;
+	JoinType join_type;
+};
+
+struct Query {
+	vector<struct Projections> proj;
+	vector<struct Join> from;
+	string table_name;
+	bool is_agg_child;
+};
+
+vector<string> join_side = {".lhs_index", ".rhs_index"};
+
+struct Query GetEndToEndQuery(PhysicalOperator* op, idx_t qid,
+                              string parent_join_cond, JoinType join_type) {
+	if (op->type == PhysicalOperatorType::PROJECTION) {
+		return GetEndToEndQuery(op->children[0].get(), qid, parent_join_cond, join_type);
+	}
+
+	Query Q;
+
+	bool is_agg = false;
+	Q.is_agg_child = false;
+	if (op->type == PhysicalOperatorType::UNGROUPED_AGGREGATE) {
+		is_agg = true;
+		Q.is_agg_child = true;
+		// find a child that is not projection
+		PhysicalOperator* c = op->children[0].get();
+		while (c->type == PhysicalOperatorType::PROJECTION) {
+			c = op->children[0].get();
+		}
+		op = c;
+	}
+
+	// Example: LINEAGE_1_HASH_JOIN_3_0
+	string table_name = "LINEAGE_" + to_string(qid) + "_"
+	                    + op->GetName() + "_0";
+	if (parent_join_cond.empty() ) // root
+		Q.from.push_back({"", table_name, is_agg, join_type});
+	else
+		Q.from.push_back({parent_join_cond, table_name, is_agg, join_type});
+	Q.table_name = table_name;
+	JoinType parent_join_type = JoinType::INNER;
+	if (op->type == PhysicalOperatorType::HASH_JOIN ||
+	    op->type == PhysicalOperatorType::BLOCKWISE_NL_JOIN ||
+	    op->type == PhysicalOperatorType::NESTED_LOOP_JOIN ||
+	    op->type == PhysicalOperatorType::PIECEWISE_MERGE_JOIN) {
+		parent_join_type = dynamic_cast<PhysicalJoin*>(op)->join_type;
+	}
+	for (idx_t i = 0; i < op->children.size(); i++) {
+		string join_cond = table_name;
+		if (op->children.size() > 1) {
+			join_cond += join_side[i];
+		} else {
+			join_cond += ".in_index";
+		}
+
+		struct Query child = GetEndToEndQuery(op->children[i].get(), qid, join_cond, parent_join_type);
+		Q.proj.insert( Q.proj.end(), child.proj.begin(), child.proj.end() );
+		Q.from.insert( Q.from.end(), child.from.begin(), child.from.end() );
+	}
+
+	if (op->type == PhysicalOperatorType::TABLE_SCAN) {
+		string tname = op->lineage_op->table_name;
+		Q.proj.push_back({table_name+".in_index", tname, tname});
+	}
+
+	return Q;
+}
+
+string LineageManager::Lineage(idx_t qid) {
+	PhysicalOperator* op = queryid_to_plan[qid].get();
+	struct Query qobj= GetEndToEndQuery(op, qid, "", JoinType::INNER);
+	string query = "SELECT ";
+	for (idx_t i=0; i < qobj.proj.size(); i++) {
+		if (i > 0) {
+			query += ",";
+		}
+		query += qobj.proj[i].in_index + " AS " + qobj.proj[i].alias;
+	}
+
+	if (qobj.is_agg_child) {
+		query += ",  0 as out_index FROM ";
+	} else {
+		query += ", " + qobj.table_name + ".out_index FROM ";
+	}
+
+	for (idx_t i=0; i < qobj.from.size(); i++) {
+		if (i > 0) {
+			if (qobj.from[i].join_type != JoinType::INNER) {
+				query += " LEFT ";
+			}
+
+			query += " JOIN " + qobj.from[i].right_table + " ON "
+			         + qobj.from[i].left_table + " = ";
+			if (qobj.from[i].is_agg) {
+				query += "0";
+			} else {
+				query += qobj.from[i].right_table + ".out_index";
+			}
+		} else {
+			query +=  qobj.from[i].right_table;
+		}
+
+	}
+	return query;
+}
 
 void LineageManager::CreateOperatorLineage(ClientContext &context,
     PhysicalOperator *op, 

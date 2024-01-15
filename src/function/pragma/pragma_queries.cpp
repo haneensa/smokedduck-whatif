@@ -209,6 +209,21 @@ string PragmaUserAgent(ClientContext &context, const FunctionParameters &paramet
 	return "SELECT * FROM pragma_user_agent()";
 }
 
+#ifdef LINEAGE
+string PragmaLineage(ClientContext &context, const FunctionParameters &parameters) {
+	string query = parameters.values[0].ToString();
+	idx_t qid = 0;
+	for (auto q : context.client_data->lineage_manager->query_to_id) {
+		if (q == query) {
+			return context.client_data->lineage_manager->Lineage(qid);
+		}
+		qid++;
+	}
+
+	return "select 0";
+}
+#endif
+
 void PragmaQueries::RegisterFunction(BuiltinFunctions &set) {
 	set.AddFunction(PragmaFunction::PragmaCall("table_info", PragmaTableInfo, {LogicalType::VARCHAR}));
 	set.AddFunction(PragmaFunction::PragmaCall("storage_info", PragmaStorageInfo, {LogicalType::VARCHAR}));
@@ -228,6 +243,9 @@ void PragmaQueries::RegisterFunction(BuiltinFunctions &set) {
 	    PragmaFunction::PragmaCall("copy_database", PragmaCopyDatabase, {LogicalType::VARCHAR, LogicalType::VARCHAR}));
 	set.AddFunction(PragmaFunction::PragmaStatement("all_profiling_output", PragmaAllProfiling));
 	set.AddFunction(PragmaFunction::PragmaStatement("user_agent", PragmaUserAgent));
+#ifdef LINEAGE
+	set.AddFunction(PragmaFunction::PragmaCall("Lineage", PragmaLineage, {LogicalType::VARCHAR}));
+#endif
 }
 
 } // namespace duckdb

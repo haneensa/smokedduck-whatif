@@ -47,6 +47,12 @@ statement ok
 PRAGMA disable_lineage;
 PRAGMA threads=1;
 
+
+query II
+pragma lineage("select * from t1 where i=6");
+----
+6	0
+
 query III
 SELECT rowid, in_index, out_index FROM LINEAGE_2_SEQ_SCAN_0_0 order by in_index
 ----

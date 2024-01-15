@@ -35,6 +35,8 @@ public:
 	LineageManager() :trace_lineage(false), persist_intermediate(false), persist_k_semimodule(false)  {};
 //	~LineageManager() {}
 
+	string Lineage(idx_t qid);
+
 	//! 1. call PlanAnnotator: For each operator in the plan, give it an ID. If there are
 	//! two operators with the same type, give them a unique ID starting
 	//! from the zero and incrementing it for the lowest levels of the tree

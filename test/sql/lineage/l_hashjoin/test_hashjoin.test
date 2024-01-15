@@ -97,37 +97,50 @@ statement ok
 PRAGMA disable_lineage;
 PRAGMA disable_optimizer;
 
-query IIII
-select lhs_index, rhs_index as rhs_index, out_index, 0 as thread_id from LINEAGE_1_HASH_JOIN_2_0
-order by out_index
+query III
+pragma lineage("select t1.rowid, t2.rowid, i, t1.j, t2.k from t1 left join t2 using(i) order by t1.rowid, t2.rowid");
 ----
-0	4	0	0
-2	1	1	0
-3	4	2	0
-4	4	3	0
-5	4	4	0
-0	2	5	0
-3	2	6	0
-4	2	7	0
-5	2	8	0
-1	NULL	9	0
+0	2	0
+0	4	1
+2	1	3
+3	2	4
+3	4	5
+4	2	6
+4	4	7
+5	2	8
+5	4	9
+1	NULL	2
 
 
-query IIII
-select lhs_index, rhs_index, out_index, 0 as thread_id from LINEAGE_2_HASH_JOIN_2_0
-order by out_index
+query III
+pragma lineage("select t1.rowid, t2.rowid, i, t1.j, t2.k from t1 right join t2 using(i) order by t1.rowid, t2.rowid");
 ----
-1	2	0	0
-2	5	1	0
-4	5	2	0
-2	4	3	0
-4	4	4	0
-2	3	5	0
-4	3	6	0
-2	0	7	0
-4	0	8	0
-0	NULL	9	0
-3	NULL	10	0
+2	0	0
+4	0	1
+1	2	2
+2	3	3
+4	3	4
+2	4	5
+4	4	6
+2	5	7
+4	5	8
+0	NULL	9
+3	NULL	10
+
+
+query III
+pragma lineage("select t1.rowid, * from t1 SEMI JOIN t2 ON t2.i = t1.i order by t1.rowid");
+----
+0	4	0
+2	1	1
+3	4	2
+4	4	3
+5	4	4
+
+
+query III
+pragma lineage("select t1.rowid, t2.rowid, i, t1.j, t2.k from t1 full outer join t2 using(i)  order by t1.rowid, t2.rowid");
+----
 
 
 query IIII
@@ -146,14 +159,3 @@ order by out_index
 NULL	1	9	0
 0	NULL	10	0
 3	NULL	11	0
-
-query IIII
-select r.in_index, lhs_index, j.out_index, 0 as thread_id from LINEAGE_4_HASH_JOIN_2_0 j
-JOIN LINEAGE_4_SEQ_SCAN_1_0 r ON (j.rhs_index=r.out_index)
-order by j.out_index
-----
-4	0	0	0
-1	2	1	0
-4	3	2	0
-4	4	3	0
-4	5	4	0
