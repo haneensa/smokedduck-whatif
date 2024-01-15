@@ -176,7 +176,6 @@ string LineageManager::Lineage(string model, idx_t qid) {
 		query += query_suffix(model, out_index) + " order by " + out_index;
 	}
 
-	std::cout << query << std::endl;
 	return query;
 }
 
