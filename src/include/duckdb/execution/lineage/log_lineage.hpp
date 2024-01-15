@@ -49,6 +49,8 @@ public:
 
 	// Merge Join
 	vector<idx_t> sort;
+
+	idx_t table_size = 0;
 };
 
 class Log {
