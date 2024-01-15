@@ -1,14 +1,14 @@
 from ..exception import ContributionsAcceptedError
 
 from typing import TYPE_CHECKING, List, Optional, Union, Tuple, overload, Sequence, Any, Dict, cast, Callable
-from duckdb import StarExpression, ColumnExpression, Expression
+from smokedduck import StarExpression, ColumnExpression, Expression
 
 from ..errors import PySparkTypeError
 from .readwriter import DataFrameWriter
 from .types import Row, StructType
 from .type_utils import duckdb_to_spark_schema
 from .column import Column
-import duckdb
+import smokedduck
 from functools import reduce
 
 if TYPE_CHECKING:
@@ -20,7 +20,7 @@ from .functions import _to_column
 from ..errors import PySparkValueError
 
 class DataFrame:
-    def __init__(self, relation: duckdb.DuckDBPyRelation, session: "SparkSession"):
+    def __init__(self, relation: smokedduck.DuckDBPyRelation, session: "SparkSession"):
         self.relation = relation
         self.session = session
         self._schema = None
@@ -570,7 +570,7 @@ class DataFrame:
 
     @property
     def schema(self) -> StructType:
-        """Returns the schema of this :class:`DataFrame` as a :class:`duckdb.experimental.spark.sql.types.StructType`.
+        """Returns the schema of this :class:`DataFrame` as a :class:`smokedduck.experimental.spark.sql.types.StructType`.
 
         Examples
         --------
@@ -624,7 +624,7 @@ class DataFrame:
         """
         if name not in self.relation.columns:
             raise AttributeError("'%s' object has no attribute '%s'" % (self.__class__.__name__, name))
-        return Column(duckdb.ColumnExpression(name))
+        return Column(smokedduck.ColumnExpression(name))
 
     @overload
     def groupBy(self, *cols: "ColumnOrName") -> "GroupedData":

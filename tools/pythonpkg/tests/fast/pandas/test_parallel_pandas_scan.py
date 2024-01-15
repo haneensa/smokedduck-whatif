@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-import duckdb
+import smokedduck as duckdb
 import numpy
 import datetime
 import pytest

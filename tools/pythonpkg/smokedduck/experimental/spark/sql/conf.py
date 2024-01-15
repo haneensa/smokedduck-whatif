@@ -1,6 +1,6 @@
 from typing import Optional, Union
-from duckdb.experimental.spark._globals import _NoValueType, _NoValue
-from duckdb import DuckDBPyConnection
+from smokedduck.experimental.spark._globals import _NoValueType, _NoValue
+from smokedduck import DuckDBPyConnection
 
 
 class RuntimeConfig:

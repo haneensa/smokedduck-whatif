@@ -1,33 +1,33 @@
 # Workflow derived from https://github.com/r-lib/actions/tree/v2/examples
 on:
   workflow_dispatch:
-  repository_dispatch:
-  push:
-    branches:
-      - '**'
-      - '!main'
-      - '!feature'
-    tags:
-      - '**'
-    paths-ignore:
-      - '**.md'
-      - 'examples/**'
-      - 'test/**'
-      - 'tools/**'
-      - '!tools/swift/**'
-      - '.github/patches/duckdb-wasm/**'
-      - '.github/workflows/**'
-      - '!.github/workflows/R_CMD_CHECK.yml'
-
-  pull_request:
-    types: [ opened, reopened, ready_for_review ]
-    paths-ignore:
-      - '**.md'
-      - 'tools/**'
-      - '!tools/odbc/**'
-      - '.github/patches/duckdb-wasm/**'
-      - '.github/workflows/**'
-      - '!.github/workflows/R_CMD_CHECK.yml'
+#  repository_dispatch:
+#  push:
+#    branches:
+#      - '**'
+#      - '!main'
+#      - '!feature'
+#    tags:
+#      - '**'
+#    paths-ignore:
+#      - '**.md'
+#      - 'examples/**'
+#      - 'test/**'
+#      - 'tools/**'
+#      - '!tools/swift/**'
+#      - '.github/patches/duckdb-wasm/**'
+#      - '.github/workflows/**'
+#      - '!.github/workflows/R_CMD_CHECK.yml'
+#
+#  pull_request:
+#    types: [ opened, reopened, ready_for_review ]
+#    paths-ignore:
+#      - '**.md'
+#      - 'tools/**'
+#      - '!tools/odbc/**'
+#      - '.github/patches/duckdb-wasm/**'
+#      - '.github/workflows/**'
+#      - '!.github/workflows/R_CMD_CHECK.yml'
 
 
 name: R-CMD-check

@@ -3,7 +3,7 @@ import pytest
 import shutil
 from os.path import abspath, join, dirname, normpath
 import glob
-import duckdb
+import smokedduck as duckdb
 
 try:
     import pandas

@@ -6,8 +6,8 @@ from typing import Callable, List
 from os.path import exists
 from pathlib import PurePosixPath
 
-import duckdb
-from duckdb import DuckDBPyConnection, InvalidInputException
+import smokedduck as duckdb
+from smokedduck import DuckDBPyConnection, InvalidInputException
 from pytest import raises, importorskip, fixture, MonkeyPatch, mark
 
 importorskip('fsspec', '2022.11.0')

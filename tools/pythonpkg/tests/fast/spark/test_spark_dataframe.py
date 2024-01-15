@@ -15,7 +15,7 @@ from duckdb.experimental.spark.sql.types import (
     MapType,
 )
 from duckdb.experimental.spark.sql.functions import col, struct, when
-import duckdb
+import smokedduck as duckdb
 import re
 
 from duckdb.experimental.spark.errors import PySparkValueError, PySparkTypeError

@@ -8,8 +8,8 @@ OptionalPrimitiveType = Optional[PrimitiveType]
 from ..errors import PySparkTypeError, PySparkNotImplementedError
 
 if TYPE_CHECKING:
-    from duckdb.experimental.spark.sql.dataframe import DataFrame
-    from duckdb.experimental.spark.sql.session import SparkSession
+    from smokedduck.experimental.spark.sql.dataframe import DataFrame
+    from smokedduck.experimental.spark.sql.session import SparkSession
 
 
 class DataFrameWriter:
@@ -32,7 +32,7 @@ class DataFrameReader:
         schema: Optional[Union[StructType, str]] = None,
         **options: OptionalPrimitiveType,
     ) -> "DataFrame":
-        from duckdb.experimental.spark.sql.dataframe import DataFrame
+        from smokedduck.experimental.spark.sql.dataframe import DataFrame
 
         if not isinstance(path, str):
             raise ImportError

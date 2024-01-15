@@ -1,4 +1,4 @@
-import duckdb
+import smokedduck as duckdb
 import tempfile
 import os
 import pandas._testing as tm

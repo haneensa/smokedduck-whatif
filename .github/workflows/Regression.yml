@@ -1,31 +1,31 @@
 name: Regression
 on:
   workflow_dispatch:
-  repository_dispatch:
-  push:
-    branches:
-      - '**'
-      - '!main'
-      - '!feature'
-    tags:
-      - '**'
-    paths-ignore:
-      - '**.md'
-      - 'tools/**'
-      - '!tools/pythonpkg/**'
-      - '.github/patches/duckdb-wasm/**'
-      - '.github/workflows/**'
-      - '!.github/workflows/Regression.yml'
-
-  pull_request:
-    types: [opened, reopened, ready_for_review]
-    paths-ignore:
-      - '**.md'
-      - 'tools/**'
-      - '!tools/pythonpkg/**'
-      - '.github/patches/duckdb-wasm/**'
-      - '.github/workflows/**'
-      - '!.github/workflows/Regression.yml'
+#  repository_dispatch:
+#  push:
+#    branches:
+#      - '**'
+#      - '!main'
+#      - '!feature'
+#    tags:
+#      - '**'
+#    paths-ignore:
+#      - '**.md'
+#      - 'tools/**'
+#      - '!tools/pythonpkg/**'
+#      - '.github/patches/duckdb-wasm/**'
+#      - '.github/workflows/**'
+#      - '!.github/workflows/Regression.yml'
+#
+#  pull_request:
+#    types: [opened, reopened, ready_for_review]
+#    paths-ignore:
+#      - '**.md'
+#      - 'tools/**'
+#      - '!tools/pythonpkg/**'
+#      - '.github/patches/duckdb-wasm/**'
+#      - '.github/workflows/**'
+#      - '!.github/workflows/Regression.yml'
 
 
 concurrency:

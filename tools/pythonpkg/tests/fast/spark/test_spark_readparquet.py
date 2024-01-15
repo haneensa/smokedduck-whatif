@@ -4,7 +4,7 @@ _ = pytest.importorskip("duckdb.experimental.spark")
 
 from duckdb.experimental.spark.sql.types import Row
 import textwrap
-import duckdb
+import smokedduck as duckdb
 
 
 class TestSparkReadParquet(object):

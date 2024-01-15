@@ -15,7 +15,7 @@ from .readwriter import DataFrameReader
 from ..context import SparkContext
 from .udf import UDFRegistration
 from .streaming import DataStreamReader
-import duckdb
+import smokedduck
 
 from ..errors import (
     PySparkTypeError,
@@ -29,14 +29,14 @@ from ..errors.error_classes import *
 # SparkContext gets created from SparkConf
 # At this level the check is made to determine whether the instance already exists and just needs to be retrieved or it needs to be created
 
-# For us this is done inside of `duckdb.connect`, based on the passed in path + configuration
+# For us this is done inside of `smokedduck.connect`, based on the passed in path + configuration
 # SparkContext can be compared to our Connection class, and SparkConf to our ClientContext class
 
 
 # data is a List of rows
 # every value in each row needs to be turned into a Value
 def _combine_data_and_schema(data: Iterable[Any], schema: StructType):
-    from duckdb import Value
+    from smokedduck import Value
 
     new_data = []
     for row in data:
@@ -215,7 +215,7 @@ class SparkSession:
     @property
     def catalog(self) -> "Catalog":
         if not hasattr(self, "_catalog"):
-            from duckdb.experimental.spark.sql.catalog import Catalog
+            from smokedduck.experimental.spark.sql.catalog import Catalog
 
             self._catalog = Catalog(self)
         return self._catalog

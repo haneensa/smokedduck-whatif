@@ -42,6 +42,6 @@ def connect(path: typing.Optional[str] = None) -> adbc_driver_manager.AdbcDataba
 
 @functools.cache
 def _driver_path() -> str:
-    import duckdb
+    import smokedduck
 
-    return duckdb.duckdb.__file__
+    return smokedduck.duckdb.__file__

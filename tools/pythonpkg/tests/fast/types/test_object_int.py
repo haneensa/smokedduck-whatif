@@ -1,6 +1,6 @@
 import numpy as np
 import datetime
-import duckdb
+import smokedduck as duckdb
 import pytest
 
 

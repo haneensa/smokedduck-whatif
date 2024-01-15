@@ -1,4 +1,4 @@
-import duckdb
+import smokedduck as duckdb
 import pytest
 
 # https://pandas.pydata.org/docs/dev/user_guide/copy_on_write.html

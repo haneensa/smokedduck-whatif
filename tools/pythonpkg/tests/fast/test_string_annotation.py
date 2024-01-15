@@ -1,4 +1,4 @@
-import duckdb
+import smokedduck as duckdb
 import pytest
 import sys
 from typing import Union

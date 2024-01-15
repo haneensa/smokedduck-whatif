@@ -1,6 +1,6 @@
 import sys
 
-import duckdb
+import smokedduck as duckdb
 import pytest
 
 pa = pytest.importorskip("pyarrow")

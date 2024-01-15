@@ -2,7 +2,7 @@
 
 import numpy
 import pytest
-import duckdb
+import smokedduck as duckdb
 from conftest import NumpyPandas, ArrowPandas
 
 
@@ -119,56 +119,56 @@ class TestSimpleDBAPI(object):
     #     data_dict = {'i': numpy.arange(10), 'v': numpy.random.randint(100, size=10)}
     #     duckdb_cursor.create('numpy_creation', data_dict)
     #     duckdb_cursor.commit()
-
+    #
     #     duckdb_cursor.execute('SELECT * FROM numpy_creation')
     #     result = duckdb_cursor.fetchnumpy()
-
+    #
     #     numpy.testing.assert_array_equal(result['i'], data_dict['i'])
     #     numpy.testing.assert_array_equal(result['v'], data_dict['v'])
-
+    #
     # def test_pandas_creation(self, duckdb_cursor):
     #     data_dict = {'i': numpy.arange(10), 'v': numpy.random.randint(100, size=10)}
     #     dframe = pandas.DataFrame.from_dict(data_dict)
     #     duckdb_cursor.create('dframe_creation', dframe)
-
+    #
     #     duckdb_cursor.execute('SELECT * FROM dframe_creation')
     #     result = duckdb_cursor.fetchnumpy()
-
+    #
     #     numpy.testing.assert_array_equal(result['i'], data_dict['i'])
     #     numpy.testing.assert_array_equal(result['v'], data_dict['v'])
-
+    #
     # def test_numpy_insertion(self, duckdb_cursor):
     #     data_dict = {'i': numpy.arange(10), 'v': numpy.random.randint(100, size=10)}
     #     duckdb_cursor.execute("CREATE TABLE numpy_insertion (i INT, v INT)")
     #     duckdb_cursor.insert('numpy_insertion', data_dict)
     #     duckdb_cursor.commit()
-
+    #
     #     duckdb_cursor.execute("SELECT * FROM numpy_insertion")
     #     result = duckdb_cursor.fetchnumpy()
-
+    #
     #     numpy.testing.assert_array_equal(result['i'], data_dict['i'])
     #     numpy.testing.assert_array_equal(result['v'], data_dict['v'])
-
+    #
     # def test_pandas_insertion(self, duckdb_cursor):
     #     data_dict = {'i': numpy.arange(10), 'v': numpy.random.randint(100, size=10)}
     #     dframe = pandas.DataFrame.from_dict(data_dict)
     #     duckdb_cursor.execute("CREATE TABLE pandas_insertion (i INT, v INT)")
     #     duckdb_cursor.insert('pandas_insertion', dframe)
     #     duckdb_cursor.commit()
-
+    #
     #     duckdb_cursor.execute("SELECT * FROM pandas_insertion")
     #     result = duckdb_cursor.fetchnumpy()
-
+    #
     #     numpy.testing.assert_array_equal(result['i'], data_dict['i'])
     #     numpy.testing.assert_array_equal(result['v'], data_dict['v'])
-
+    #
     # def test_masked_array_insertion(self, duckdb_cursor):
     #     data_dict = {'i': numpy.ma.masked_array(numpy.arange(10), mask=([False]*9 + [True]))}
     #     duckdb_cursor.execute("CREATE TABLE masked_array_insertion (i INT)")
     #     duckdb_cursor.insert("masked_array_insertion", data_dict)
     #     duckdb_cursor.commit()
-
+    #
     #     duckdb_cursor.execute("SELECT * FROM masked_array_insertion")
     #     result = duckdb_cursor.fetchnumpy()
-
+    #
     #     numpy.testing.assert_array_equal(result['i'], data_dict['i'])

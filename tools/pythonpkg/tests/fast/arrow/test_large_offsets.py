@@ -1,5 +1,5 @@
 from re import S
-import duckdb
+import smokedduck as duckdb
 import os
 import pytest
 import tempfile

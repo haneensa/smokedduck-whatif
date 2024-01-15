@@ -1,7 +1,7 @@
 import threading
 import time
 
-import duckdb
+import smokedduck as duckdb
 import pytest
 
 

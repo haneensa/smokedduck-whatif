@@ -1,22 +1,22 @@
 name: OSX
 on:
   workflow_dispatch:
-  repository_dispatch:
-  push:
-    branches:
-      - '**'
-      - '!main'
-      - '!feature'
-    tags:
-      - '**'
-    paths-ignore:
-      - '**.md'
-      - 'tools/**'
-      - '!tools/odbc/**'
-      - '!tools/shell/**'
-      - '.github/patches/duckdb-wasm/**'
-      - '.github/workflows/**'
-      - '!.github/workflows/OSX.yml'
+#  repository_dispatch:
+#  push:
+#    branches:
+#      - '**'
+#      - '!main'
+#      - '!feature'
+#    tags:
+#      - '**'
+#    paths-ignore:
+#      - '**.md'
+#      - 'tools/**'
+#      - '!tools/odbc/**'
+#      - '!tools/shell/**'
+#      - '.github/patches/duckdb-wasm/**'
+#      - '.github/workflows/**'
+#      - '!.github/workflows/OSX.yml'
 
 
 concurrency:

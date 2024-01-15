@@ -1,4 +1,4 @@
-import duckdb
+import smokedduck as duckdb
 
 
 class TestContextManager(object):

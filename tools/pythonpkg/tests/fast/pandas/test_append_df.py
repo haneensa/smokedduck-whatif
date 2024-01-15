@@ -1,4 +1,4 @@
-import duckdb
+import smokedduck as duckdb
 import pytest
 from conftest import NumpyPandas, ArrowPandas
 
@@ -23,7 +23,7 @@ class TestAppendDF(object):
         df_in = pandas.DataFrame({'c': ['duck', 'db'], 'b': [False, True], 'a': [4, 2]})
         # By default we append by position, causing the following exception:
         with pytest.raises(
-            duckdb.ConversionException, match="Conversion Error: Could not convert string 'duck' to INT32"
+                duckdb.ConversionException, match="Conversion Error: Could not convert string 'duck' to INT32"
         ):
             con.append('tbl', df_in)
 

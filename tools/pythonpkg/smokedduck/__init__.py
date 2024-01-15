@@ -1,8 +1,8 @@
 _exported_symbols = []
 
 # Modules
-import duckdb.functional as functional
-import duckdb.typing as typing
+import smokedduck.functional
+import smokedduck.typing
 _exported_symbols.extend([
     "typing",
     "functional"
@@ -402,6 +402,16 @@ _exported_symbols.extend([
     "TimestampTimeZoneValue",
     "TimeValue",
     "TimeTimeZoneValue",
+])
+
+from .provenance.smokedduck import (
+    SmokedDuck,
+    prov_connect,
+)
+
+_exported_symbols.extend([
+    "SmokedDuck",
+    "prov_connect",
 ])
 
 __all__ = _exported_symbols

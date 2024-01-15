@@ -56,7 +56,7 @@ class build_ext(CompilerLauncherMixin, _build_ext):
     pass
 
 
-lib_name = 'duckdb'
+lib_name = 'smokedduck'
 
 extensions = ['parquet', 'icu', 'fts', 'tpch', 'tpcds', 'json']
 
@@ -151,7 +151,8 @@ for i in range(len(sys.argv)):
     else:
         new_sys_args.append(sys.argv[i])
 sys.argv = new_sys_args
-toolchain_args.append('-DDUCKDB_PYTHON_LIB_NAME=' + lib_name)
+# Charlie: internal python lib built around c++ using pybind11 is still named `duckdb` while external python lib is named smokedduck
+# toolchain_args.append('-DDUCKDB_PYTHON_LIB_NAME=' + lib_name)
 
 if platform.system() == 'Darwin':
     toolchain_args.extend(['-stdlib=libc++', '-mmacosx-version-min=10.7'])
@@ -324,10 +325,10 @@ data_files = setup_data_files(extra_files + header_files)
 
 packages = [
     lib_name,
-    'duckdb.typing',
-    'duckdb.query_graph',
-    'duckdb.functional',
-    'duckdb.value',
+    'smokedduck.typing',
+    'smokedduck.query_graph',
+    'smokedduck.functional',
+    'smokedduck.value',
     'duckdb-stubs',
     'duckdb-stubs.functional',
     'duckdb-stubs.typing',
@@ -337,21 +338,21 @@ packages = [
 ]
 
 spark_packages = [
-    'duckdb.experimental',
-    'duckdb.experimental.spark',
-    'duckdb.experimental.spark.sql',
-    'duckdb.experimental.spark.errors',
-    'duckdb.experimental.spark.errors.exceptions',
+    'smokedduck.experimental',
+    'smokedduck.experimental.spark',
+    'smokedduck.experimental.spark.sql',
+    'smokedduck.experimental.spark.errors',
+    'smokedduck.experimental.spark.errors.exceptions',
 ]
 
 packages.extend(spark_packages)
 
 setup(
     name=lib_name,
-    description='DuckDB embedded database',
-    keywords='DuckDB Database SQL OLAP',
-    url="https://www.duckdb.org",
-    long_description='See here for an introduction: https://duckdb.org/docs/api/python/overview',
+    description='SmokedDuck - DuckDB fork with fine-grained provenance',
+    keywords='SmokedDuck DuckDB Database SQL OLAP Provenance',
+    # url="https://www.duckdb.org",
+    # long_description='See here for an introduction: https://duckdb.org/docs/api/python/overview',
     license='MIT',
     data_files=data_files,
     # NOTE: might need to be find_packages() ?
@@ -365,13 +366,13 @@ setup(
         'License :: OSI Approved :: MIT License',
     ],
     ext_modules=[libduckdb],
-    maintainer="Hannes Muehleisen",
-    maintainer_email="hannes@cwi.nl",
+    maintainer="Haneen Mohammed",
+    maintainer_email="ham2156@columbia.edu",
     cmdclass={"build_ext": build_ext},
-    project_urls={
-        "Documentation": "https://duckdb.org/docs/api/python/overview",
-        "Source": "https://github.com/duckdb/duckdb/blob/main/tools/pythonpkg",
-        "Issues": "https://github.com/duckdb/duckdb/issues",
-        "Changelog": "https://github.com/duckdb/duckdb/releases",
-    },
+    # project_urls={
+    #     "Documentation": "https://duckdb.org/docs/api/python/overview",
+    #     "Source": "https://github.com/duckdb/duckdb/blob/master/tools/pythonpkg",
+    #     "Issues": "https://github.com/duckdb/duckdb/issues",
+    #     "Changelog": "https://github.com/duckdb/duckdb/releases",
+    # },
 )

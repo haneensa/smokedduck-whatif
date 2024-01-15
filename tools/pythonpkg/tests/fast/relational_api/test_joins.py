@@ -1,6 +1,6 @@
-import duckdb
+import smokedduck as duckdb
 import pytest
-from duckdb import ColumnExpression
+from smokedduck import ColumnExpression
 
 
 @pytest.fixture

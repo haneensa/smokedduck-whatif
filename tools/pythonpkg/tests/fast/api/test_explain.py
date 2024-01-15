@@ -1,5 +1,5 @@
 import pytest
-import duckdb
+import smokedduck as duckdb
 
 
 class TestExplain(object):
