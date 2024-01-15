@@ -65,6 +65,7 @@ public:
   //! Name of the scanned table if a scan
   string table_name;
   bool processed;
+  mutex glock;
 };
 
 

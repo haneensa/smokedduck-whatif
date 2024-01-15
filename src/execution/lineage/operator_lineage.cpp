@@ -22,12 +22,13 @@ void OperatorLineage::PostProcess() {
 void OperatorLineage::InitLog(idx_t thread_id, PhysicalOperator* op) {
   if (trace_lineage == false) return;
 
+  lock_guard<mutex> lock(glock);
   if (log_per_thread.find(thread_id) != log_per_thread.end()) {
-    //std::cout << "doublicate " << thread_id << std::endl;
     return;
   }
-  // TODO: add lock
+
   thread_vec.push_back(thread_id);
+
   if (type ==  PhysicalOperatorType::FILTER) {
 	log_per_thread[thread_id] = make_shared<FilterLog>(thread_id);
   } else if (type ==  PhysicalOperatorType::TABLE_SCAN) {
