@@ -47,35 +47,43 @@ statement ok
 PRAGMA disable_lineage;
 PRAGMA threads=1;
 
-
-query II
-pragma lineage("select * from t1 where i=6");
-----
-6	0
-
-query III
-SELECT rowid, in_index, out_index FROM LINEAGE_2_SEQ_SCAN_0_0 order by in_index
-----
-0	0	0
-1	1	1
-2	200000	2
-3	200001	3
-
-
 query III
 SELECT rowid, in_index, out_index FROM LINEAGE_1_SEQ_SCAN_0_0 where in_index!=out_index and rowid!=out_index
 ----
 
-
-query III
-SELECT rowid,  in_index, out_index FROM LINEAGE_3_SEQ_SCAN_0_0
+query II
+pragma  Provenance("lineage", "select rowid, * from t1 where i < 2");
 ----
-0	199996	0
-1	199997	1
-2	199998	2
-3	199999	3
+0	0
+1	1
+200000	2
+200001	3
 
-query III
-SELECT rowid, in_index, out_index FROM LINEAGE_4_SEQ_SCAN_0_0
+query II
+pragma  Provenance("why", "select rowid, * from t1 where i < 2");
 ----
-0	6	0
+[[0]]	0
+[[1]]	1
+[[200000]]	2
+[[200001]]	3
+
+query II
+pragma  Provenance("polynomial", "select rowid, * from t1 where i < 2");
+----
+0	0
+1	1
+200000	2
+200001	3
+
+query II
+pragma  Provenance("lineage", "select rowid, * from t1 where i > 199995");
+----
+199996	0
+199997	1
+199998	2
+199999	3
+
+query II
+pragma  Provenance("lineage", "select * from t1 where i=6");
+----
+6	0

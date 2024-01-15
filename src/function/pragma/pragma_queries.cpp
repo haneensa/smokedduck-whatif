@@ -211,11 +211,26 @@ string PragmaUserAgent(ClientContext &context, const FunctionParameters &paramet
 
 #ifdef LINEAGE
 string PragmaLineage(ClientContext &context, const FunctionParameters &parameters) {
-	string query = parameters.values[0].ToString();
+	string model = parameters.values[0].ToString();
+	string query = parameters.values[1].ToString();
 	idx_t qid = 0;
 	for (auto q : context.client_data->lineage_manager->query_to_id) {
 		if (q == query) {
-			return context.client_data->lineage_manager->Lineage(qid);
+			return context.client_data->lineage_manager->Lineage(model, qid);
+		}
+		qid++;
+	}
+
+	return "select 0";
+}
+
+string PragmaLineageString(ClientContext &context, const FunctionParameters &parameters) {
+	string model = parameters.values[0].ToString();
+	string query = parameters.values[1].ToString();
+	idx_t qid = 0;
+	for (auto q : context.client_data->lineage_manager->query_to_id) {
+		if (q == query) {
+			return "select '" + context.client_data->lineage_manager->Lineage(model, qid) + "' as query";
 		}
 		qid++;
 	}
@@ -244,7 +259,8 @@ void PragmaQueries::RegisterFunction(BuiltinFunctions &set) {
 	set.AddFunction(PragmaFunction::PragmaStatement("all_profiling_output", PragmaAllProfiling));
 	set.AddFunction(PragmaFunction::PragmaStatement("user_agent", PragmaUserAgent));
 #ifdef LINEAGE
-	set.AddFunction(PragmaFunction::PragmaCall("Lineage", PragmaLineage, {LogicalType::VARCHAR}));
+	set.AddFunction(PragmaFunction::PragmaCall("Provenance", PragmaLineage, {LogicalType::VARCHAR, LogicalType::VARCHAR}));
+	set.AddFunction(PragmaFunction::PragmaCall("ProvenanceString", PragmaLineageString, {LogicalType::VARCHAR, LogicalType::VARCHAR}));
 #endif
 }
 

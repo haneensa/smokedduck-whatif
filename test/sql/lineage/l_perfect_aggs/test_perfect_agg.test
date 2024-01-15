@@ -25,8 +25,14 @@ PRAGMA disable_lineage;
 PRAGMA disable_profiling;
 PRAGMA disable_optimizer;
 
+query I
+pragma  ProvenanceString("lineage", "select t1.i, avg(t1.j) from t1 GROUP BY t1.i");
+----
+SELECT LINEAGE_1_SEQ_SCAN_0_0.in_index AS t1, LINEAGE_1_PERFECT_HASH_GROUP_BY_2_0.out_index FROM LINEAGE_1_PERFECT_HASH_GROUP_BY_2_0 JOIN LINEAGE_1_SEQ_SCAN_0_0 ON LINEAGE_1_PERFECT_HASH_GROUP_BY_2_0.in_index = LINEAGE_1_SEQ_SCAN_0_0.out_index order by LINEAGE_1_PERFECT_HASH_GROUP_BY_2_0.out_index
+
+
 query II
-pragma lineage("select t1.i, avg(t1.j) from t1 GROUP BY t1.i");
+pragma  Provenance("lineage", "select t1.i, avg(t1.j) from t1 GROUP BY t1.i");
 ----
 0	0
 2	0
@@ -36,3 +42,19 @@ pragma lineage("select t1.i, avg(t1.j) from t1 GROUP BY t1.i");
 6	2
 1	3
 7	3
+
+query II
+pragma  Provenance("why", "select t1.i, avg(t1.j) from t1 GROUP BY t1.i");
+----
+[[0], [2], [4]]	0
+[[3], [5]]	1
+[[6]]	2
+[[1], [7]]	3
+
+query II
+pragma  Provenance("polynomial", "select t1.i, avg(t1.j) from t1 GROUP BY t1.i");
+----
+0+2+4	0
+3+5	1
+6	2
+1+7	3

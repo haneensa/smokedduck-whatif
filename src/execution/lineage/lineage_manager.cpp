@@ -94,22 +94,64 @@ struct Query GetEndToEndQuery(PhysicalOperator* op, idx_t qid,
 	return Q;
 }
 
-string LineageManager::Lineage(idx_t qid) {
+string from_prefix(string model) {
+	if (model == "polynomial") return "string_agg(";
+	else if (model == "why") return "list([";
+	else return "";
+}
+
+string from_suffix(string model) {
+	if (model == "polynomial") return ", '+') AS prov";
+	else if (model == "why") return "]) AS prov";
+	else return "";
+}
+
+string query_suffix(string model, string out_index) {
+	if (model == "polynomial" || model == "why") return " GROUP BY " + out_index;
+	else return "";
+}
+
+string visit_from(string model, vector<struct Projections>& proj) {
+	string from = "";
+	if (model == "polynomial") {
+		for (idx_t i = 0; i < proj.size(); i++) {
+			if (i > 0) {
+				from += "|| '*' ||";
+			}
+			from += proj[i].in_index;
+		}
+	} else if (model == "why") {
+		for (idx_t i=0; i < proj.size(); i++) {
+			if (i > 0) {
+				from += ",";
+			}
+			from += proj[i].in_index;
+		}
+	} else {
+		for (idx_t i=0; i < proj.size(); i++) {
+			if (i > 0) {
+				from += ",";
+			}
+			from += proj[i].in_index + " AS " + proj[i].alias;
+		}
+	}
+	return from;
+}
+
+string LineageManager::Lineage(string model, idx_t qid) {
 	PhysicalOperator* op = queryid_to_plan[qid].get();
 	struct Query qobj= GetEndToEndQuery(op, qid, "", JoinType::INNER);
-	string query = "SELECT ";
-	for (idx_t i=0; i < qobj.proj.size(); i++) {
-		if (i > 0) {
-			query += ",";
-		}
-		query += qobj.proj[i].in_index + " AS " + qobj.proj[i].alias;
+	string query = "SELECT " + from_prefix(model);
+	query += visit_from(model, qobj.proj);
+	query += from_suffix(model);
+	string out_index;
+	if (qobj.is_agg_child) {
+		out_index = "0 as out_index";
+	} else {
+		out_index = qobj.table_name + ".out_index";
 	}
 
-	if (qobj.is_agg_child) {
-		query += ",  0 as out_index FROM ";
-	} else {
-		query += ", " + qobj.table_name + ".out_index FROM ";
-	}
+	query += ", " + out_index + " FROM ";
 
 	for (idx_t i=0; i < qobj.from.size(); i++) {
 		if (i > 0) {
@@ -129,6 +171,12 @@ string LineageManager::Lineage(idx_t qid) {
 		}
 
 	}
+
+	if (!qobj.is_agg_child) {
+		query += query_suffix(model, out_index) + " order by " + out_index;
+	}
+
+	std::cout << query << std::endl;
 	return query;
 }
 

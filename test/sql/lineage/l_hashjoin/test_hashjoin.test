@@ -98,7 +98,7 @@ PRAGMA disable_lineage;
 PRAGMA disable_optimizer;
 
 query III
-pragma lineage("select t1.rowid, t2.rowid, i, t1.j, t2.k from t1 left join t2 using(i) order by t1.rowid, t2.rowid");
+pragma  Provenance("lineage", "select t1.rowid, t2.rowid, i, t1.j, t2.k from t1 left join t2 using(i) order by t1.rowid, t2.rowid");
 ----
 0	2	0
 0	4	1
@@ -113,7 +113,7 @@ pragma lineage("select t1.rowid, t2.rowid, i, t1.j, t2.k from t1 left join t2 us
 
 
 query III
-pragma lineage("select t1.rowid, t2.rowid, i, t1.j, t2.k from t1 right join t2 using(i) order by t1.rowid, t2.rowid");
+pragma  Provenance("lineage", "select t1.rowid, t2.rowid, i, t1.j, t2.k from t1 right join t2 using(i) order by t1.rowid, t2.rowid");
 ----
 2	0	0
 4	0	1
@@ -129,7 +129,7 @@ pragma lineage("select t1.rowid, t2.rowid, i, t1.j, t2.k from t1 right join t2 u
 
 
 query III
-pragma lineage("select t1.rowid, * from t1 SEMI JOIN t2 ON t2.i = t1.i order by t1.rowid");
+pragma  Provenance("lineage", "select t1.rowid, * from t1 SEMI JOIN t2 ON t2.i = t1.i order by t1.rowid");
 ----
 0	4	0
 2	1	1
@@ -139,7 +139,7 @@ pragma lineage("select t1.rowid, * from t1 SEMI JOIN t2 ON t2.i = t1.i order by 
 
 
 query III
-pragma lineage("select t1.rowid, t2.rowid, i, t1.j, t2.k from t1 full outer join t2 using(i)  order by t1.rowid, t2.rowid");
+pragma  Provenance("lineage", "select t1.rowid, t2.rowid, i, t1.j, t2.k from t1 full outer join t2 using(i)  order by t1.rowid, t2.rowid");
 ----
 
 
