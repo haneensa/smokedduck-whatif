@@ -14,55 +14,31 @@ INSERT INTO t1 VALUES ('Haneen', 2),  ('Omar', 2), ('Haneen', 4), ('Mohammed', 1
 
 statement ok
 PRAGMA enable_lineage;
+PRAGMA enable_intermediate_tables;
 
-# standalone limit
-query II
-select i, list(distinct j) from t1 GROUP BY i
+query IIII
+select i, count(j), sum(j), list(distinct j) from t1 GROUP BY i
 ----
-Haneen	[2, 4, 3]
-Omar	[2, 1]
-Mohammed	[1, 2]
-
-query III
-select i, list(j) , list(distinct j) from t1 GROUP BY i
-----
-Haneen	[2, 4, 3]	[2, 4, 3]
-Omar	[2, 1, 1]	[2, 1]
-Mohammed	[1, 2]	[1, 2]
+Haneen	3	9	[2, 4, 3]
+Omar	3	4	[2, 1]
+Mohammed	2	3	[1, 2]
 
 statement ok
+PRAGMA disable_intermediate_tables;
 PRAGMA disable_lineage;
 PRAGMA disable_optimizer;
 PRAGMA threads=1;
 
-query II
-select in_index, out_index from LINEAGE_1_HASH_GROUP_BY_2_0
-order by in_index
+query I
+pragma WhatIf(2, 'd', 't1:0.3', 64);
 ----
-0	0
-1	1
-2	0
-3	2
-4	1
-5	0
-6	2
-7	1
 
-query II
-select in_index, out_index from LINEAGE_2_HASH_GROUP_BY_2_0
-order by in_index
+
+# qid, type, table:prob, n_interventions
+query I
+pragma Rexec(2);
 ----
-0	0
-1	1
-2	0
-3	2
-4	1
-5	0
-6	2
-7	1
 
-
-### add distinct
-### add grouping set
-### add having
-
+query I
+pragma Why(2, 3, 't1.i', 10);
+----

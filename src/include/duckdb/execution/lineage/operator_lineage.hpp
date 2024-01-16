@@ -64,10 +64,6 @@ public:
   string table_name;
   bool processed;
   mutex glock;
-
-  //! fade
-  vector<idx_t> annotations;
-  idx_t n_interventions = 1;
 };
 
 

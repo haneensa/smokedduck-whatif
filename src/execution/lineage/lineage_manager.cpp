@@ -15,6 +15,27 @@
 namespace duckdb {
 class PhysicalDelimJoin;
 
+
+void LineageManager::PostProcess(PhysicalOperator *op) {
+	// massage the data to make it easier to query
+	// for hash join, build hash table on the build side that map the address to id
+	// for group by, build hash table on the unique groups
+	if (op->lineage_op) {
+		op->lineage_op->PostProcess();
+	}
+
+	if (op->type == PhysicalOperatorType::DELIM_JOIN) {
+		PostProcess( dynamic_cast<PhysicalDelimJoin *>(op)->children[0].get());
+		PostProcess( dynamic_cast<PhysicalDelimJoin *>(op)->join.get());
+		PostProcess( (PhysicalOperator *)dynamic_cast<PhysicalDelimJoin *>(op)->distinct.get());
+		return;
+	}
+
+	for (idx_t i = 0; i < op->children.size(); i++) {
+		PostProcess(op->children[i].get());
+	}
+}
+
 void LineageManager::CreateOperatorLineage(ClientContext &context,
     PhysicalOperator *op, 
     bool trace_lineage) {

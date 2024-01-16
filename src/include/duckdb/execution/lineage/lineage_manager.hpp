@@ -54,7 +54,7 @@ public:
 		return current_lop;
 	}
 
-	void Why(int qid, int k, string columns_spec, int distinct);
+	static void PostProcess(PhysicalOperator* op);
 
 private:
 	//! cached operator lineage to be accessed from function calls that don't have access to operator members

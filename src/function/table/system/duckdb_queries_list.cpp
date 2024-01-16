@@ -94,26 +94,6 @@ string PlanToString(PhysicalOperator *op) {
 	return "{\"name\": \"" + op->GetName() + "\",\"children\": [" + child_str + "],\"table\": \"" + op->lineage_op->table_name +  "\",\"extra\": \"" + JSONSanitize(op->ParamsToString())+ "\"}";
 }
 
-void PostProcess(PhysicalOperator *op) {
-	// massage the data to make it easier to query
-	// for hash join, build hash table on the build side that map the address to id
-	// for group by, build hash table on the unique groups
-	if (op->lineage_op) {
-		op->lineage_op->PostProcess();
-	}
-
-	if (op->type == PhysicalOperatorType::DELIM_JOIN) {
-		PostProcess( dynamic_cast<PhysicalDelimJoin *>(op)->children[0].get());
-		PostProcess( dynamic_cast<PhysicalDelimJoin *>(op)->join.get());
-		PostProcess( (PhysicalOperator *)dynamic_cast<PhysicalDelimJoin *>(op)->distinct.get());
-		return;
-	}
-
-	for (idx_t i = 0; i < op->children.size(); i++) {
-		PostProcess(op->children[i].get());
-	}
-}
-
 //! Create table to store executed queries with their IDs
 //! Table name: queries_list
 //! Schema: (INT query_id, varchar query)
@@ -133,7 +113,7 @@ void DuckDBQueriesListFunction(ClientContext &context, TableFunctionInput &data_
 		auto plan = context.client_data->lineage_manager->queryid_to_plan[data.offset].get();
 		std::vector<idx_t> stats(3, 0);//GetStats(plan);
 		clock_t start = clock();
-		PostProcess(plan);
+		LineageManager::PostProcess(plan);
 		clock_t end = clock();
 
 		idx_t col = 0;

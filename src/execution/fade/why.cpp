@@ -3,34 +3,12 @@
 
 #include "duckdb/common/enums/physical_operator_type.hpp"
 #include "duckdb/execution/lineage/lineage_manager.hpp"
+#include "duckdb/execution/operator/scan/physical_table_scan.hpp"
 #include "duckdb/execution/operator/aggregate/physical_hash_aggregate.hpp"
 #include "duckdb/execution/operator/aggregate/physical_ungrouped_aggregate.hpp"
 #include "duckdb/planner/expression/bound_reference_expression.hpp"
 
-#include <immintrin.h>
-#include <random>
-
 namespace duckdb {
-
-
-// holds allocated data per node
-// interventions, annotations, etc
-struct FadeDataPerNode {
-	vector<idx_t> annotations;
-	idx_t n_interventions;
-
-	// void* to 2D intervention matrix
-
-	// single_del_intervention.size() == input table size
-	// index: input id, value: 0 | 1
-	vector<int8_t> single_del_intervention;
-	// this should be per attribute
-	// unordered_map<string, vector<idx_t>>
-	vector<idx_t> single_scale_intervention;
-
-	// Default constructor with default values
-	FadeDataPerNode() : n_interventions(1) {}
-};
 
 std::unordered_map<std::string, std::vector<std::string>> parseString(const std::string& input) {
 	std::unordered_map<std::string, std::vector<std::string>> result;
@@ -537,24 +515,6 @@ vector<idx_t> Rank(PhysicalOperator* op, int k) {
   // get the original output value
   // compute influence and find top k
   return {};
-}
-
-
-void Fade::Whatif(PhysicalOperator *op, string intervention_type, string columns_spec_str, int n_intervention) {
-  std::unordered_map<std::string, std::vector<std::string>> columns_spec;
-
-  // holds any extra data needed during exec
-  std::unordered_map<idx_t, FadeDataPerNode> fade_data;
-
-  // 2. Post Process
-  LineageManager::PostProcess(op);
-
-  // 4. Prepare base interventions; should be one time cost per DB
-  GenRandomIntervention(op, fade_data, columns_spec, distinct);
-
-  // TODO: add pass to allocate data structures for interventions
-
-  // 4. run intervention
 }
 
 void Fade::Why(PhysicalOperator* op, int k, string columns_spec_str, int distinct=0) {

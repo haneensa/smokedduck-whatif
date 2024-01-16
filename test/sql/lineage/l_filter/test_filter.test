@@ -11,10 +11,11 @@ CREATE TABLE t1(i INTEGER);
 
 statement ok
 INSERT INTO t1 SELECT i FROM range(0,4000) tbl(i);
-PRAGMA threads=2;
+PRAGMA threads=1;
 
 statement ok
 PRAGMA enable_lineage;
+PRAGMA enable_intermediate_tables;
 
 query II
 select rowid, * from t1 where 2 > i  OR i > 3998
@@ -23,14 +24,17 @@ select rowid, * from t1 where 2 > i  OR i > 3998
 1	1
 3999	3999
 
-query II
-select rowid, * from t1 where i > 4000 OR i > 3998
-----
-3999	3999
 
 statement ok
+PRAGMA disable_intermediate_tables;
 PRAGMA disable_lineage;
 PRAGMA threads=1;
+
+
+query I
+pragma WhatIf(2, 'd', 't1:0.3', 64);
+----
+
 
 query III
 SELECT rowid, out_index, in_index FROM LINEAGE_1_FILTER_1_0

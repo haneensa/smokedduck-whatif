@@ -13,6 +13,7 @@
 #include "duckdb/function/function_set.hpp"
 
 #ifdef LINEAGE
+#include "duckdb/execution/fade/fade.hpp"
 #include "duckdb/main/client_data.hpp"
 #endif
 #include <cctype>
@@ -118,13 +119,40 @@ static void PragmaDisableOptimizer(ClientContext &context, const FunctionParamet
 
 #ifdef LINEAGE
 
-static void PragmaRecompute(ClientContext &context, const FunctionParameters &parameters) {
+static void PragmaWhy(ClientContext &context, const FunctionParameters &parameters) {
 	int qid = parameters.values[0].GetValue<int>();
 	int k = parameters.values[1].GetValue<int>();
+	string spec =  parameters.values[2].ToString();
 	int distinct = parameters.values[3].GetValue<int>();
-	std::cout << "\nRecompute " << qid << " " << k << " " <<  parameters.values[2].ToString() << std::endl;
+
+	std::cout << "\nPragmaWhy " << qid << " " << k << " " <<  spec << std::endl;
+
+	// 1. find the query plan associated with qid
+	PhysicalOperator* op = context.client_data->lineage_manager->queryid_to_plan[qid].get();
+
 	// takes in query id, attributes to intervene on, conjunctive only or conjunctive and disjunction, or random
-	context.client_data->lineage_manager->Why(qid, k,  parameters.values[2].ToString(), distinct);
+	Fade::Why(op, k,  spec, distinct);
+}
+
+
+static void PragmaWhatif(ClientContext &context, const FunctionParameters &parameters) {
+	int qid = parameters.values[0].GetValue<int>();
+	string intervention_type = parameters.values[1].ToString();
+	string spec = parameters.values[2].ToString();
+	int n_interventions = parameters.values[3].GetValue<int>();
+
+	std::cout << "\nPragmaWhatif " << qid << " " << intervention_type << " " <<  spec << " " << n_interventions << std::endl;
+	// 1. find the query plan associated with qid
+	PhysicalOperator* op = context.client_data->lineage_manager->queryid_to_plan[qid].get();
+
+	// takes in query id, attributes to intervene on, conjunctive only or conjunctive and disjunction, or random
+	Fade::Whatif(op, intervention_type, spec, n_interventions);
+}
+
+static void PragmaRexec(ClientContext &context, const FunctionParameters &parameters) {
+	int qid = parameters.values[0].GetValue<int>();
+	PhysicalOperator* op = context.client_data->lineage_manager->queryid_to_plan[qid].get();
+	Fade::Rexec(op);
 }
 
 static void PragmaEnableLineage(ClientContext &context, const FunctionParameters &parameters) {
@@ -168,7 +196,9 @@ static void PragmaClearLineage(ClientContext &context, const FunctionParameters 
 void PragmaFunctions::RegisterFunction(BuiltinFunctions &set) {
 	RegisterEnableProfiling(set);
 #ifdef LINEAGE
-	set.AddFunction(PragmaFunction::PragmaCall("Why", PragmaRecompute, {LogicalType::INTEGER, LogicalType::INTEGER, LogicalType::VARCHAR, LogicalType::INTEGER}));
+	set.AddFunction(PragmaFunction::PragmaCall("Why", PragmaWhy, {LogicalType::INTEGER, LogicalType::INTEGER, LogicalType::VARCHAR, LogicalType::INTEGER}));
+	set.AddFunction(PragmaFunction::PragmaCall("WhatIf", PragmaWhatif, {LogicalType::INTEGER, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::INTEGER}));
+	set.AddFunction(PragmaFunction::PragmaCall("Rexec", PragmaRexec, {LogicalType::INTEGER}));
     set.AddFunction(PragmaFunction::PragmaStatement("enable_lineage", PragmaEnableLineage));
 	set.AddFunction(PragmaFunction::PragmaStatement("disable_lineage", PragmaDisableLineage));
 	set.AddFunction(PragmaFunction::PragmaStatement("enable_intermediate_tables", PragmaEnableIntermediateTables));
