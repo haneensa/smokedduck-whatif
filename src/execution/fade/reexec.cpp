@@ -16,18 +16,12 @@ template<class T>
 vector<T> SumRecompute(PhysicalOperator* op,
                                shared_ptr<OperatorLineage> lop,
                                BoundAggregateExpression& aggr,
-                               idx_t n_groups, vector<idx_t> aggregate_input_idx) {
-  DataChunk result;
-  idx_t global_count = 0;
-  idx_t local_count = 0;
-  idx_t current_thread = 0;
-  idx_t log_id = 0;
-  bool cache_on = false;
-  vector<T> input_values;
-
+                               idx_t n_groups, vector<idx_t> aggregate_input_idx,
+                                vector<int>& lineage) {
   idx_t chunk_count = op->children[0]->lineage_op->chunk_collection.ChunkCount();
 
   vector<T> new_vals(n_groups, 0);
+  int offset = 0;
   for (idx_t chunk_idx=0; chunk_idx < chunk_count; ++chunk_idx) {
 	  DataChunk &collection_chunk = op->children[0]->lineage_op->chunk_collection.GetChunk(chunk_idx);
 	  idx_t col_idx = aggregate_input_idx[0];
@@ -38,16 +32,42 @@ vector<T> SumRecompute(PhysicalOperator* op,
 		  }
 	  } else {
 		  for (idx_t i=0; i < collection_chunk.size(); ++i) {
-				input_values.push_back(col[i]);
+        new_vals[lineage[i+offset]] += col[i];
 		  }
+	  }
+    offset += collection_chunk.size();
+  }
+
+	return new_vals;
+}
+
+vector<int> CountRecompute(PhysicalOperator* op, shared_ptr<OperatorLineage> lop,
+                                 BoundAggregateExpression& aggr, idx_t n_groups,
+                                 vector<int>& lineage) {
+  vector<int> new_vals(n_groups, 0);
+
+	idx_t row_count = op->children[0]->lineage_op->chunk_collection.Count();
+  if (op->type == PhysicalOperatorType::UNGROUPED_AGGREGATE) {
+	  for (idx_t i=0; i < row_count; ++i) {
+		  new_vals[0] += 1;
+	  }
+  } else {
+	  for (idx_t i=0; i < row_count; ++i) {
+      new_vals[lineage[i]] += 1;
 	  }
   }
 
-  // then specialize recomputation based on the aggregate type with possible SIMD implementations?
-  if (op->type == PhysicalOperatorType::UNGROUPED_AGGREGATE) {
-	  return new_vals;
-  }
+	return new_vals;
+}
 
+
+void get_lineage(shared_ptr<OperatorLineage> lop, vector<int>& lineage) {
+  DataChunk result;
+  idx_t global_count = 0;
+  idx_t local_count = 0;
+  idx_t current_thread = 0;
+  idx_t log_id = 0;
+  bool cache_on = false;
   do {
 	  cache_on = false;
 	  result.Reset();
@@ -57,68 +77,30 @@ vector<T> SumRecompute(PhysicalOperator* op,
 	  result.Flatten();
 	  if (result.size() == 0) continue;
 	  int64_t * in_index = reinterpret_cast<int64_t *>(result.data[0].GetData());
-	  int * out_index = reinterpret_cast<int *>(result.data[1].GetData());
+	  int* out_index = reinterpret_cast<int*>(result.data[1].GetData());
 	  for (idx_t i=0; i < result.size(); ++i) {
 		  idx_t iid = in_index[i];
 		  idx_t oid = out_index[i];
-		  T val = input_values[iid];
-		  new_vals[oid] += val;
+      lineage[iid] = oid;
 	  }
 
   } while (cache_on || result.size() > 0);
-  return new_vals;
 }
-
-template<class T>
-vector<T> CountRecompute(PhysicalOperator* op, shared_ptr<OperatorLineage> lop,
-                                 BoundAggregateExpression& aggr, idx_t n_groups) {
-  DataChunk result;
-  idx_t global_count = 0;
-  idx_t local_count = 0;
-  idx_t current_thread = 0;
-  idx_t log_id = 0;
-  bool cache_on = false;
-  vector<T> new_vals(n_groups, 0);
-
-  if (op->type == PhysicalOperatorType::UNGROUPED_AGGREGATE) {
-	  idx_t row_count = op->children[0]->lineage_op->chunk_collection.Count();
-	  for (idx_t i=0; i < row_count; ++i) {
-		  new_vals[0] += 1;
-	  }
-  }
-
-  if (op->type == PhysicalOperatorType::UNGROUPED_AGGREGATE) {
-	  return new_vals;
-  }
-
-  do {
-	  cache_on = false;
-	  result.Reset();
-	  result.Destroy();
-	  lop->GetLineageAsChunk(result, global_count, local_count,
-		                     current_thread, log_id, cache_on);
-	  result.Flatten();
-	  int * out_index = reinterpret_cast<int *>(result.data[1].GetData());
-	  for (idx_t i=0; i < result.size(); ++i) {
-		  idx_t oid = out_index[i];
-		  new_vals[oid] += 1;
-	  }
-  } while (cache_on || result.size() > 0);
-  return new_vals;
-}
-
 
 void  HashAggregateRexec(shared_ptr<OperatorLineage> lop,
                             PhysicalOperator* op) {
   PhysicalHashAggregate * gb = dynamic_cast<PhysicalHashAggregate *>(op);
   auto &aggregates = gb->grouped_aggregate_data.aggregates;
   vector<pair<idx_t, idx_t>> aggregate_input_idx;
-  // get n_groups: max(oid)+1
-  idx_t n_groups = 1;
-  if (op->type != PhysicalOperatorType::UNGROUPED_AGGREGATE) {
-	  n_groups = lop->chunk_collection.Count();
-  }
+  bool include_count = false;
 
+  vector<int> lineage;
+  vector<int> new_count;
+	idx_t n_groups = lop->chunk_collection.Count();
+	idx_t row_count = op->children[0]->lineage_op->chunk_collection.Count();
+  lineage.resize(row_count);
+  get_lineage(lop, lineage);
+  
   // Populate the aggregate child vectors
   for (idx_t i=0; i < aggregates.size(); i++) {
 	  auto &aggr = aggregates[i]->Cast<BoundAggregateExpression>();
@@ -133,14 +115,17 @@ void  HashAggregateRexec(shared_ptr<OperatorLineage> lop,
 	  vector<int> new_vals;
 	  if (name == "sum" || name == "sum_no_overflow") {
 		  // use case statement to choose the right Recompute function. Specialize it for data type and aggregate function
-		  new_vals = SumRecompute<int>(op, lop, aggr, n_groups, aggregate_input_idx);
-	  } else if (name == "count" || name == "count_star") {
+		  new_vals = SumRecompute<int>(op, lop, aggr, n_groups, aggregate_input_idx, lineage);
+	  } else if (include_count == false && (name == "count" || name == "count_star")) {
 		  // use case statement to choose the right Recompute function. Specialize it for data type and aggregate function
-		  new_vals = CountRecompute<int>(op, lop, aggr, n_groups);
+		  new_count = CountRecompute(op, lop, aggr, n_groups, lineage);
+      include_count = true;
 	  } else if (name == "avg") {
-		  vector<int> new_vals_count = CountRecompute<int>(op, lop, aggr, n_groups);
-		  vector<int> new_vals_sum = SumRecompute<int>(op, lop, aggr, n_groups, aggregate_input_idx);
-		  new_vals = new_vals_count;
+		  new_vals = SumRecompute<int>(op, lop, aggr, n_groups, aggregate_input_idx, lineage);
+      if (include_count == false) {
+		    new_count = CountRecompute(op, lop, aggr, n_groups, lineage);
+        include_count = true;
+      }
 	  }
 	  // rank and discard?
   }
@@ -152,6 +137,9 @@ void  UngroupedAggregateRexec(shared_ptr<OperatorLineage> lop, PhysicalOperator*
   auto &aggregates = gb->aggregates;
   vector<pair<idx_t, idx_t>> aggregate_input_idx;
   idx_t n_groups = 1;
+  vector<int> lineage;
+  vector<int> new_count;
+  bool include_count = false;
   // Populate the aggregate child vectors
   for (idx_t i=0; i < aggregates.size(); i++) {
 	  auto &aggr = aggregates[i]->Cast<BoundAggregateExpression>();
@@ -162,22 +150,22 @@ void  UngroupedAggregateRexec(shared_ptr<OperatorLineage> lop, PhysicalOperator*
 		  aggregate_input_idx.push_back(bound_ref_expr.index);
 	  }
 	  string name = aggr.function.name;
-
+    
 	  vector<int> new_vals;
 	  if (name == "sum" || name == "sum_no_overflow") {
 		  // use case statement to choose the right Recompute function. Specialize it for data type and aggregate function
 		  new_vals = SumRecompute<int>(op, lop, aggr,
-			                           n_groups, aggregate_input_idx);
-	  } else if (name == "count" || name == "count_star") {
+			                           n_groups, aggregate_input_idx, lineage);
+	  } else if (include_count == false && (name == "count" || name == "count_star")) {
 		  // use case statement to choose the right Recompute function. Specialize it for data type and aggregate function
-		  new_vals = CountRecompute<int>(op, lop, aggr,
-			                             n_groups);
+		  new_vals = CountRecompute(op, lop, aggr,n_groups, lineage);
+      include_count = true;
 	  } else if (name == "avg") {
-		  vector<int> new_vals_count = CountRecompute<int>(op,lop,
-			                                                       aggr,  n_groups);
-		  vector<int> new_vals_sum = SumRecompute<int>(op, lop,
-			                                                   aggr, n_groups, aggregate_input_idx);
-		  new_vals = new_vals_count;
+      if (include_count == false) {
+		    new_count = CountRecompute(op,lop,aggr,  n_groups, lineage);
+        include_count = true;
+      }
+		  new_vals = SumRecompute<int>(op, lop, aggr, n_groups, aggregate_input_idx, lineage);
 	  }
 	  // rank and discard?
   }

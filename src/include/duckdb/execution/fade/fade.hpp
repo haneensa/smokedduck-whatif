@@ -26,7 +26,7 @@ struct FadeDataPerNode {
 
 	// single_del_intervention.size() == input table size
 	// bits: del or not
-	__mmask64* del_interventions;
+	__mmask16* del_interventions;
 	// this should be per attribute
 	// unordered_map<string, vector<idx_t>>
 	// vector<idx_t> single_scale_intervention;

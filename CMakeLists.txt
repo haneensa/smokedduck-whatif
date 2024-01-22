@@ -153,6 +153,7 @@ if((BUILD_PYTHON)
   endif()
 endif()
 
+add_definitions(-DLINEAGE=1)
 if(${BUILD_LINEAGE_EXTENSION})
   message(STATUS "Enable Lineage collection")
   add_definitions(-DLINEAGE=1)
