@@ -29,6 +29,7 @@ hugeint_t GetRangeHugeint(const BaseStatistics &nstats) {
 }
 
 static bool CanUsePerfectHashAggregate(ClientContext &context, LogicalAggregate &op, vector<idx_t> &bits_per_group) {
+  std::cout << "CanUsePerfectHashAggregate: " << op.grouping_sets.size() << " " << op.grouping_functions.empty() << std::endl;
 	if (op.grouping_sets.size() > 1 || !op.grouping_functions.empty()) {
 		return false;
 	}
@@ -39,6 +40,8 @@ static bool CanUsePerfectHashAggregate(ClientContext &context, LogicalAggregate 
 	for (idx_t group_idx = 0; group_idx < op.groups.size(); group_idx++) {
 		auto &group = op.groups[group_idx];
 		auto &stats = op.group_stats[group_idx];
+
+    std::cout << group_idx << " " << TypeIdToString(group->return_type.InternalType())  << std::endl;
 
 		switch (group->return_type.InternalType()) {
 		case PhysicalType::INT8:
@@ -181,6 +184,7 @@ unique_ptr<PhysicalOperator> PhysicalPlanGenerator::CreatePlan(LogicalAggregate 
 		// use a perfect hash aggregate if possible
 		vector<idx_t> required_bits;
 		if (CanUsePerfectHashAggregate(context, op, required_bits)) {
+      std::cout << "can use perfect hash aggregate "<<std::endl;
 			groupby = make_uniq_base<PhysicalOperator, PhysicalPerfectHashAggregate>(
 			    context, op.types, std::move(op.expressions), std::move(op.groups), std::move(op.group_stats),
 			    std::move(required_bits), op.estimated_cardinality);

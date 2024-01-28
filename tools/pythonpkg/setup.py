@@ -127,7 +127,7 @@ if os.name == 'nt':
     toolchain_args = ['/wd4244', '/wd4267', '/wd4200', '/wd26451', '/wd26495', '/D_CRT_SECURE_NO_WARNINGS', '/utf-8']
 else:
     # macos/linux
-    toolchain_args = ['-std=c++11', '-g0', '-O3']
+    toolchain_args = ['-std=c++11', '-g0']
     if 'DUCKDEBUG' in os.environ:
         toolchain_args = ['-std=c++11', '-Wall', '-O0', '-g']
 if 'DUCKDB_INSTALL_USER' in os.environ and 'install' in sys.argv:

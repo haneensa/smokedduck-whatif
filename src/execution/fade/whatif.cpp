@@ -7,7 +7,8 @@
 #include "duckdb/execution/operator/aggregate/physical_ungrouped_aggregate.hpp"
 #include "duckdb/planner/expression/bound_reference_expression.hpp"
 #include <fstream>
-
+#include <dlfcn.h>
+#include <immintrin.h>
 /*
  *           j1    j2    j3  ...    j64
        +---------------------------------
@@ -23,16 +24,63 @@ namespace duckdb {
 
 idx_t mask_size = 16;
 
-string compile(string code, idx_t id) {
+
+std::string compile(std::string code, int id) {
+  std::cout << "compile " << id << std::endl;
 	// Write the loop code to a temporary file
-	string program_name = "temp" + to_string(id);
-	std::ofstream file(program_name + ".cpp");
+	std::ofstream file("loop.cpp");
 	file << code;
 	file.close();
-	// Compile the temporary file
-	system(("g++ -O3 " + program_name + ".cpp -o " + program_name).c_str());
-	return program_name;
+  
+  std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
+	system("g++ -O3  -mavx512f  -march=native -c -o  loop.o -fPIC loop.cpp");
+	system("g++ -shared -o loop.so loop.o");
+
+  void *handle = dlopen("./loop.so", RTLD_LAZY);
+  if (!handle) {
+    std::cerr << "Cannot Open Library: " << dlerror() << std::endl;
+  }
+
+  int row_count = 5916591;
+  int n_groups = 4;
+  int interventions = 1024;
+  int mask_size = 16;
+  int n_masks = interventions / mask_size;
+  // get a pointer to the function
+  int (*loop)(int, int, int*, float*, __mmask16*, float*) = (int(*)(int, int, int*, float*, __mmask16*, float*))dlsym(handle, "loop_fn");
+  int (*loop_simd)(int, int, int*, float*, __mmask16*, float*) = (int(*)(int, int, int*, float*, __mmask16*, float*))dlsym(handle, "loop_fn_simd");
+  std::chrono::steady_clock::time_point end_time = std::chrono::steady_clock::now();
+  std::chrono::duration<double> time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
+  double execution_time = time_span.count();
+
+  std::cout << "Compilation Took: " << execution_time << std::endl;
+  //float* new_vals = new float[n_groups * interventions];
+  float* new_vals  = static_cast<float*>(aligned_alloc(64, sizeof(float[n_groups][interventions])));
+  __mmask16* var_0 = new __mmask16[row_count * n_masks];
+  std::vector<int> lineage(row_count, 0);
+  std::vector<float> input_vals(row_count, 0);
+  lineage[0] = 2;
+  
+  start_time = std::chrono::steady_clock::now();
+  int result = loop(row_count, n_groups, lineage.data(), new_vals, var_0, input_vals.data());
+  end_time = std::chrono::steady_clock::now();
+  time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
+  execution_time = time_span.count();
+  std::cout << "scalar eval: " << execution_time << std::endl;
+  
+  start_time = std::chrono::steady_clock::now();
+  result = loop_simd(row_count, n_groups, lineage.data(), new_vals, var_0, input_vals.data());
+  end_time = std::chrono::steady_clock::now();
+  time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
+  execution_time = time_span.count();
+  std::cout << "simd eval: " << execution_time << std::endl;
+    
+  std::cout << "Program result: " << result << std::endl;
+  // Remove the temporary files
+  system("rm loop.cpp loop.o loop.so");
+	return "loop";
 }
+
 
 std::unordered_map<std::string, float> parseWhatifString(string intervention_type, const std::string& input) {
 	std::unordered_map<std::string, float> result;
@@ -312,44 +360,13 @@ vector<vector<T>> new_vals2(n_groups, vector<T> (child_n_masks*mask_size, 0));
 
   std::cout << "phase 2: " << execution_time << " " << child_n_masks << " " << mask_size << " " << n_groups << std::endl;
     
-  std::string loopCode = R"(
-	  #include <iostream>
-    #include <vector>
-	  int main() {
-      int row_count = 5916591;
-      int child_n_masks = 64;
-      int n_groups = 4;
-      std::vector<int> lineage(row_count, 0);
-      std::vector<std::vector<float>> new_vals(n_groups, std::vector<float> (child_n_masks*16, 0));
-      for (int i=0; i < row_count; ++i) {
-        int oid = lineage[i];
-        //T val = input_values[i];
-        for (int j=0; j < child_n_masks; j++) {
-          int16_t randomValue = 10; // child_del_interventions[i*child_n_masks+j];
-          int j64 = j * 16;
-          for (int k=0; k < 16; k++) {
-              int del = (1 &  randomValue >> k);
-            new_vals[oid][j64 + k] += 1 * del;
-          }
-        }
-      }
-      std::cout << "done " << std::endl;
-
-		  return 0;
-	  }
-  )";
-  string out = compile(loopCode, 0);
 
   start_time = std::chrono::steady_clock::now();
-  // Run the compiled program
-  system(("./"+out).c_str());
   //test_loop<T>(row_count, child_n_masks, n_groups, lineage, new_vals, input_values, child_del_interventions);
   end_time = std::chrono::steady_clock::now();
   time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
   execution_time = time_span.count();
 
-  // Remove the temporary files
-  system(("rm "+out+".cpp "+out).c_str());
   std::cout << "phase 3: " << execution_time << std::endl;
 	return new_vals2;
 }
@@ -516,6 +533,59 @@ void Fade::Whatif(PhysicalOperator *op, string intervention_type, string columns
   std::chrono::duration<double> time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
   double execution_time = time_span.count();
   std::cout << "INTERVENTION_TIME : " << execution_time << std::endl;
+
+  std::string loopCodeSIMD = R"(
+	  #include <iostream>
+    #include <immintrin.h>
+	  extern "C" int loop_fn(int row_count, int n_groups, int* lineage, float* new_vals, __mmask16* var_0, float* input) {
+          std::cout << row_count << " " << n_groups << " " << lineage[0] << std::endl;
+          int mask_size = 16;
+          int n_interventions  = 1024;
+          int n_masks = n_interventions/mask_size;
+          for (int i=0; i < row_count; ++i) {
+            int oid = lineage[i];
+            float val = input[i];
+            for (int j=0; j < n_masks; j++) {
+              int16_t randomValue = var_0[i*n_masks+j];
+              int j64 = j * mask_size;
+              for (int k=0; k < 16; k++) {
+                  int del = (1 &  randomValue >> k);
+                  new_vals[oid*n_interventions  + (j64 + k) ] += val * del;
+              }
+            }
+          }
+      std::cout << "done" << std::endl;
+		  return 0;
+	  }
+    // what I should know? 
+    // 1: row_count, 2: n_masks; 3. mask_size; 4. n_interventions
+	  extern "C" int loop_fn_simd(int row_count, int n_groups, int* lineage, float* new_vals, __mmask16* var_0, float* input) {
+          std::cout << row_count << " " << n_groups << " " << lineage[0] << std::endl;
+          int mask_size = 16;
+          int n_interventions  = 1024;
+          int n_masks = n_interventions/mask_size;
+          __m512 a_6  = _mm512_load_ps((__m512*) &new_vals[2*n_interventions + 0*mask_size]);
+          std::cout << "start" << std::endl;
+          for (int i=0; i < row_count; ++i) {
+            int oid = lineage[i];
+            //std::cout << "pre: 1 " << i << " " << oid << std::endl;
+            __m512 val = _mm512_set1_ps(input[i]);
+            //std::cout << "post: 1" << i << " " << oid << " " << input[i] << std::endl;
+            for (int j=0; j < n_masks; j++) {
+              //std::cout << "pre: 2 " << i << " " << oid << " " << j  << std::endl;
+              __mmask16 tmp_mask = var_0[i*n_masks+j];
+              //std::cout << "post: 2 a " << i << " " << oid << " " << j  << std::endl;
+              a_6  = _mm512_load_ps((__m512*) &new_vals[oid*n_interventions + j*mask_size]);
+              //std::cout << "post: 2 b " << i << " " << oid << " " << j  << std::endl;
+               _mm512_store_ps((__m512*) &new_vals[oid*n_interventions + j*mask_size], _mm512_mask_add_ps(a_6, tmp_mask, a_6, val));
+              //std::cout << "post: 2 " << i << " " << oid << " " << j  << std::endl;
+            }
+          }
+      std::cout << "done" << std::endl;
+		  return 0;
+	  }
+  )";
+  compile(loopCodeSIMD, 0);
 
 }
 
