@@ -25,32 +25,48 @@ string get_header() {
 #include <iostream>
 #include <unordered_map>
 #include <immintrin.h>
+#include "duckdb.hpp"
+#include "duckdb/common/types/chunk_collection.hpp"
 )";
 }
 
-string get_agg_init(int opid, int mask_size, int n_interventions, string fn, string alloc_code) {
+string get_agg_init(int opid, int mask_size, int n_interventions, string fn, string alloc_code,
+                    string get_data_code, string get_vals_code) {
 	int n_masks = n_interventions / mask_size;
 	string fname = "agg_" + to_string(opid);
+	duckdb::DataChunk chunk;
 	std::ostringstream oss;
 	oss << R"(
 extern "C" int )"
 	    << fname
-	    << R"((int row_count, int* lineage, __mmask16* var_0, float* input, std::unordered_map<std::string, void*>& alloc_vars) {
-	std::cout << row_count << std::endl;
+	    << R"((int row_count, int* lineage, __mmask16* var_0, float* input, std::unordered_map<std::string,
+			 void*>& alloc_vars, duckdb::ChunkCollection &chunk_collection) {
+	duckdb::idx_t chunk_count = chunk_collection.ChunkCount();
+	std::cout << row_count << " " << chunk_count << std::endl;
 	const int mask_size = )"
 	    << mask_size << ";\n";
 	oss << "	const int n_interventions  = " << n_interventions << ";\n";
 	oss << "	const int n_masks  = " << n_masks << ";\n";
 	oss << alloc_code;
-	oss << R"(
-	for (int i=0; i < row_count; ++i) {
-		int oid = lineage[i];
-		float val = input[i];
-		int col = oid*n_interventions;
 
-		for (int j=0; j < n_masks; j++) {
-			int16_t randomValue = var_0[i*n_masks+j];
-			int row = j * mask_size;
+	// TODO: input_refs, input_vals code blocks
+	oss << R"(
+	int offset = 0;
+	for (idx_t chunk_idx=0; chunk_idx < chunk_count; ++chunk_idx) {
+		duckdb::DataChunk &collection_chunk = chunk_collection.GetChunk(chunk_idx);
+)";
+	oss << get_data_code;
+	oss << R"(
+		for (idx_t i=0; i < collection_chunk.size(); ++i) {
+			int oid = lineage[i+offset];
+)";
+	oss << get_vals_code;
+	oss << R"(
+			int col = oid*n_interventions;
+
+			for (int j=0; j < n_masks; j++) {
+				int16_t randomValue = var_0[i*n_masks+j];
+				int row = j * mask_size;
 )";
 	return oss.str();
 }
@@ -69,7 +85,9 @@ string post_inner_loop() {
 }
 string get_agg_finalize() {
 	return R"(
+			}
 		}
+		offset +=  collection_chunk.size();
 	}
 
 	return 0;
@@ -81,27 +99,25 @@ string get_agg_scalar_alloc(int fid, string fn) {
 	std::ostringstream oss;
 	if (fn == "sum") {
 		oss << R"(
-				float* out_)" + to_string(fid) + R"( = (float*)alloc_vars["out_)" + to_string(fid) << R"("];
+	float* out_)" + to_string(fid) + R"( = (float*)alloc_vars["out_)" + to_string(fid) << R"("];
 )";
 	} else if (fn == "count") {
 		oss << R"(
-				int* out_count = (int*)alloc_vars["out_count"];
+	int* out_count = (int*)alloc_vars["out_count"];
 )";
 	}
 	return oss.str();
 }
 
 
-string get_agg_scalar_eval(int fid, string fn) {
+string get_agg_scalar_eval(string fn, string out_var="", string in_var="") {
 	std::ostringstream oss;
 	if (fn == "sum") {
-		oss << R"(
-			out_)" + to_string(fid) + R"([col + (row + k) ] += val * del;
-)";
+		oss << "\t\t\t\t";
+		oss << out_var+"[col + (row + k) ] +="+ in_var + " * del;\n";
 	} else if (fn == "count") {
-		oss << R"(
-			out_count[col + (row + k) ] += 1 * del;
-)";
+		oss << "\t\t\t\t";
+		oss << "out_count[col + (row + k) ] += 1 * del;\n";
 	}
 	return oss.str();
 }
@@ -138,14 +154,23 @@ void* compile(std::string code, int id) {
 	std::ofstream file("loop.cpp");
 	file << code;
 	file.close();
-	std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
-	system("g++ -O3  -mavx512f  -march=native -c -o  loop.o -fPIC loop.cpp");
-	system("g++ -shared -o loop.so loop.o");
-	void *handle = dlopen("./loop.so", RTLD_LAZY);
-	if (!handle) {
-		std::cerr << "Cannot Open Library: " << dlerror() << std::endl;
+	const char* duckdb_lib_path = std::getenv("DUCKDB_LIB_PATH");
+	if (duckdb_lib_path == nullptr) {
+		// Handle error: environment variable not set
+		std::cout << "DUCKDB_LIB_PATH undefined"<< std::endl;
+		return nullptr;
+	} else {
+		std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
+		std::string build_command = "g++ -O3 -std=c++2a -mavx512f -march=native -shared loop.cpp -o loop.so -L" + std::string(duckdb_lib_path) + " -lduckdb";
+		std::cout << duckdb_lib_path << " " << build_command.c_str() << std::endl;
+		system(build_command.c_str());
+		void *handle = dlopen("./loop.so", RTLD_LAZY);
+		if (!handle) {
+			std::cerr << "Cannot Open Library: " << dlerror() << std::endl;
+		}
+		return handle;
 	}
-	return handle;
+
 }
 
 
@@ -317,33 +342,15 @@ void  JoinIntervene2D(shared_ptr<OperatorLineage> lop,
 	} while (cache_on || result.size() > 0);
 }
 
-template<class T>
-vector<vector<T>> SumRecompute2D(PhysicalOperator* op,
-                               std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
-                               shared_ptr<OperatorLineage> lop,
-                               BoundAggregateExpression& aggr, idx_t n_interventions,
-                               idx_t n_groups, vector<idx_t> aggregate_input_idx) {
+/*
 	DataChunk result;
-	idx_t global_count = 0;
-	idx_t local_count = 0;
-	idx_t current_thread = 0;
-	idx_t log_id = 0;
-	bool cache_on = false;
-  std::vector<T> input_values;
-
+  	std::vector<T> input_values;
 	idx_t chunk_count = op->children[0]->lineage_op->chunk_collection.ChunkCount();
-
-	// to parallelize, first need to materialize input chunks, then divide them between threads
-	// this is necessary only if we are computing aggregates without the subtraction property
-	// since we need to iterate over all interventions and recompute the aggregates
-
 	idx_t child_n_masks = fade_data[op->children[0]->id].n_masks;
 	__mmask16* child_del_interventions = fade_data[op->children[0]->id].del_interventions;
   std::vector<std::vector<T>> new_vals(n_groups, std::vector<T> (child_n_masks*mask_size, 0));
 vector<vector<T>> new_vals2(n_groups, vector<T> (child_n_masks*mask_size, 0));
-
-  std::cout << "sum " << child_n_masks << std::endl;
-  std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
+ std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
 	idx_t offset = 0;
 	for (idx_t chunk_idx=0; chunk_idx < chunk_count; ++chunk_idx) {
 		    DataChunk &collection_chunk = op->children[0]->lineage_op->chunk_collection.GetChunk(chunk_idx);
@@ -367,45 +374,8 @@ vector<vector<T>> new_vals2(n_groups, vector<T> (child_n_masks*mask_size, 0));
 		    }
 		    offset +=  collection_chunk.size();
 	}
-  std::chrono::steady_clock::time_point end_time = std::chrono::steady_clock::now();
-  std::chrono::duration<double> time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
-  double execution_time = time_span.count();
 
-  std::cout << "phase 1: " << execution_time << std::endl;
-	// then specialize recomputation based on the aggregate type with possible SIMD implementations?
-	if (op->type == PhysicalOperatorType::UNGROUPED_AGGREGATE) {
-		    return new_vals2;
-	}
-
-	idx_t row_count = op->children[0]->lineage_op->chunk_collection.Count();
-  std::vector<idx_t> lineage(row_count, 0);
-  std::cout << "row count: " << row_count << std::endl;
-  start_time = std::chrono::steady_clock::now();
-	do {
-		    cache_on = false;
-		    result.Reset();
-		    result.Destroy();
-		    lop->GetLineageAsChunk(result, global_count, local_count,
-		                           current_thread, log_id, cache_on);
-		    result.Flatten();
-		    if (result.size() == 0) continue;
-		    int64_t * in_index = reinterpret_cast<int64_t *>(result.data[0].GetData());
-		    int * out_index = reinterpret_cast<int *>(result.data[1].GetData());
-		    for (idx_t i=0; i < result.size(); ++i) {
-			    idx_t iid = in_index[i];
-			    idx_t oid = out_index[i];
-          lineage[iid] = oid;
-		    }
-
-	} while (cache_on || result.size() > 0);
-  end_time = std::chrono::steady_clock::now();
-  time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
-  execution_time = time_span.count();
-
-  std::cout << "phase 2: " << execution_time << " " << child_n_masks << " " << mask_size << " " << n_groups << std::endl;
-
-  return new_vals2;
-}
+}*/
 
 std::vector<int> GetGBLineage(shared_ptr<OperatorLineage> lop, int row_count) {
 	DataChunk result;
@@ -446,6 +416,8 @@ string HashAggregateIntervene2D(shared_ptr<OperatorLineage> lop,
 	string eval_code;
 	string code;
 	string alloc_code;
+	string get_data_code;
+	string get_vals_code;
 
 	PhysicalHashAggregate * gb = dynamic_cast<PhysicalHashAggregate *>(op);
 	auto &aggregates = gb->grouped_aggregate_data.aggregates;
@@ -478,20 +450,33 @@ string HashAggregateIntervene2D(shared_ptr<OperatorLineage> lop,
 		    }
 		    string name = aggr.function.name;
 		    if (name == "sum" || name == "sum_no_overflow") {
+			    string out_var = "out_" + to_string(i);
+			    string in_val = "val_" + to_string(i);
+			    string in_arr = "col_" + to_string(i);
+			    get_data_code += "\t\tfloat* "+ in_arr+" = reinterpret_cast<float *>(collection_chunk.data["+to_string(i)+"].GetData());";
+			    get_vals_code += "\t\t\tfloat " + in_val + "= "+ in_arr +"[i];\n";
 			    agg_count++;
 			    alloc_code += get_agg_scalar_alloc(i, "sum");
-			    eval_code += get_agg_scalar_eval(i, "sum");
-			    fade_data[op->id].alloc_vars["out_"+to_string(i)] = aligned_alloc(64, sizeof(float)*n_groups*n_interventions);;
+			    eval_code += get_agg_scalar_eval("sum", out_var, in_val);
+			    fade_data[op->id].alloc_vars[out_var] = aligned_alloc(64, sizeof(float)*n_groups*n_interventions);;
 		    } else if (include_count == false && (name == "count" || name == "count_star")) {
 			    include_count = true;
 		    } else if (name == "avg") {
+			    string out_var = "out_" + to_string(i);
+			    string in_val = "val_" + to_string(i);
+			    string in_arr = "col_" + to_string(i);
+			    get_data_code += "\t\tfloat* "+ in_arr +" = reinterpret_cast<float *>(collection_chunk.data["+to_string(i)+"].GetData());\n";
+			    get_vals_code += "\t\t\tfloat " + in_val + "= "+ in_arr +"[i];\n";
+
 			    agg_count++;
 			    if (include_count == false) {
 				    include_count = true;
 			    }
+			    // TODO: check data type
+
 			    alloc_code += get_agg_scalar_alloc(i, "sum");
-			    eval_code += get_agg_scalar_eval(i, "sum");
-			    fade_data[op->id].alloc_vars["out_"+to_string(i)] = aligned_alloc(64, sizeof(float)*n_groups*n_interventions);;
+			    eval_code += get_agg_scalar_eval("sum", out_var, in_val);
+			    fade_data[op->id].alloc_vars[out_var] = aligned_alloc(64, sizeof(float)*n_groups*n_interventions);;
 		    }
 	}
 
@@ -503,13 +488,13 @@ string HashAggregateIntervene2D(shared_ptr<OperatorLineage> lop,
 			    eval_code += pre_inner_loop();
 		    }
 		    alloc_code += get_agg_scalar_alloc(0, "count");
-		    eval_code += get_agg_scalar_eval(0, "count");
+		    eval_code += get_agg_scalar_eval("count", "out_count");
 		    fade_data[op->id].alloc_vars["out_count"] = aligned_alloc(64, sizeof(int)*n_groups*n_interventions);
 	}
 
 	eval_code += post_inner_loop();
 
-	string init_code = get_agg_init(op->id, 16, fade_data[op->id].n_interventions, "agg", alloc_code);
+	string init_code = get_agg_init(op->id, 16, fade_data[op->id].n_interventions, "agg", alloc_code, get_data_code, get_vals_code);
 	string end_code = get_agg_finalize();
 
 	code = init_code + eval_code + end_code;
@@ -527,8 +512,8 @@ void  HashAggregateIntervene2DEval(shared_ptr<OperatorLineage> lop,
 	std::vector<int> lineage = fade_data[op->id].lineage;
 	string fname = "agg_"+ to_string(op->id);
 	std::vector<float> input_vals(row_count, 0); //get this here
-	int (*fn)(int, int*, __mmask16*, float*, std::unordered_map<std::string, void*>&) = (int(*)(int, int*, __mmask16*, float*,  std::unordered_map<std::string, void*>&))dlsym(handle, fname.c_str());
-	int result = fn(row_count, lineage.data(), var_0, input_vals.data(), fade_data[op->id].alloc_vars);
+	int (*fn)(int, int*, __mmask16*, float*, std::unordered_map<std::string, void*>&, ChunkCollection&) = (int(*)(int, int*, __mmask16*, float*,  std::unordered_map<std::string, void*>&, ChunkCollection&))dlsym(handle, fname.c_str());
+	int result = fn(row_count, lineage.data(), var_0, input_vals.data(), fade_data[op->id].alloc_vars, op->children[0]->lineage_op->chunk_collection);
 }
 
 void Intervention2D(string& code, PhysicalOperator* op,
@@ -618,7 +603,7 @@ void Fade::Whatif(PhysicalOperator *op, string intervention_type, string columns
   string final_code = oss.str();
   std::cout << final_code << std::endl;
   void* handle = compile(final_code, 0);
-
+  if (handle == nullptr) return;
   start_time = std::chrono::steady_clock::now();
   Intervention2DEval(handle, op, fade_data, columns_spec);
   end_time = std::chrono::steady_clock::now();
