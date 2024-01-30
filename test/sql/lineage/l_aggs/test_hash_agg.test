@@ -17,11 +17,11 @@ PRAGMA enable_lineage;
 PRAGMA enable_intermediate_tables;
 
 query IIII
-select i, count(j), sum(j), list(distinct j) from t1 GROUP BY i
+select i, avg(j), sum(j), list(distinct j) from t1 GROUP BY i
 ----
-Haneen	3	9	[2, 4, 3]
-Omar	3	4	[2, 1]
-Mohammed	2	3	[1, 2]
+Haneen	3.0	9	[2, 4, 3]
+Omar	1.3333333333333333	4	[2, 1]
+Mohammed	1.5	3	[1, 2]
 
 statement ok
 PRAGMA disable_intermediate_tables;
@@ -30,7 +30,7 @@ PRAGMA disable_optimizer;
 PRAGMA threads=1;
 
 query I
-pragma WhatIf(2, 'd', 't1:0.3', 64);
+pragma WhatIf(2, 'd', 't1:0.3', 1024);
 ----
 
 

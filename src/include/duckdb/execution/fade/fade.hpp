@@ -22,8 +22,6 @@ struct FadeDataPerNode {
 	vector<idx_t> annotations;
 	idx_t n_interventions;
 	idx_t n_masks;
-
-
 	// single_del_intervention.size() == input table size
 	// bits: del or not
 	__mmask16* del_interventions;
@@ -31,6 +29,8 @@ struct FadeDataPerNode {
 	// unordered_map<string, vector<idx_t>>
 	// vector<idx_t> single_scale_intervention;
 
+	std::unordered_map<string, void*> alloc_vars;
+	vector<int> lineage;
 	// Default constructor with default values
 	FadeDataPerNode() : n_interventions(1), n_masks(0), del_interventions(nullptr) {}
 };
@@ -41,6 +41,7 @@ public:
 
 	static void Why(PhysicalOperator* op, int k, string columns_spec, int distinct);
 	static void Whatif(PhysicalOperator* op, string intervention_type, string columns_spec, int n_intervention);
+	//static void WhatifCompile(PhysicalOperator* op, string intervention_type, string columns_spec, int n_intervention);
 	static void Rexec(PhysicalOperator* op);
 
 };
