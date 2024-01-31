@@ -35,12 +35,22 @@ struct FadeDataPerNode {
 	FadeDataPerNode() : n_interventions(1), n_masks(0), del_interventions(nullptr) {}
 };
 
+struct EvalConfig {
+	int batch;
+	int mask_size;
+	bool is_scalar;
+	bool use_duckdb;
+	string columns_spec_str;
+	string intervention_type;
+	int n_intervention;
+};
+
 class Fade {
 public:
 	Fade() {};
 
 	static void Why(PhysicalOperator* op, int k, string columns_spec, int distinct);
-	static void Whatif(PhysicalOperator* op, string intervention_type, string columns_spec, int n_intervention);
+	static void Whatif(PhysicalOperator* op, EvalConfig config);
 	//static void WhatifCompile(PhysicalOperator* op, string intervention_type, string columns_spec, int n_intervention);
 	static void Rexec(PhysicalOperator* op);
 

@@ -30,7 +30,7 @@ PRAGMA disable_optimizer;
 PRAGMA threads=1;
 
 query I
-pragma WhatIf(2, 'd', 't1:0.3', 1024);
+pragma WhatIf(2, 'd', 't1:0.3', 1024, 1, false, false);
 ----
 
 

@@ -140,13 +140,17 @@ static void PragmaWhatif(ClientContext &context, const FunctionParameters &param
 	string intervention_type = parameters.values[1].ToString();
 	string spec = parameters.values[2].ToString();
 	int n_interventions = parameters.values[3].GetValue<int>();
+	int batch = parameters.values[4].GetValue<int>();
+	bool is_scalar = parameters.values[5].GetValue<bool>();
+	bool use_duckdb = parameters.values[6].GetValue<bool>();
 
-	std::cout << "\nPragmaWhatif " << qid << " " << intervention_type << " " <<  spec << " " << n_interventions << std::endl;
+	std::cout << "\nPragmaWhatif " << qid << " " << intervention_type << " " <<  spec << " " <<
+	    n_interventions << " " << batch << " "<< is_scalar << " " << use_duckdb << std::endl;
 	// 1. find the query plan associated with qid
 	PhysicalOperator* op = context.client_data->lineage_manager->queryid_to_plan[qid].get();
-
+	int mask_size = 16;
 	// takes in query id, attributes to intervene on, conjunctive only or conjunctive and disjunction, or random
-	Fade::Whatif(op, intervention_type, spec, n_interventions);
+	Fade::Whatif(op, { batch, mask_size, is_scalar, use_duckdb, spec, intervention_type, n_interventions } );
 }
 
 static void PragmaRexec(ClientContext &context, const FunctionParameters &parameters) {
@@ -196,8 +200,12 @@ static void PragmaClearLineage(ClientContext &context, const FunctionParameters 
 void PragmaFunctions::RegisterFunction(BuiltinFunctions &set) {
 	RegisterEnableProfiling(set);
 #ifdef LINEAGE
-	set.AddFunction(PragmaFunction::PragmaCall("Why", PragmaWhy, {LogicalType::INTEGER, LogicalType::INTEGER, LogicalType::VARCHAR, LogicalType::INTEGER}));
-	set.AddFunction(PragmaFunction::PragmaCall("WhatIf", PragmaWhatif, {LogicalType::INTEGER, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::INTEGER}));
+	set.AddFunction(PragmaFunction::PragmaCall("Why", PragmaWhy, {LogicalType::INTEGER,
+	                                                              LogicalType::INTEGER, LogicalType::VARCHAR, LogicalType::INTEGER}));
+	set.AddFunction(PragmaFunction::PragmaCall("WhatIf", PragmaWhatif, {LogicalType::INTEGER,
+	                                                                    LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::INTEGER,
+	                                                                    LogicalType::INTEGER, LogicalType::BOOLEAN,
+	                                                                    LogicalType::BOOLEAN}));
 	set.AddFunction(PragmaFunction::PragmaCall("Rexec", PragmaRexec, {LogicalType::INTEGER}));
     set.AddFunction(PragmaFunction::PragmaStatement("enable_lineage", PragmaEnableLineage));
 	set.AddFunction(PragmaFunction::PragmaStatement("disable_lineage", PragmaDisableLineage));
