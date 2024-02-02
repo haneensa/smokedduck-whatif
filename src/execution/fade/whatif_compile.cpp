@@ -315,7 +315,6 @@ void  FilterIntervene2D(shared_ptr<OperatorLineage> lop,
 		}
 		offset = result.size();
 	} while (cache_on || result.size() > 0);
-	free(fade_data[op->children[0]->id].del_interventions);
 }
 
 
@@ -374,14 +373,6 @@ void  JoinIntervene2D(shared_ptr<OperatorLineage> lop,
 		    }
 		    offset += result.size();
 	} while (cache_on || result.size() > 0);
-
-	if ( fade_data[op->children[0]->id].n_masks > 0) {
-		    free(fade_data[op->children[0]->id].del_interventions);
-	}
-	if ( fade_data[op->children[1]->id].n_masks > 0) {
-		    free(fade_data[op->children[1]->id].del_interventions);
-	}
-
 }
 
 std::vector<int> GetGBLineage(shared_ptr<OperatorLineage> lop, int row_count) {
@@ -599,6 +590,32 @@ void Intervention2DEval(EvalConfig config, void* handle, PhysicalOperator* op,
 }
 
 
+void ReleaseFade(EvalConfig config, void* handle, PhysicalOperator* op,
+                        std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
+                        std::unordered_map<std::string, float> columns_spec) {
+
+  if (op->type != PhysicalOperatorType::PROJECTION) {
+		if (op->type == PhysicalOperatorType::HASH_GROUP_BY) {
+			    for (auto &pair : fade_data[op->id].alloc_vars) {
+				    if (pair.second != nullptr) {
+					    free(pair.second);
+					    pair.second = nullptr;
+				    }
+			    }
+		} else {
+			    if (fade_data[op->id].del_interventions != nullptr) {
+				    std::cout << "releasing " << op->id << std::endl;
+				    free(fade_data[op->id].del_interventions);
+				    fade_data[op->id].del_interventions = nullptr;
+			    }
+		}
+  }
+
+  for (idx_t i = 0; i < op->children.size(); i++) {
+		ReleaseFade(config, handle, op->children[i].get(), fade_data, columns_spec);
+  }
+
+}
 
 void Fade::Whatif(PhysicalOperator *op, EvalConfig config) {
   // timing vars
@@ -663,6 +680,9 @@ void Fade::Whatif(PhysicalOperator *op, EvalConfig config) {
 
   double total = prep_time + compile_time + eval_time;
   std::cout << "6. total exec : " << total << std::endl;
+
+  ReleaseFade(config, handle, op, fade_data, columns_spec);
+
 
   // Debug
 }
