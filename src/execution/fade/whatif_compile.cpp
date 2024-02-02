@@ -297,7 +297,6 @@ void  FilterIntervene2D(shared_ptr<OperatorLineage> lop,
 	__mmask16* child_del_interventions = fade_data[op->children[0]->id].del_interventions;
 	idx_t row_count = lop->log_index->table_size;
 	idx_t n_masks = fade_data[op->id].n_masks;
-	__mmask16* del_interventions = new __mmask16[row_count * n_masks];
 	idx_t offset = 0;
 	idx_t child_n_masks = fade_data[op->children[0]->id].n_masks;
 	do {
@@ -311,12 +310,11 @@ void  FilterIntervene2D(shared_ptr<OperatorLineage> lop,
 		for (idx_t i=0; i < result.size(); ++i) {
 			idx_t iid = in_index[i];
 			for (idx_t j=0; j < n_masks; j++) {
-				del_interventions[(i+offset)*n_masks+j] = child_del_interventions[iid*child_n_masks+j];
+				fade_data[op->id].del_interventions[(i+offset)*n_masks+j] = child_del_interventions[iid*child_n_masks+j];
 			}
 		}
 		offset = result.size();
 	} while (cache_on || result.size() > 0);
-	fade_data[op->id].del_interventions = del_interventions;
 	free(fade_data[op->children[0]->id].del_interventions);
 }
 
@@ -338,9 +336,8 @@ void  JoinIntervene2D(shared_ptr<OperatorLineage> lop,
 
 	__mmask16* lhs_del_interventions = fade_data[op->children[0]->id].del_interventions;
 	__mmask16* rhs_del_interventions = fade_data[op->children[1]->id].del_interventions;
-	idx_t row_count = lop->log_index->table_size;
 	idx_t n_masks = fade_data[op->id].n_masks;
-	fade_data[op->id].del_interventions = new __mmask16[row_count * n_masks];
+	idx_t row_count = lop->log_index->table_size;
 	idx_t offset = 0;
 	do {
 			cache_on = false;
@@ -417,12 +414,7 @@ std::vector<int> GetGBLineage(shared_ptr<OperatorLineage> lop, int row_count) {
 string HashAggregateIntervene2D(EvalConfig config, shared_ptr<OperatorLineage> lop,
                             std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
                             PhysicalOperator* op) {
-
-	fade_data[op->id].n_interventions = fade_data[op->children[0]->id].n_interventions;
 	const int n_interventions = fade_data[op->id].n_interventions;
-	fade_data[op->id].n_masks = fade_data[op->children[0]->id].n_masks;
-	fade_data[op->id].del_interventions = fade_data[op->children[0]->id].del_interventions;
-
 
 	string eval_code;
 	string code;
@@ -545,6 +537,9 @@ void Intervention2D(EvalConfig config, string& code, PhysicalOperator* op,
 		fade_data[op->id].n_interventions = fade_data[op->children[0]->id].n_interventions;
 		fade_data[op->id].n_masks = fade_data[op->children[0]->id].n_masks;
 		fade_data[op->id].n_interventions = fade_data[op->children[0]->id].n_interventions;
+		idx_t row_count = op->lineage_op->log_index->table_size;
+		idx_t n_masks = fade_data[op->id].n_masks;
+		fade_data[op->id].del_interventions = new __mmask16[row_count * n_masks];
 	} else if (op->type == PhysicalOperatorType::HASH_JOIN
 	           || op->type == PhysicalOperatorType::NESTED_LOOP_JOIN
 	           || op->type == PhysicalOperatorType::BLOCKWISE_NL_JOIN
@@ -558,7 +553,14 @@ void Intervention2D(EvalConfig config, string& code, PhysicalOperator* op,
 		}
 
 		fade_data[op->id].n_masks = child_n_masks;
+
+		idx_t n_masks = fade_data[op->id].n_masks;
+		idx_t row_count = op->lineage_op->log_index->table_size;
+		fade_data[op->id].del_interventions = new __mmask16[row_count * n_masks];
 	} else if (op->type == PhysicalOperatorType::HASH_GROUP_BY) {
+		fade_data[op->id].n_interventions = fade_data[op->children[0]->id].n_interventions;
+		fade_data[op->id].n_masks = fade_data[op->children[0]->id].n_masks;
+		fade_data[op->id].del_interventions = fade_data[op->children[0]->id].del_interventions;
 		code += HashAggregateIntervene2D(config, op->lineage_op, fade_data, op);
 	} /*else if (op->type == PhysicalOperatorType::UNGROUPED_AGGREGATE) {
 		UngroupedAggregateIntervene(op->lineage_op, fade_data, op);
