@@ -42,7 +42,7 @@ string get_header(bool is_scalar, bool duckdb) {
 string get_agg_init(EvalConfig config, int opid, int n_interventions, string fn, string alloc_code,
                     string get_data_code, string get_vals_code) {
 	int n_masks = n_interventions / config.mask_size;
-	string fname = "agg_" + to_string(opid);
+	string fname = "agg_" + to_string(opid) + "_" + to_string(config.qid);
 	std::ostringstream oss;
 	if (config.use_duckdb) {
 			oss << R"(extern "C" int )"
@@ -482,7 +482,7 @@ string HashAggregateIntervene2D(EvalConfig config, shared_ptr<OperatorLineage> l
 	}
 
 
-	string init_code = get_agg_init(config, op->id, fade_data[op->id].n_interventions, "agg", alloc_code, get_data_code, get_vals_code);
+	string init_code = get_agg_init(config, op->id,  fade_data[op->id].n_interventions, "agg", alloc_code, get_data_code, get_vals_code);
 	string end_code = get_agg_finalize(config);
 
 	code = init_code + eval_code + end_code;
@@ -498,7 +498,7 @@ void  HashAggregateIntervene2DEval(EvalConfig config, shared_ptr<OperatorLineage
 
 	idx_t row_count = op->children[0]->lineage_op->chunk_collection.Count();
 	std::vector<int> lineage = fade_data[op->id].lineage;
-	string fname = "agg_"+ to_string(op->id);
+	string fname = "agg_"+ to_string(op->id) + "_" + to_string(config.qid);
 	if (config.use_duckdb) {
 		int (*fn)(int, int*, __mmask16*, std::unordered_map<std::string, void*>&, ChunkCollection&) = (int(*)(int, int*, __mmask16*, std::unordered_map<std::string, void*>&, ChunkCollection&))dlsym(handle, fname.c_str());
 		int result = fn(row_count, lineage.data(), var_0, fade_data[op->id].alloc_vars, op->children[0]->lineage_op->chunk_collection);

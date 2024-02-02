@@ -47,6 +47,7 @@ struct EvalConfig {
 	string columns_spec_str;
 	InterventionType intervention_type;
 	int n_intervention;
+	int qid;
 };
 
 class Fade {
