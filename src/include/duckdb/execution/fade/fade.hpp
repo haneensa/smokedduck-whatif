@@ -35,13 +35,17 @@ struct FadeDataPerNode {
 	FadeDataPerNode() : n_interventions(1), n_masks(0), del_interventions(nullptr) {}
 };
 
+enum InterventionType {
+	DELETE,
+	SCALE
+};
 struct EvalConfig {
 	int batch;
 	int mask_size;
 	bool is_scalar;
 	bool use_duckdb;
 	string columns_spec_str;
-	string intervention_type;
+	InterventionType intervention_type;
 	int n_intervention;
 };
 

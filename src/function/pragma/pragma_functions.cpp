@@ -137,14 +137,19 @@ static void PragmaWhy(ClientContext &context, const FunctionParameters &paramete
 
 static void PragmaWhatif(ClientContext &context, const FunctionParameters &parameters) {
 	int qid = parameters.values[0].GetValue<int>();
-	string intervention_type = parameters.values[1].ToString();
+	string intervention_type_str = parameters.values[1].ToString();
+	InterventionType intervention_type =  DELETE;
+	if (intervention_type_str == "SCALE") {
+		intervention_type = SCALE;
+	}
+
 	string spec = parameters.values[2].ToString();
 	int n_interventions = parameters.values[3].GetValue<int>();
 	int batch = parameters.values[4].GetValue<int>();
 	bool is_scalar = parameters.values[5].GetValue<bool>();
 	bool use_duckdb = parameters.values[6].GetValue<bool>();
 
-	std::cout << "\nPragmaWhatif " << qid << " " << intervention_type << " " <<  spec << " " <<
+	std::cout << "\nPragmaWhatif " << qid << " " << intervention_type_str << " " <<  spec << " " <<
 	    n_interventions << " " << batch << " "<< is_scalar << " " << use_duckdb << std::endl;
 	// 1. find the query plan associated with qid
 	PhysicalOperator* op = context.client_data->lineage_manager->queryid_to_plan[qid].get();

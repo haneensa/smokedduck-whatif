@@ -207,7 +207,7 @@ void* compile(std::string code, int id) {
 		return nullptr;
 	} else {
 		std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
-		std::string build_command = "g++ -O3 -std=c++2a -mavx512f -march=native -shared loop.cpp -o loop.so -L" + std::string(duckdb_lib_path) + " -lduckdb";
+		std::string build_command = "g++ -O3 -std=c++2a -mavx512f -march=native -shared -fPIC loop.cpp -o loop.so -L" + std::string(duckdb_lib_path) + " -lduckdb";
 		std::cout << duckdb_lib_path << " " << build_command.c_str() << std::endl;
 		system(build_command.c_str());
 		void *handle = dlopen("./loop.so", RTLD_LAZY);
@@ -219,9 +219,9 @@ void* compile(std::string code, int id) {
 }
 
 
-std::unordered_map<std::string, float> parseWhatifString(string intervention_type, const std::string& input) {
+std::unordered_map<std::string, float> parseWhatifString(EvalConfig config) {
 	std::unordered_map<std::string, float> result;
-	std::istringstream iss(input);
+	std::istringstream iss(config.columns_spec_str);
 	std::string token;
 
 	while (std::getline(iss, token, '|')) {
@@ -247,13 +247,15 @@ void GenRandomWhatifIntervention(EvalConfig config, PhysicalOperator* op,
 		GenRandomWhatifIntervention(config, op->children[i].get(), fade_data, columns_spec, n_interventions);
 	}
 
+	// TODO: add option to push filter / pruned lineage
+
 	if (op->type == PhysicalOperatorType::TABLE_SCAN) {
 		if (columns_spec.find(op->lineage_op->table_name) == columns_spec.end()) {
 			return;
 		}
+
 		idx_t row_count = op->lineage_op->chunk_collection.Count();
 		// allocate deletion intervention: n_intervention X row_count
-
 		float probability = columns_spec[op->lineage_op->table_name];
 
 		// Initialize a random number generator
@@ -264,7 +266,7 @@ void GenRandomWhatifIntervention(EvalConfig config, PhysicalOperator* op,
 		std::uniform_int_distribution<int> dist_255(0, 255);
 
 		idx_t n_masks = std::ceil(n_interventions / config.mask_size);
-    	std::cout << n_masks << " " << config.mask_size << " "<< n_interventions << std::endl;
+    	std::cout << "GenRandomWhatifIntervention spec = n_masks: " << n_masks << " mask_size: " << config.mask_size << " n_interventions: "<< n_interventions << std::endl;
 		__mmask16* del_interventions = new __mmask16[row_count * n_masks];
 		for (idx_t i = 0; i < row_count; ++i) {
 			for (idx_t j = 0; j < n_masks; ++j) {
@@ -283,10 +285,6 @@ void GenRandomWhatifIntervention(EvalConfig config, PhysicalOperator* op,
 void  FilterIntervene2D(shared_ptr<OperatorLineage> lop,
                      std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
                      PhysicalOperator* op) {
-	fade_data[op->id].n_interventions = fade_data[op->children[0]->id].n_interventions;
-	fade_data[op->id].n_masks = fade_data[op->children[0]->id].n_masks;
-	fade_data[op->id].n_interventions = fade_data[op->children[0]->id].n_interventions;
-
 	if ( fade_data[op->id].n_masks == 0) {
 		return;
 	}
@@ -319,6 +317,7 @@ void  FilterIntervene2D(shared_ptr<OperatorLineage> lop,
 		offset = result.size();
 	} while (cache_on || result.size() > 0);
 	fade_data[op->id].del_interventions = del_interventions;
+	free(fade_data[op->children[0]->id].del_interventions);
 }
 
 
@@ -329,14 +328,7 @@ void  JoinIntervene2D(shared_ptr<OperatorLineage> lop,
 		return;
 	}
 
-	fade_data[op->id].n_interventions = fade_data[op->children[0]->id].n_interventions;
-	idx_t child_n_masks = fade_data[op->children[0]->id].n_masks;
-	if ( child_n_masks == 0) {
-		child_n_masks = fade_data[op->children[1]->id].n_masks;
-		fade_data[op->id].n_interventions = fade_data[op->children[1]->id].n_interventions;
-	}
-
-	fade_data[op->id].n_masks = child_n_masks;
+	idx_t child_n_masks = fade_data[op->id].n_masks;
 	bool cache_on = false;
 	DataChunk result;
 	idx_t global_count = 0;
@@ -385,6 +377,14 @@ void  JoinIntervene2D(shared_ptr<OperatorLineage> lop,
 		    }
 		    offset += result.size();
 	} while (cache_on || result.size() > 0);
+
+	if ( fade_data[op->children[0]->id].n_masks > 0) {
+		    free(fade_data[op->children[0]->id].del_interventions);
+	}
+	if ( fade_data[op->children[1]->id].n_masks > 0) {
+		    free(fade_data[op->children[1]->id].del_interventions);
+	}
+
 }
 
 std::vector<int> GetGBLineage(shared_ptr<OperatorLineage> lop, int row_count) {
@@ -525,7 +525,7 @@ void  HashAggregateIntervene2DEval(EvalConfig config, shared_ptr<OperatorLineage
 		for (int i=0; i < fade_data[op->id].alloc_vars.size(); i++) {
 			    input_data_map[i] = input_vals.data();
 		}
-		
+
 		int (*fn)(int, int*, __mmask16*, std::unordered_map<std::string, void*>&,  std::unordered_map<int, void*>&) = (int(*)(int, int*, __mmask16*, std::unordered_map<std::string, void*>&,  std::unordered_map<int, void*>&))dlsym(handle, fname.c_str());
 		int result = fn(row_count, lineage.data(), var_0, fade_data[op->id].alloc_vars, input_data_map);
 	}
@@ -542,13 +542,22 @@ void Intervention2D(EvalConfig config, string& code, PhysicalOperator* op,
 	//  TableIntervene(op->lineage_op, op, columns_spec);
 	// } else
 	if (op->type == PhysicalOperatorType::FILTER) {
-		FilterIntervene2D(op->lineage_op, fade_data, op);
+		fade_data[op->id].n_interventions = fade_data[op->children[0]->id].n_interventions;
+		fade_data[op->id].n_masks = fade_data[op->children[0]->id].n_masks;
+		fade_data[op->id].n_interventions = fade_data[op->children[0]->id].n_interventions;
 	} else if (op->type == PhysicalOperatorType::HASH_JOIN
 	           || op->type == PhysicalOperatorType::NESTED_LOOP_JOIN
 	           || op->type == PhysicalOperatorType::BLOCKWISE_NL_JOIN
 	           || op->type == PhysicalOperatorType::PIECEWISE_MERGE_JOIN
 	           || op->type == PhysicalOperatorType::CROSS_PRODUCT) {
-		JoinIntervene2D(op->lineage_op, fade_data, op);
+		fade_data[op->id].n_interventions = fade_data[op->children[0]->id].n_interventions;
+		idx_t child_n_masks = fade_data[op->children[0]->id].n_masks;
+		if ( child_n_masks == 0) {
+			    child_n_masks = fade_data[op->children[1]->id].n_masks;
+			    fade_data[op->id].n_interventions = fade_data[op->children[1]->id].n_interventions;
+		}
+
+		fade_data[op->id].n_masks = child_n_masks;
 	} else if (op->type == PhysicalOperatorType::HASH_GROUP_BY) {
 		code += HashAggregateIntervene2D(config, op->lineage_op, fade_data, op);
 	} /*else if (op->type == PhysicalOperatorType::UNGROUPED_AGGREGATE) {
@@ -583,9 +592,6 @@ void Intervention2DEval(EvalConfig config, void* handle, PhysicalOperator* op,
   } /*else if (op->type == PhysicalOperatorType::UNGROUPED_AGGREGATE) {
 	  UngroupedAggregateIntervene(op->lineage_op, fade_data, op);
   } */ else if (op->type == PhysicalOperatorType::PROJECTION) {
-		fade_data[op->id].n_masks  = fade_data[op->children[0]->id].n_masks;
-		fade_data[op->id].del_interventions  = fade_data[op->children[0]->id].del_interventions;
-		fade_data[op->id].n_interventions = fade_data[op->children[0]->id].n_interventions;
   }
   std::cout << "Intervene: " << op->id << " " << fade_data[op->id].n_masks << std::endl;
 }
@@ -593,39 +599,70 @@ void Intervention2DEval(EvalConfig config, void* handle, PhysicalOperator* op,
 
 
 void Fade::Whatif(PhysicalOperator *op, EvalConfig config) {
+  // timing vars
+  std::chrono::steady_clock::time_point start_time, end_time;
+  std::chrono::duration<double> time_span;
+
   std::unordered_map<std::string, float> columns_spec;
-  columns_spec = parseWhatifString(config.intervention_type, config.columns_spec_str);
+  // 1. Parse Spec
+  // e.g. random delete table_name:prob, scale by factor: table_name.col:scale
+  columns_spec = parseWhatifString(config);
 
   // holds any extra data needed during exec
   std::unordered_map<idx_t, FadeDataPerNode> fade_data;
 
   // 2. Post Process
+  start_time = std::chrono::steady_clock::now();
   LineageManager::PostProcess(op);
+  end_time = std::chrono::steady_clock::now();
+  time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
+  double post_processing_time = time_span.count();
+  std::cout << "1. PostProcess : " << post_processing_time << std::endl;
 
-  // 4. Prepare base interventions; should be one time cost per DB
+  // 3. Prepare base interventions; should be one time cost per DB
+  start_time = std::chrono::steady_clock::now();
   GenRandomWhatifIntervention(config, op, fade_data, columns_spec, config.n_intervention);
+  end_time = std::chrono::steady_clock::now();
+  time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
+  double intervention_gen_time = time_span.count();
+  std::cout << "2. GenRandomWhatifIntervention : " << intervention_gen_time << std::endl;
 
+  // 4. Alloc vars, generate eval code
   string code;
-  std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
+  start_time = std::chrono::steady_clock::now();
   Intervention2D(config, code, op, fade_data, columns_spec);
-  std::chrono::steady_clock::time_point end_time = std::chrono::steady_clock::now();
-  std::chrono::duration<double> time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
-  double execution_time = time_span.count();
-  std::cout << "1. NTERVENTION_TIME : " << execution_time << std::endl;
+  end_time = std::chrono::steady_clock::now();
+  time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
+  double prep_time = time_span.count();
+  std::cout << "3. Intervention2D : " << prep_time << std::endl;
 
   std::ostringstream oss;
   oss << get_header(config.is_scalar, config.use_duckdb) << "\n" << code;
   string final_code = oss.str();
   std::cout << final_code << std::endl;
+
+  start_time = std::chrono::steady_clock::now();
   void* handle = compile(final_code, 0);
+  end_time = std::chrono::steady_clock::now();
+  time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
+  double compile_time = time_span.count();
+  std::cout << "4. compile : " << compile_time << std::endl;
+
   if (handle == nullptr) return;
+
   start_time = std::chrono::steady_clock::now();
   Intervention2DEval(config, handle, op, fade_data, columns_spec);
   end_time = std::chrono::steady_clock::now();
   time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
-  execution_time = time_span.count();
-  std::cout << "3. NTERVENTION_TIME : " << execution_time << std::endl;
-  system("rm loop.cpp loop.o loop.so");
+  double eval_time = time_span.count();
+  std::cout << "5. Intervention2DEval : " << eval_time << std::endl;
+
+  system("rm loop.cpp loop.so");
+
+  double total = prep_time + compile_time + eval_time;
+  std::cout << "6. total exec : " << total << std::endl;
+
+  // Debug
 }
 
 
