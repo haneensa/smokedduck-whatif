@@ -414,23 +414,22 @@ std::vector<int> GetGBLineage(shared_ptr<OperatorLineage> lop, int row_count) {
 
 
 template<class T>
-vector<T>   GetInputVals(PhysicalOperator* op, shared_ptr<OperatorLineage> lop, idx_t col_idx) {
-	vector<T> input_values;
-
+T* GetInputVals(PhysicalOperator* op, shared_ptr<OperatorLineage> lop, idx_t col_idx) {
 	idx_t chunk_count = op->children[0]->lineage_op->chunk_collection.ChunkCount();
 	idx_t row_count = op->children[0]->lineage_op->chunk_collection.Count();
+	T* input_values = new T[row_count];
 
 	idx_t offset = 0;
 	for (idx_t chunk_idx=0; chunk_idx < chunk_count; ++chunk_idx) {
 		    DataChunk &collection_chunk = op->children[0]->lineage_op->chunk_collection.GetChunk(chunk_idx);
 		    T* col = reinterpret_cast<T*>(collection_chunk.data[col_idx].GetData());
 		    for (idx_t i=0; i < collection_chunk.size(); ++i) {
-				input_values.push_back(col[i]);
+				input_values[i+offset] = col[i];
 		    }
 		    offset +=  collection_chunk.size();
 	}
 
-	return std::move(input_values);
+	return input_values;
 }
 
 
@@ -490,8 +489,7 @@ string HashAggregateIntervene2D(EvalConfig config, shared_ptr<OperatorLineage> l
 				    get_data_code += "\t\tfloat* " + in_arr + " = reinterpret_cast<float *>(collection_chunk.data[" +
 				                     to_string(i) + "].GetData());\n";
 			    } else {
-				    vector<float> input_vals = std::move(GetInputVals<float>(op, op->lineage_op, i));
-				    fade_data[op->id].input_data_map[i] = input_vals.data();
+				    fade_data[op->id].input_data_map[i] = GetInputVals<float>(op, op->lineage_op, i);
 
 				    // use unordered_map<int, void*> that stores pointers to input data
 				    get_data_code += "\t\tfloat* " + in_arr + " = reinterpret_cast<float *>(input_data_map[" +
@@ -627,6 +625,12 @@ void ReleaseFade(EvalConfig config, void* handle, PhysicalOperator* op,
   if (op->type != PhysicalOperatorType::PROJECTION) {
 		if (op->type == PhysicalOperatorType::HASH_GROUP_BY) {
 			    for (auto &pair : fade_data[op->id].alloc_vars) {
+				    if (pair.second != nullptr) {
+					    free(pair.second);
+					    pair.second = nullptr;
+				    }
+			    }
+			    for (auto &pair : fade_data[op->id].input_data_map) {
 				    if (pair.second != nullptr) {
 					    free(pair.second);
 					    pair.second = nullptr;
