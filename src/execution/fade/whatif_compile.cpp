@@ -64,6 +64,11 @@ string get_agg_init(EvalConfig config, int opid, int n_interventions, string fn,
 	oss << "\tconst int n_masks  = " << n_masks << ";\n";
 	oss << alloc_code;
 
+	if (!config.is_scalar) {
+		oss << "\t__m512i zeros_i = _mm512_setzero_si512();\n";
+		oss << "\t__m512 zeros = _mm512_setzero_ps();\n";
+	}
+
 	if (config.use_duckdb) {
 		oss << R"(
 	int offset = 0;
@@ -87,7 +92,7 @@ string get_agg_init(EvalConfig config, int opid, int n_interventions, string fn,
 )";
 	}
 
-	oss << get_vals_code; //for simd get: __m512 val = _mm512_set1_ps(input[i]);
+	oss << get_vals_code;
 
 
 	return oss.str();
@@ -137,8 +142,14 @@ string get_agg_alloc(int fid, string fn) {
 string get_agg_simd_eval(string fn, string out_var, string in_var) {
 	std::ostringstream oss;
 	oss << "{\n";
-	oss << "\t__m512 a  = _mm512_load_ps((__m512*) &"+out_var+"[col + row]);\n";
-	oss << "\t_mm512_store_ps((__m512*) &"+out_var+"[col + row], _mm512_mask_add_ps(a, tmp_mask, a, "+in_var+"));\n";
+	if (fn == "sum") {
+		oss << "\t__m512 a  = _mm512_load_ps((__m512*) &"+out_var+"[col + row]);\n";
+		oss << "\t_mm512_store_ps((__m512*) &"+out_var+"[col + row], _mm512_mask_add_ps(a, tmp_mask, a, "+in_var+"));\n";
+	} else if (fn == "count") {
+		oss << "\t__m512i a = _mm512_loadu_si512((__m512i*)&" + out_var + "[col+row]);\n";
+		oss << "\t __m512i v = _mm512_mask_set1_epi32(zeros_i, tmp_mask, 1);\n";
+		oss << "\t_mm512_storeu_si512((__m512i*) &"+out_var+"[col + row], _mm512_add_epi32(a, v));\n";
+	}
 	oss << "}\n";
 	return oss.str();
 }
@@ -476,9 +487,9 @@ string HashAggregateIntervene2D(EvalConfig config, shared_ptr<OperatorLineage> l
 	}
 
 	if (include_count == true) {
-		 //   alloc_code += get_agg_alloc(0, "count");
-		  //  eval_code += get_agg_eval(agg_count++, batches, is_scalar, "count", "out_count");
-		   // fade_data[op->id].alloc_vars["out_count"] = aligned_alloc(64, sizeof(int)*n_groups*n_interventions);
+		alloc_code += get_agg_alloc(0, "count");
+		eval_code += get_agg_eval(config, agg_count++, "count", "out_count");
+		fade_data[op->id].alloc_vars["out_count"] = aligned_alloc(64, sizeof(int)*n_groups*n_interventions);
 	}
 
 
