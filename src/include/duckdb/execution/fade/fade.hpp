@@ -30,6 +30,7 @@ struct FadeDataPerNode {
 	// vector<idx_t> single_scale_intervention;
 
 	std::unordered_map<string, void*> alloc_vars;
+	std::unordered_map<int, void*> input_data_map;
 	vector<int> lineage;
 	// Default constructor with default values
 	FadeDataPerNode() : n_interventions(1), n_masks(0), del_interventions(nullptr) {}

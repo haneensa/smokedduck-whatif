@@ -413,6 +413,27 @@ std::vector<int> GetGBLineage(shared_ptr<OperatorLineage> lop, int row_count) {
 }
 
 
+template<class T>
+vector<T>   GetInputVals(PhysicalOperator* op, shared_ptr<OperatorLineage> lop, idx_t col_idx) {
+	vector<T> input_values;
+
+	idx_t chunk_count = op->children[0]->lineage_op->chunk_collection.ChunkCount();
+	idx_t row_count = op->children[0]->lineage_op->chunk_collection.Count();
+
+	idx_t offset = 0;
+	for (idx_t chunk_idx=0; chunk_idx < chunk_count; ++chunk_idx) {
+		    DataChunk &collection_chunk = op->children[0]->lineage_op->chunk_collection.GetChunk(chunk_idx);
+		    T* col = reinterpret_cast<T*>(collection_chunk.data[col_idx].GetData());
+		    for (idx_t i=0; i < collection_chunk.size(); ++i) {
+				input_values.push_back(col[i]);
+		    }
+		    offset +=  collection_chunk.size();
+	}
+
+	return std::move(input_values);
+}
+
+
 string HashAggregateIntervene2D(EvalConfig config, shared_ptr<OperatorLineage> lop,
                             std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
                             PhysicalOperator* op) {
@@ -457,17 +478,21 @@ string HashAggregateIntervene2D(EvalConfig config, shared_ptr<OperatorLineage> l
 		    }
 
 		    if (name == "sum" || name == "sum_no_overflow" || name == "avg") {
+			    // TODO: check data type
+
+
 			    string out_var = "out_" + to_string(i); // new output
 			    string in_arr = "col_" + to_string(i);  // input arrays
 			    string in_val = "val_" + to_string(i);  // input values val = col_x[i]
-
-			    // TODO: check data type
 
 			    if (config.use_duckdb) {
 				    // use CollectionChunk that stores input data
 				    get_data_code += "\t\tfloat* " + in_arr + " = reinterpret_cast<float *>(collection_chunk.data[" +
 				                     to_string(i) + "].GetData());\n";
 			    } else {
+				    vector<float> input_vals = std::move(GetInputVals<float>(op, op->lineage_op, i));
+				    fade_data[op->id].input_data_map[i] = input_vals.data();
+
 				    // use unordered_map<int, void*> that stores pointers to input data
 				    get_data_code += "\t\tfloat* " + in_arr + " = reinterpret_cast<float *>(input_data_map[" +
 				                     to_string(i) + "]);\n";
@@ -514,14 +539,8 @@ void  HashAggregateIntervene2DEval(EvalConfig config, shared_ptr<OperatorLineage
 		int (*fn)(int, int*, __mmask16*, std::unordered_map<std::string, void*>&, ChunkCollection&) = (int(*)(int, int*, __mmask16*, std::unordered_map<std::string, void*>&, ChunkCollection&))dlsym(handle, fname.c_str());
 		int result = fn(row_count, lineage.data(), var_0, fade_data[op->id].alloc_vars, op->children[0]->lineage_op->chunk_collection);
 	} else {
-		std::vector<float> input_vals(row_count, 0);
-		std::unordered_map<int, void*> input_data_map;
-		for (int i=0; i < fade_data[op->id].alloc_vars.size(); i++) {
-			    input_data_map[i] = input_vals.data();
-		}
-
 		int (*fn)(int, int*, __mmask16*, std::unordered_map<std::string, void*>&,  std::unordered_map<int, void*>&) = (int(*)(int, int*, __mmask16*, std::unordered_map<std::string, void*>&,  std::unordered_map<int, void*>&))dlsym(handle, fname.c_str());
-		int result = fn(row_count, lineage.data(), var_0, fade_data[op->id].alloc_vars, input_data_map);
+		int result = fn(row_count, lineage.data(), var_0, fade_data[op->id].alloc_vars, fade_data[op->id].input_data_map);
 	}
 }
 
