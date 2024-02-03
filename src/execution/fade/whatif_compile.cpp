@@ -42,7 +42,7 @@ string get_header(bool is_scalar, bool duckdb) {
 string get_agg_init(EvalConfig config, int opid, int n_interventions, string fn, string alloc_code,
                     string get_data_code, string get_vals_code) {
 	int n_masks = n_interventions / config.mask_size;
-	string fname = "agg_" + to_string(opid) + "_" + to_string(config.qid);
+	string fname = "agg_"+ to_string(opid) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
 	std::ostringstream oss;
 	if (config.use_duckdb) {
 			oss << R"(extern "C" int )"
@@ -498,7 +498,7 @@ void  HashAggregateIntervene2DEval(EvalConfig config, shared_ptr<OperatorLineage
 
 	idx_t row_count = op->children[0]->lineage_op->chunk_collection.Count();
 	std::vector<int> lineage = fade_data[op->id].lineage;
-	string fname = "agg_"+ to_string(op->id) + "_" + to_string(config.qid);
+	string fname = "agg_"+ to_string(op->id) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
 	if (config.use_duckdb) {
 		int (*fn)(int, int*, __mmask16*, std::unordered_map<std::string, void*>&, ChunkCollection&) = (int(*)(int, int*, __mmask16*, std::unordered_map<std::string, void*>&, ChunkCollection&))dlsym(handle, fname.c_str());
 		int result = fn(row_count, lineage.data(), var_0, fade_data[op->id].alloc_vars, op->children[0]->lineage_op->chunk_collection);
@@ -675,6 +675,10 @@ void Fade::Whatif(PhysicalOperator *op, EvalConfig config) {
   time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
   double eval_time = time_span.count();
   std::cout << "5. Intervention2DEval : " << eval_time << std::endl;
+
+  if (dlclose(handle) != 0) {
+		std::cout<< "Error: %s\n" << dlerror() << std::endl;
+  }
 
   system("rm loop.cpp loop.so");
 
