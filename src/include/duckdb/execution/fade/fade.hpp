@@ -29,10 +29,13 @@ struct FadeDataPerNode {
 	// unordered_map<string, vector<idx_t>>
 	// vector<idx_t> single_scale_intervention;
 
-	std::unordered_map<string, void*> alloc_vars;
+	std::unordered_map<string, vector<void*>> alloc_vars;
 	std::unordered_map<int, void*> input_data_map;
-	vector<int> lineage;
-	// Default constructor with default values
+	vector<int> lineage[2];
+	int (*join_fn)(int, int*, int*, __mmask16*, __mmask16*, __mmask16*);
+	int (*agg_duckdb_fn)(int, int*, __mmask16*, std::unordered_map<std::string, vector<void*>>&, ChunkCollection&);
+	int (*agg_fn)(int, int*, __mmask16*, std::unordered_map<std::string, vector<void*>>&,  std::unordered_map<int, void*>&);
+	    // Default constructor with default values
 	FadeDataPerNode() : n_interventions(1), n_masks(0), del_interventions(nullptr) {}
 };
 
@@ -49,6 +52,7 @@ struct EvalConfig {
 	InterventionType intervention_type;
 	int n_intervention;
 	int qid;
+	int num_worker;
 };
 
 class Fade {
@@ -64,3 +68,4 @@ public:
 
 } // namespace duckdb
 #endif
+
