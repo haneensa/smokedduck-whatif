@@ -184,23 +184,32 @@ string get_agg_finalize(EvalConfig config, FadeDataPerNode& node_data) {
 		if ((jc / 16) % num_threads == thread_id) {
 )";
 		for (auto &pair : node_data.alloc_vars) {
+      oss << "{\n";
 			int fid = node_data.alloc_vars_index[pair.first] ;
 			string type_str = node_data.alloc_vars_types[pair.first];
+			if (fid == -1) { // count
+				oss <<  type_str +"* __restrict__ final_out = (" + type_str + "* __restrict__)alloc_vars[\"out_count\"][0];\n";
+			} else {
+				oss <<  type_str +"* __restrict__ final_out = (" + type_str + "* __restrict__)alloc_vars[\"out_"+to_string(fid)+"\"][0];\n";
+			}
 			oss << R"(
 		    for (int j = jc; j < jc + 16 && j < group_count; ++j) {
 		        for (int i = 1; i < num_threads; ++i) {
-		            for (int k = 0; k < n_interventions; ++k) {
-						int index = j * n_interventions + k;
 )";
 			if (fid == -1) { // count
-				oss << "((" + type_str +"* __restrict__)alloc_vars[\"out_count\"][0])[index] += ((" + type_str +"* __restrict__)alloc_vars[\"out_count\"][i])[index];\n";
+				oss <<  type_str +"* __restrict__ final_in = (" + type_str + "* __restrict__)alloc_vars[\"out_count\"][i];\n";
 			} else {
-				oss << "((" + type_str +"* __restrict__)alloc_vars[\"out_" + to_string(fid) << "\"][0])[index] += ((" + type_str +"* __restrict__)alloc_vars[\"out_" + to_string(fid) << "\"][i])[index];\n";
+				oss <<  type_str +"* __restrict__ final_in = (" + type_str + "* __restrict__)alloc_vars[\"out_"+to_string(fid)+"\"][i];\n";
 			}
+		  oss << R"(for (int k = 0; k < n_interventions; ++k) {
+						int index = j * n_interventions + k;
+)";
+			oss << "final_out[index] += final_in[index];\n";
 			oss << R"(
 					}
 				}
 			}
+    }
 )";
 		}
 		oss << R"(
@@ -352,7 +361,7 @@ void GenRandomWhatifIntervention(EvalConfig config, PhysicalOperator* op,
 	// TODO: add option to push filter / pruned lineage
 	if (op->type == PhysicalOperatorType::TABLE_SCAN) {
 		if (columns_spec.find(op->lineage_op->table_name) == columns_spec.end()) {
-			return;
+		//	return;
 		}
 
 		idx_t row_count = op->lineage_op->chunk_collection.Count();
@@ -809,7 +818,7 @@ void GenCodeAndAlloc(EvalConfig config, string& code, PhysicalOperator* op,
 
 	if (op->type == PhysicalOperatorType::TABLE_SCAN) {
 		if (columns_spec.find(op->lineage_op->table_name) == columns_spec.end()) {
-			return;
+			//return;
 		}
 
 		idx_t row_count = op->lineage_op->chunk_collection.Count();
