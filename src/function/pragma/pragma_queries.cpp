@@ -11,6 +11,11 @@
 #include "duckdb/parser/statement/copy_statement.hpp"
 #include "duckdb/parser/statement/export_statement.hpp"
 
+#ifdef LINEAGE
+#include "duckdb/execution/fade/fade.hpp"
+#include "duckdb/main/client_data.hpp"
+#endif
+
 namespace duckdb {
 
 string PragmaTableInfo(ClientContext &context, const FunctionParameters &parameters) {
@@ -209,6 +214,34 @@ string PragmaUserAgent(ClientContext &context, const FunctionParameters &paramet
 	return "SELECT * FROM pragma_user_agent()";
 }
 
+#ifdef LINEAGE
+string PragmaWhatif(ClientContext &context, const FunctionParameters &parameters) {
+	int qid = parameters.values[0].GetValue<int>();
+	string intervention_type_str = parameters.values[1].ToString();
+	InterventionType intervention_type =  DELETE;
+	if (intervention_type_str == "SCALE") {
+		intervention_type = SCALE;
+	}
+
+	string spec = parameters.values[2].ToString();
+	int n_interventions = parameters.values[3].GetValue<int>();
+	int batch = parameters.values[4].GetValue<int>();
+	bool is_scalar = parameters.values[5].GetValue<bool>();
+	bool use_duckdb = parameters.values[6].GetValue<bool>();
+	int num_workers = parameters.values[7].GetValue<int>();
+	bool debug = parameters.values[8].GetValue<bool>();
+
+	std::cout << "\nPragmaWhatif " << qid << " " << intervention_type_str << " " <<  spec << " " <<
+	    n_interventions << " " << batch << " "<< is_scalar << " " << use_duckdb << std::endl;
+	// 1. find the query plan associated with qid
+	PhysicalOperator* op = context.client_data->lineage_manager->queryid_to_plan[qid].get();
+	int mask_size = 16;
+	// takes in query id, attributes to intervene on, conjunctive only or conjunctive and disjunction, or random
+	return Fade::Whatif(op, { batch, mask_size, is_scalar, use_duckdb, debug,
+	                  spec, intervention_type, n_interventions, qid, num_workers } );
+}
+#endif
+
 void PragmaQueries::RegisterFunction(BuiltinFunctions &set) {
 	set.AddFunction(PragmaFunction::PragmaCall("table_info", PragmaTableInfo, {LogicalType::VARCHAR}));
 	set.AddFunction(PragmaFunction::PragmaCall("storage_info", PragmaStorageInfo, {LogicalType::VARCHAR}));
@@ -228,6 +261,13 @@ void PragmaQueries::RegisterFunction(BuiltinFunctions &set) {
 	    PragmaFunction::PragmaCall("copy_database", PragmaCopyDatabase, {LogicalType::VARCHAR, LogicalType::VARCHAR}));
 	set.AddFunction(PragmaFunction::PragmaStatement("all_profiling_output", PragmaAllProfiling));
 	set.AddFunction(PragmaFunction::PragmaStatement("user_agent", PragmaUserAgent));
+#ifdef LINEAGE
+
+	set.AddFunction(PragmaFunction::PragmaCall("WhatIf", PragmaWhatif, {LogicalType::INTEGER,
+	                                                                    LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::INTEGER,
+	                                                                    LogicalType::INTEGER, LogicalType::BOOLEAN,
+	                                                                    LogicalType::BOOLEAN, LogicalType::INTEGER,LogicalType::BOOLEAN}));
+#endif
 }
 
 } // namespace duckdb

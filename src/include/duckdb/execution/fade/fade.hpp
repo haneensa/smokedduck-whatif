@@ -22,6 +22,7 @@ struct FadeDataPerNode {
 	vector<idx_t> annotations;
 	idx_t n_interventions;
 	idx_t n_masks;
+	idx_t n_groups;
 	// single_del_intervention.size() == input table size
 	// bits: del or not
 	__mmask16* del_interventions;
@@ -30,6 +31,8 @@ struct FadeDataPerNode {
 	// vector<idx_t> single_scale_intervention;
 
 	std::unordered_map<string, vector<void*>> alloc_vars;
+	std::unordered_map<string, string> alloc_vars_types;
+	std::unordered_map<string, int> alloc_vars_index;
 	std::unordered_map<int, void*> input_data_map;
 	vector<int> lineage[2];
 	int (*join_fn)(int, int*, int*, __mmask16*, __mmask16*, __mmask16*);
@@ -48,6 +51,7 @@ struct EvalConfig {
 	int mask_size;
 	bool is_scalar;
 	bool use_duckdb;
+	bool debug;
 	string columns_spec_str;
 	InterventionType intervention_type;
 	int n_intervention;
@@ -60,7 +64,7 @@ public:
 	Fade() {};
 
 	static void Why(PhysicalOperator* op, int k, string columns_spec, int distinct);
-	static void Whatif(PhysicalOperator* op, EvalConfig config);
+	static string Whatif(PhysicalOperator* op, EvalConfig config);
 	//static void WhatifCompile(PhysicalOperator* op, string intervention_type, string columns_spec, int n_intervention);
 	static void Rexec(PhysicalOperator* op);
 
@@ -68,4 +72,3 @@ public:
 
 } // namespace duckdb
 #endif
-

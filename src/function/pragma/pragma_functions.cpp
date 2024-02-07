@@ -134,32 +134,6 @@ static void PragmaWhy(ClientContext &context, const FunctionParameters &paramete
 	Fade::Why(op, k,  spec, distinct);
 }
 
-
-static void PragmaWhatif(ClientContext &context, const FunctionParameters &parameters) {
-	int qid = parameters.values[0].GetValue<int>();
-	string intervention_type_str = parameters.values[1].ToString();
-	InterventionType intervention_type =  DELETE;
-	if (intervention_type_str == "SCALE") {
-		intervention_type = SCALE;
-	}
-
-	string spec = parameters.values[2].ToString();
-	int n_interventions = parameters.values[3].GetValue<int>();
-	int batch = parameters.values[4].GetValue<int>();
-	bool is_scalar = parameters.values[5].GetValue<bool>();
-	bool use_duckdb = parameters.values[6].GetValue<bool>();
-	int num_workers = parameters.values[7].GetValue<int>();
-
-	std::cout << "\nPragmaWhatif " << qid << " " << intervention_type_str << " " <<  spec << " " <<
-	    n_interventions << " " << batch << " "<< is_scalar << " " << use_duckdb << std::endl;
-	// 1. find the query plan associated with qid
-	PhysicalOperator* op = context.client_data->lineage_manager->queryid_to_plan[qid].get();
-	int mask_size = 16;
-	// takes in query id, attributes to intervene on, conjunctive only or conjunctive and disjunction, or random
-	Fade::Whatif(op, { batch, mask_size, is_scalar, use_duckdb,
-	                  spec, intervention_type, n_interventions, qid, num_workers } );
-}
-
 static void PragmaRexec(ClientContext &context, const FunctionParameters &parameters) {
 	int qid = parameters.values[0].GetValue<int>();
 	PhysicalOperator* op = context.client_data->lineage_manager->queryid_to_plan[qid].get();
@@ -209,10 +183,6 @@ void PragmaFunctions::RegisterFunction(BuiltinFunctions &set) {
 #ifdef LINEAGE
 	set.AddFunction(PragmaFunction::PragmaCall("Why", PragmaWhy, {LogicalType::INTEGER,
 	                                                              LogicalType::INTEGER, LogicalType::VARCHAR, LogicalType::INTEGER}));
-	set.AddFunction(PragmaFunction::PragmaCall("WhatIf", PragmaWhatif, {LogicalType::INTEGER,
-	                                                                    LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::INTEGER,
-	                                                                    LogicalType::INTEGER, LogicalType::BOOLEAN,
-	                                                                    LogicalType::BOOLEAN, LogicalType::INTEGER}));
 	set.AddFunction(PragmaFunction::PragmaCall("Rexec", PragmaRexec, {LogicalType::INTEGER}));
     set.AddFunction(PragmaFunction::PragmaStatement("enable_lineage", PragmaEnableLineage));
 	set.AddFunction(PragmaFunction::PragmaStatement("disable_lineage", PragmaDisableLineage));
@@ -257,4 +227,3 @@ void PragmaFunctions::RegisterFunction(BuiltinFunctions &set) {
 }
 
 } // namespace duckdb
-
