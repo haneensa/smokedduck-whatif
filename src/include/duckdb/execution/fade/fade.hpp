@@ -35,6 +35,7 @@ struct FadeDataPerNode {
 	std::unordered_map<string, int> alloc_vars_index;
 	std::unordered_map<int, void*> input_data_map;
 	vector<int> lineage[2];
+	int (*filter_fn)(int, int*, __mmask16*, __mmask16*);
 	int (*join_fn)(int, int*, int*, __mmask16*, __mmask16*, __mmask16*);
 	int (*agg_duckdb_fn)(int, int*, __mmask16*, std::unordered_map<std::string, vector<void*>>&, ChunkCollection&);
 	int (*agg_fn)(int, int*, __mmask16*, std::unordered_map<std::string, vector<void*>>&,  std::unordered_map<int, void*>&);
@@ -72,3 +73,4 @@ public:
 
 } // namespace duckdb
 #endif
+
