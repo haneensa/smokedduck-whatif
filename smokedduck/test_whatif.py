@@ -13,6 +13,7 @@ def clear():
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--i", help="qid", type=int, default=1)
+parser.add_argument("--interventions", help="interventions", type=int, default=1024)
 parser.add_argument("--sf", help="sf", type=float, default=1)
 parser.add_argument("--use-duckdb", help="use duckdb", type=str, default="true")
 parser.add_argument("--t", help="thread num", type=int, default=1)
@@ -34,6 +35,7 @@ is_scalar = args.is_scalar
 batch = 4
 debug = args.debug
 qid = str(i).zfill(2)
+distinct = args.interventions
 
 print(f"############# Testing Whatif on {qid} ###########")
 query_file = f"queries/tpch/tpch_{qid}.sql"
@@ -44,7 +46,6 @@ print(con.execute(sql, capture_lineage='lineage').df())
 query_id = con.query_id
 print("=================", query_id, qid, use_duckdb, is_scalar, num_threads)
 # use_duckdb = false, is_scalr = true/false, batch = 4
-distinct = 1024
 q = f"pragma WhatIf({query_id}, 'd', 'lineitem:0.3', {distinct}, {batch}, {is_scalar}, {use_duckdb}, {num_threads}, {debug});"
 timings = con.execute(q).fetchdf()
 print(timings)

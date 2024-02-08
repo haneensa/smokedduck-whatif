@@ -1030,7 +1030,7 @@ string Fade::Whatif(PhysicalOperator *op, EvalConfig config) {
 	oss << get_header(config) << "\n" << fill_random_code(config) << "\n"  << code;
 	string final_code = oss.str();
 
-	if (config.debug)
+	//if (config.debug)
 		std::cout << final_code << std::endl;
 
 	start_time = std::chrono::steady_clock::now();
