@@ -20,8 +20,8 @@ parser.add_argument("--t", help="thread num", type=int, default=1)
 parser.add_argument("--is-scalar", help="is scalar", type=str, default="true")
 parser.add_argument("--csv", help="csv", type=str, default="out.csv")
 parser.add_argument("--debug", help="debug", type=str, default="true")
+parser.add_argument("--prune", help="prune", type=str, default="true")
 args = parser.parse_args()
-
 # Creating connection
 con = smokedduck.connect('db.out')
 # con.execute('CALL dbgen(sf=1);')
@@ -34,6 +34,8 @@ num_threads = args.t
 is_scalar = args.is_scalar
 batch = 4
 debug = args.debug
+prune = args.prune
+
 qid = str(i).zfill(2)
 distinct = args.interventions
 
@@ -46,7 +48,7 @@ print(con.execute(sql, capture_lineage='lineage').df())
 query_id = con.query_id
 print("=================", query_id, qid, use_duckdb, is_scalar, num_threads)
 # use_duckdb = false, is_scalr = true/false, batch = 4
-q = f"pragma WhatIf({query_id}, 'd', 'lineitem:0.3', {distinct}, {batch}, {is_scalar}, {use_duckdb}, {num_threads}, {debug});"
+q = f"pragma WhatIf({query_id}, 'd', 'lineitem:0.3', {distinct}, {batch}, {is_scalar}, {use_duckdb}, {num_threads}, {debug}, {prune});"
 timings = con.execute(q).fetchdf()
 print(timings)
 

@@ -230,14 +230,15 @@ string PragmaWhatif(ClientContext &context, const FunctionParameters &parameters
 	bool use_duckdb = parameters.values[6].GetValue<bool>();
 	int num_workers = parameters.values[7].GetValue<int>();
 	bool debug = parameters.values[8].GetValue<bool>();
+	bool prune = parameters.values[9].GetValue<bool>();
 
 	std::cout << "\nPragmaWhatif " << qid << " " << intervention_type_str << " " <<  spec << " " <<
-	    n_interventions << " " << batch << " "<< is_scalar << " " << use_duckdb << std::endl;
+	    n_interventions << " " << batch << " "<< is_scalar << " " << use_duckdb << " " << prune << std::endl;
 	// 1. find the query plan associated with qid
 	PhysicalOperator* op = context.client_data->lineage_manager->queryid_to_plan[qid].get();
 	int mask_size = 16;
 	// takes in query id, attributes to intervene on, conjunctive only or conjunctive and disjunction, or random
-	return Fade::Whatif(op, { batch, mask_size, is_scalar, use_duckdb, debug,
+	return Fade::Whatif(op, { batch, mask_size, is_scalar, use_duckdb, debug, prune,
 	                  spec, intervention_type, n_interventions, qid, num_workers } );
 }
 #endif
@@ -266,8 +267,10 @@ void PragmaQueries::RegisterFunction(BuiltinFunctions &set) {
 	set.AddFunction(PragmaFunction::PragmaCall("WhatIf", PragmaWhatif, {LogicalType::INTEGER,
 	                                                                    LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::INTEGER,
 	                                                                    LogicalType::INTEGER, LogicalType::BOOLEAN,
-	                                                                    LogicalType::BOOLEAN, LogicalType::INTEGER,LogicalType::BOOLEAN}));
+	                                                                    LogicalType::BOOLEAN, LogicalType::INTEGER,
+	                                                                    LogicalType::BOOLEAN, LogicalType::BOOLEAN}));
 #endif
 }
 
 } // namespace duckdb
+

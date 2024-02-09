@@ -420,6 +420,10 @@ void GenRandomWhatifIntervention(EvalConfig config, PhysicalOperator* op,
 		}
 
 		idx_t row_count = op->lineage_op->chunk_collection.Count();
+		if (fade_data[op->id].lineage[0].empty() == false) {
+			row_count = fade_data[op->id].lineage[0].size();
+		}
+
 		float probability = columns_spec[op->lineage_op->table_name];
 		string fname = "fill_random";
 		int (*random_fn)(int, float, int, void*) = (int(*)(int, float, int, void*))dlsym(handle, fname.c_str());
@@ -528,7 +532,7 @@ string JoinCodeAndAlloc(EvalConfig config, PhysicalOperator *op, shared_ptr<Oper
 		oss << "\t __mmask16* __restrict__ lhs_var = (__mmask16* __restrict__)lhs_var_ptr;\n";
 	}
 
-	int row_count = lop->log_index->table_size;
+	int row_count = fade_data[op->id].lineage[0].size();
 	oss << "\tconst int row_count = " + to_string(row_count) + ";\n";
 	oss << "\tconst int n_masks = " + to_string(fade_data[op->id].n_masks) + ";\n";
 
@@ -619,7 +623,8 @@ string FilterCodeAndAlloc(EvalConfig config, PhysicalOperator *op, shared_ptr<Op
 	}
 
 
-	int row_count = lop->log_index->table_size;
+	int row_count = fade_data[op->id].lineage[0].size();
+
 	oss << "\tconst int row_count = " + to_string(row_count) + ";\n";
 	oss << "\tconst int n_masks = " + to_string(fade_data[op->id].n_masks) + ";\n";
 
@@ -914,7 +919,99 @@ void  HashAggregateIntervene2DEval(int thread_id, EvalConfig config, shared_ptr<
 	}
 }
 
-void GenCodeAndAlloc(EvalConfig config, string& code, PhysicalOperator* op,
+void PruneLineage(EvalConfig config, PhysicalOperator* op,
+                     std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
+                  vector<int>& out_order) {
+	// top down.
+	// lineage_data = self.prune_lineage(lineage_data, out_order, node_type)
+	vector<int> new_order[2];
+
+	if (out_order.empty() == false) {
+		// if table scan and no filter push down, then use out_order aslineage
+		// if hash group by: ..
+		if (op->type == PhysicalOperatorType::TABLE_SCAN) {
+			fade_data[op->id].lineage[0] = out_order;
+		} else if (op->type == PhysicalOperatorType::FILTER) {
+			vector<int> new_lineage(out_order.size());
+			for (int i=0; i < out_order.size(); ++i) {
+				new_lineage[i] = fade_data[op->id].lineage[0][out_order[i]];
+			}
+			fade_data[op->id].lineage[0] = std::move(new_lineage);
+		} else if (op->type == PhysicalOperatorType::HASH_JOIN
+		           || op->type == PhysicalOperatorType::NESTED_LOOP_JOIN
+		           || op->type == PhysicalOperatorType::BLOCKWISE_NL_JOIN
+		           || op->type == PhysicalOperatorType::PIECEWISE_MERGE_JOIN
+		           || op->type == PhysicalOperatorType::CROSS_PRODUCT) {
+			for (int side=0; side < 2; ++side) {
+				vector<int> new_lineage(out_order.size());
+				for (int i=0; i < out_order.size(); ++i) {
+					new_lineage[i] = fade_data[op->id].lineage[side][out_order[i]];
+				}
+				// update lineage
+				fade_data[op->id].lineage[side] = std::move(new_lineage);
+			}
+		}
+	}
+
+	if (op->type == PhysicalOperatorType::FILTER) {
+		for (int i=0; i < fade_data[op->id].lineage[0].size(); ++i) {
+			new_order[0].push_back(i);
+		}
+	} else if (op->type == PhysicalOperatorType::HASH_JOIN
+	           || op->type == PhysicalOperatorType::NESTED_LOOP_JOIN
+	           || op->type == PhysicalOperatorType::BLOCKWISE_NL_JOIN
+	           || op->type == PhysicalOperatorType::PIECEWISE_MERGE_JOIN
+	           || op->type == PhysicalOperatorType::CROSS_PRODUCT) {
+
+		for (int side=0; side < 2; ++side) {
+			vector<int>& lineage = fade_data[op->id].lineage[side];
+			// 1. find how many unique elements in lhs_lineage, rhs_lineage
+			set<int> lineage_unqiue_set(lineage.begin(), lineage.end());
+			vector<int> lineage_unique(lineage_unqiue_set.begin(), lineage_unqiue_set.end());
+			std::map<int, int> lineage_inverse_map;
+			for (int i = 0; i < lineage_unique.size(); ++i) {
+				lineage_inverse_map[lineage_unique[i]] = i;
+			}
+			vector<int>  lineage_inverse(lineage.size());
+			for (int i = 0; i < lineage.size(); ++i) {
+				lineage_inverse[i] = lineage_inverse_map[lineage[i]];
+			}
+			// update lineage
+			fade_data[op->id].lineage[side] = std::move(lineage_inverse);
+			new_order[side] = lineage_unique;
+		}
+
+	}
+
+
+	for (idx_t i = 0; i < op->children.size(); i++) {
+		PruneLineage(config, op->children[i].get(), fade_data, new_order[i]);
+	}
+}
+
+void GetLineage(EvalConfig config, PhysicalOperator* op,
+                     std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
+                     std::unordered_map<std::string, float> columns_spec) {
+	for (idx_t i = 0; i < op->children.size(); i++) {
+		GetLineage(config, op->children[i].get(), fade_data, columns_spec);
+	}
+
+	if (op->type == PhysicalOperatorType::TABLE_SCAN) {
+	} else if (op->type == PhysicalOperatorType::FILTER) {
+		FillFilterLineage(op, op->lineage_op, fade_data);
+	} else if (op->type == PhysicalOperatorType::HASH_JOIN
+	           || op->type == PhysicalOperatorType::NESTED_LOOP_JOIN
+	           || op->type == PhysicalOperatorType::BLOCKWISE_NL_JOIN
+	           || op->type == PhysicalOperatorType::PIECEWISE_MERGE_JOIN
+	           || op->type == PhysicalOperatorType::CROSS_PRODUCT) {
+		FillJoinLineage(op, op->lineage_op, fade_data);
+	} else if (op->type == PhysicalOperatorType::HASH_GROUP_BY) {
+	} else if (op->type == PhysicalOperatorType::UNGROUPED_AGGREGATE) {
+	} else if (op->type == PhysicalOperatorType::PROJECTION) {
+	}
+}
+
+void GenCodeAndAlloc(EvalConfig& config, string& code, PhysicalOperator* op,
                     std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
                     std::unordered_map<std::string, float> columns_spec) {
 	for (idx_t i = 0; i < op->children.size(); i++) {
@@ -931,25 +1028,29 @@ void GenCodeAndAlloc(EvalConfig config, string& code, PhysicalOperator* op,
 		idx_t n_masks = std::ceil(config.n_intervention / config.mask_size);
 		fade_data[op->id].n_interventions = config.n_intervention;
 		// allocate deletion intervention: n_intervention X row_count
+
 		if (config.n_intervention == 1) {
 			fade_data[op->id].single_del_interventions = new int8_t[row_count];
 		} else {
-			fade_data[op->id].del_interventions =  new __mmask16[row_count * n_masks];
+			fade_data[op->id].del_interventions = new __mmask16[row_count * n_masks];
 		}
+
 		fade_data[op->id].n_masks = n_masks;
 	} else if (op->type == PhysicalOperatorType::FILTER) {
 		fade_data[op->id].n_masks = fade_data[op->children[0]->id].n_masks;
 		fade_data[op->id].n_interventions = fade_data[op->children[0]->id].n_interventions;
-		idx_t row_count = op->lineage_op->log_index->table_size;
+		idx_t row_count = fade_data[op->id].lineage[0].size();
 		idx_t n_masks = fade_data[op->id].n_masks;
 		//if (n_masks > 0 || config.n_intervention == 1) {
-			if (config.n_intervention == 1) {
-				fade_data[op->id].single_del_interventions = new int8_t[row_count];
-			} else {
-				fade_data[op->id].del_interventions = new __mmask16[row_count * n_masks];
-			}
-			FillFilterLineage(op, op->lineage_op, fade_data);
-			code += FilterCodeAndAlloc(config, op, op->lineage_op, fade_data);
+		if (config.prune) {
+			fade_data[op->id].del_interventions  = fade_data[op->children[0]->id].del_interventions;
+			fade_data[op->id].single_del_interventions  = fade_data[op->children[0]->id].single_del_interventions;
+		} else if (config.n_intervention == 1) {
+			fade_data[op->id].single_del_interventions = new int8_t[row_count];
+		} else {
+			fade_data[op->id].del_interventions = new __mmask16[row_count * n_masks];
+		}
+		code += FilterCodeAndAlloc(config, op, op->lineage_op, fade_data);
 		//}
 	} else if (op->type == PhysicalOperatorType::HASH_JOIN
 	           || op->type == PhysicalOperatorType::NESTED_LOOP_JOIN
@@ -964,14 +1065,14 @@ void GenCodeAndAlloc(EvalConfig config, string& code, PhysicalOperator* op,
 	//	}
 		fade_data[op->id].n_masks = child_n_masks;
 		idx_t n_masks = fade_data[op->id].n_masks;
-		idx_t row_count = op->lineage_op->log_index->table_size;
+		idx_t row_count = fade_data[op->id].lineage[0].size();
+
 	//	if (n_masks > 0 || config.n_intervention == 1) {
 			if (config.n_intervention == 1) {
 				fade_data[op->id].single_del_interventions = new int8_t[row_count];
 			} else {
 				fade_data[op->id].del_interventions = new __mmask16[row_count * n_masks];
 			}
-			FillJoinLineage(op, op->lineage_op, fade_data);
 			code += JoinCodeAndAlloc(config, op, op->lineage_op, fade_data);
 	//	}
 	} else if (op->type == PhysicalOperatorType::HASH_GROUP_BY) {
@@ -1006,6 +1107,7 @@ void BindFunctions(EvalConfig config, void* handle, PhysicalOperator* op,
 	}
 
 	if (op->type == PhysicalOperatorType::FILTER) {
+		if (config.prune) return;
 		//if (fade_data[op->id].n_masks > 0) {
 			string fname = "filter_"+ to_string(op->id) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
 			fade_data[op->id].filter_fn = (int(*)(int, int*, void*, void*))dlsym(handle, fname.c_str());
@@ -1038,8 +1140,9 @@ void Intervention2DEval(int thread_id, EvalConfig config, void* handle, Physical
 	}
 
 	if (op->type == PhysicalOperatorType::FILTER) {
+		if (config.prune) return;
 		//if (fade_data[op->id].n_masks > 0 || config.n_intervention == 1) {
-			idx_t row_count = op->lineage_op->log_index->table_size;
+			idx_t row_count = fade_data[op->id].lineage[0].size();
 			if (config.n_intervention == 1) {
 				int result = fade_data[op->id].filter_fn(thread_id, fade_data[op->id].lineage[0].data(),
 				                                         fade_data[op->children[0]->id].single_del_interventions,
@@ -1056,7 +1159,8 @@ void Intervention2DEval(int thread_id, EvalConfig config, void* handle, Physical
 	           || op->type == PhysicalOperatorType::PIECEWISE_MERGE_JOIN
 	           || op->type == PhysicalOperatorType::CROSS_PRODUCT) {
 	//	if (fade_data[op->id].n_masks > 0 || config.n_intervention == 1) {
-			idx_t row_count = op->lineage_op->log_index->table_size;
+			//idx_t row_count = op->lineage_op->log_index->table_size;
+		    idx_t row_count = fade_data[op->id].lineage[0].size();
 			if (config.n_intervention == 1) {
 				int result = fade_data[op->id].join_fn(thread_id, fade_data[op->id].lineage[0].data(),
 				                                       fade_data[op->id].lineage[1].data(), fade_data[op->children[0]->id].single_del_interventions,
@@ -1095,7 +1199,9 @@ void ReleaseFade(EvalConfig config, void* handle, PhysicalOperator* op,
                  std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
                  std::unordered_map<std::string, float> columns_spec) {
 
-	if (op->type != PhysicalOperatorType::PROJECTION) {
+	if (op->type != PhysicalOperatorType::PROJECTION &&
+	    !(op->type == PhysicalOperatorType::FILTER && config.prune) &&
+	    !(op->type == PhysicalOperatorType::TABLE_SCAN && config.prune)) {
 		if (op->type == PhysicalOperatorType::HASH_GROUP_BY) {
 			for (auto &pair : fade_data[op->id].alloc_vars) {
 				if (!pair.second.empty()) {
@@ -1152,6 +1258,25 @@ string Fade::Whatif(PhysicalOperator *op, EvalConfig config) {
 	time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
 	double post_processing_time = time_span.count();
 
+	// 3. retrieve lineage
+	start_time = std::chrono::steady_clock::now();
+	GetLineage(config, op, fade_data, columns_spec);
+	end_time = std::chrono::steady_clock::now();
+	time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
+	double lineage_time = time_span.count();
+
+	// 4.1 Prune
+	double prune_time = 0;
+	if (config.prune) {
+		start_time = std::chrono::steady_clock::now();
+		vector<int> out_order;
+		PruneLineage(config, op, fade_data, out_order);
+		end_time = std::chrono::steady_clock::now();
+		time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
+		prune_time = time_span.count();
+	}
+
+
 	// 4. Alloc vars, generate eval code
 	string code;
 	start_time = std::chrono::steady_clock::now();
@@ -1174,7 +1299,6 @@ string Fade::Whatif(PhysicalOperator *op, EvalConfig config) {
 	double compile_time = time_span.count();
 
 	if (handle == nullptr) return "select 0";
-
 
 	// 3. Prepare base interventions; should be one time cost per DB
 	start_time = std::chrono::steady_clock::now();
@@ -1210,13 +1334,14 @@ string Fade::Whatif(PhysicalOperator *op, EvalConfig config) {
 
 	ReleaseFade(config, handle, op, fade_data, columns_spec);
 
-	return "select " + to_string(post_processing_time) + " as post_processing_time, " + to_string(intervention_gen_time)
-	       + " as intervention_gen_time, " + to_string(prep_time)
-	       + " as prep_time, " + to_string(compile_time) + " as compile_time, " + to_string(eval_time) + " as eval_time";
+	return "select " + to_string(post_processing_time) + " as post_processing_time, "
+	       + to_string(intervention_gen_time) + " as intervention_gen_time, "
+	       + to_string(prep_time) + " as prep_time, "
+	       + to_string(lineage_time) + " as lineage_time, "
+	       + to_string(prune_time) + " as prune_time, "
+	       + to_string(compile_time) + " as compile_time, "
+	       + to_string(eval_time) + " as eval_time";
 }
-
 
 } // namespace duckdb
 #endif
-
-
