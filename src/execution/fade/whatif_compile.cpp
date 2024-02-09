@@ -771,7 +771,7 @@ string HashAggregateIntervene2D(EvalConfig config, shared_ptr<OperatorLineage> l
 	// get n_groups: max(oid)+1
 	idx_t n_groups = 1;
 	if (op->type != PhysicalOperatorType::UNGROUPED_AGGREGATE) {
-		n_groups = lop->chunk_collection.Count();
+		n_groups = lop->log_index->ha_hash_index.size(); //lop->chunk_collection.Count();
 	}
 
 	fade_data[op->id].n_groups = n_groups;
@@ -1024,7 +1024,9 @@ void GenCodeAndAlloc(EvalConfig& config, string& code, PhysicalOperator* op,
 			//return;
 		}
 
-		idx_t row_count = op->lineage_op->chunk_collection.Count();
+		// idx_t row_count = op->lineage_op->chunk_collection.Count();
+		idx_t row_count = op->lineage_op->log_index->table_size;
+
 		idx_t n_masks = std::ceil(config.n_intervention / config.mask_size);
 		fade_data[op->id].n_interventions = config.n_intervention;
 		// allocate deletion intervention: n_intervention X row_count
@@ -1276,7 +1278,6 @@ string Fade::Whatif(PhysicalOperator *op, EvalConfig config) {
 		prune_time = time_span.count();
 	}
 
-
 	// 4. Alloc vars, generate eval code
 	string code;
 	start_time = std::chrono::steady_clock::now();
@@ -1345,3 +1346,4 @@ string Fade::Whatif(PhysicalOperator *op, EvalConfig config) {
 
 } // namespace duckdb
 #endif
+

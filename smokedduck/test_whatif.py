@@ -1,3 +1,4 @@
+import time
 import csv
 import argparse
 import smokedduck
@@ -44,7 +45,19 @@ query_file = f"queries/tpch/tpch_{qid}.sql"
 with open(query_file, "r") as f:
     sql = " ".join(f.read().split())
 # Printing lineage that was captured from base query
-print(con.execute(sql, capture_lineage='lineage').df())
+
+# 1. run the query without lineage capture
+start = time.time()
+out = con.execute(sql).df()
+end = time.time()
+query_timing = end - start
+
+# 2. run the query with lineage capture
+start = time.time()
+out = con.execute(sql, capture_lineage='ksemimodule').df()
+end = time.time()
+lineage_capture_timing = end - start
+
 query_id = con.query_id
 print("=================", query_id, qid, use_duckdb, is_scalar, num_threads)
 # use_duckdb = false, is_scalr = true/false, batch = 4
@@ -52,9 +65,11 @@ q = f"pragma WhatIf({query_id}, 'd', 'lineitem:0.3', {distinct}, {batch}, {is_sc
 timings = con.execute(q).fetchdf()
 print(timings)
 
-res = [args.sf, i, use_duckdb, is_scalar, num_threads, distinct, batch,
+res = [args.sf, i, use_duckdb, is_scalar, prune, num_threads, distinct, batch,
         timings["post_processing_time"][0], timings["intervention_gen_time"][0],
-        timings["prep_time"][0], timings["compile_time"][0], timings["eval_time"][0]]
+        timings["prep_time"][0], timings["compile_time"][0], timings["eval_time"][0],
+        timings["prune_time"][0], timings["lineage_time"][0], lineage_capture_timing,
+        query_timing]
 print(res)
 
 clear()

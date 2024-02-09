@@ -4,14 +4,13 @@ export DUCKDB_LIB_PATH=/ProvEnhance/third_party/smokedduck-whatif/build/release/
 
 query_nums=("1" "3" "5" "7" "9" "10" "12")
 sf_values=("1") # "5" "10")  # "0.2" "0.4") # "5.0" "10.0") # (# "3.0" "4.0")
-distinct=("1024") #"512") # "1024" "2048" "2560")
-threads_num=("2") # "2" "4" "8")
+distinct=("1" "512" "1024" "2048" "2560")
+threads_num=("1" "2" "4" "8")
 binary=("true" "false")
-#binary=("false" # "false")
-csv="dense_test.csv"
+csv="dense_feb9_sf1_timings.csv"
 debug="false" #"true"
 touch ${csv}
-echo sf,qid,use_duckdb,is_scalar,num_threads,distinct,batch,post_time,gen_time,prep_time,compile_time,eval_time > ${csv}
+echo sf,qid,use_duckdb,is_scalar,prune,num_threads,distinct,batch,post_time,gen_time,prep_time,compile_time,eval_time,prune_time,lineage_time,lineage_capture_time,query_timing > ${csv}
 
 for sf in "${sf_values[@]}"
 do
@@ -21,6 +20,9 @@ do
   do
     for is_scalar in "${binary[@]}"
     do
+      if [ "$is_scalar" = "false" ] && [ "$n" -eq 1 ]; then
+        continue
+      fi
       # todo: add conditional, if n=1 and is_scalar is false then skip
       for thread in "${threads_num[@]}"
       do
