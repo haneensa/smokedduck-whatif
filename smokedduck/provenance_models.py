@@ -161,14 +161,15 @@ class KSemimodule(ProvenanceModel):
         return "ksemimodule"
 
     def consider_query(self, query: str) -> None:
-        count_count = query.lower().count("count")
-        sum_count = query.lower().count("sum")
-        if (count_count > 0 and sum_count > 0) or (count_count == 0 and sum_count == 0) or count_count > 1 or sum_count > 1:
-            raise Exception("KSemimodule can only handle a single count or sum aggregation (for now)")
-        if count_count == 1:
-            self.aggregate = "count"
-        else:
-            self.aggregate = "sum"
+        pass
+        #count_count = query.lower().count("count")
+        #sum_count = query.lower().count("sum")
+        #if (count_count > 0 and sum_count > 0) or (count_count == 0 and sum_count == 0) or count_count > 1 or sum_count > 1:
+        #    raise Exception("KSemimodule can only handle a single count or sum aggregation (for now)")
+        #if count_count == 1:
+        #    self.aggregate = "count"
+        #else:
+        #    self.aggregate = "sum"
 
     def pre_capture_pragmas(self) -> list:
         return ["pragma enable_k_semimodule_tables", "pragma enable_lineage"]

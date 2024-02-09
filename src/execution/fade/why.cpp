@@ -35,9 +35,9 @@ std::unordered_map<std::string, std::vector<std::string>> parseString(const std:
 }
 
 template<class T>
-pair<vector<idx_t>, idx_t> local_factorize(shared_ptr<OperatorLineage> lop, idx_t col_idx) {
+pair<vector<int>, int> local_factorize(shared_ptr<OperatorLineage> lop, idx_t col_idx) {
 	std::unordered_map<T, int> dict;
-	vector<idx_t> codes;
+	vector<int> codes;
 	idx_t chunk_count = lop->chunk_collection.ChunkCount();
 	for (idx_t chunk_idx=0; chunk_idx < chunk_count; ++chunk_idx) {
 		DataChunk &collection_chunk = lop->chunk_collection.GetChunk(chunk_idx);
@@ -52,12 +52,12 @@ pair<vector<idx_t>, idx_t> local_factorize(shared_ptr<OperatorLineage> lop, idx_
 	return make_pair(codes, dict.size());
 }
 
-std::pair<vector<idx_t>, idx_t> factorize(PhysicalOperator* op, shared_ptr<OperatorLineage> lop,
+std::pair<vector<int>, int> factorize(PhysicalOperator* op, shared_ptr<OperatorLineage> lop,
                         std::unordered_map<std::string, std::vector<std::string>> columns_spec) {
 	string col_name = columns_spec[lop->table_name].back();
 	PhysicalTableScan * scan = dynamic_cast<PhysicalTableScan *>(op);
-	std::pair<vector<idx_t>, idx_t> fade_data;
-	std::pair< vector<idx_t>, idx_t> res;
+	std::pair<vector<int>, int> fade_data;
+	std::pair< vector<int>, int> res;
 	for (idx_t i=0; i < scan->names.size(); i++) {
 		if (scan->names[i] == col_name) {
 			vector<idx_t> col_codes;
@@ -79,8 +79,8 @@ std::pair<vector<idx_t>, idx_t> factorize(PhysicalOperator* op, shared_ptr<Opera
 }
 
 
-vector<idx_t> random_unique(shared_ptr<OperatorLineage> lop, idx_t distinct) {
-	vector<idx_t> codes;
+vector<int> random_unique(shared_ptr<OperatorLineage> lop, idx_t distinct) {
+	vector<int> codes;
 	// Seed the random number generator
 	std::random_device rd;
 	std::mt19937 gen(rd());
@@ -141,7 +141,7 @@ void  FilterIntervene(shared_ptr<OperatorLineage> lop,
   idx_t local_count = 0;
   idx_t current_thread = 0;
   idx_t log_id = 0;
-  vector<idx_t> child_annotations = fade_data[op->children[0]->id].annotations;
+  vector<int> child_annotations = fade_data[op->children[0]->id].annotations;
 
   do {
 		cache_on = false;
@@ -170,7 +170,7 @@ void  JoinIntervene(shared_ptr<OperatorLineage> lop,
   }
 
   // need to get the total number of rows to pre allocate
-  vector<idx_t> annotations;
+  vector<int> annotations;
 
   bool cache_on = false;
   DataChunk result;
@@ -179,8 +179,8 @@ void  JoinIntervene(shared_ptr<OperatorLineage> lop,
   idx_t current_thread = 0;
   idx_t log_id = 0;
 
-  vector<idx_t> lhs_child_annotations = fade_data[op->children[0]->id].annotations;
-  vector<idx_t> rhs_child_annotations = fade_data[op->children[1]->id].annotations;
+  vector<int> lhs_child_annotations = fade_data[op->children[0]->id].annotations;
+  vector<int> rhs_child_annotations = fade_data[op->children[1]->id].annotations;
   if (left_n_interventions > 1 && right_n_interventions > 1) {
 		do {
 			cache_on = false;
@@ -250,7 +250,7 @@ vector<vector<T>> SumRecompute(PhysicalOperator* op,
   // this is necessary only if we are computing aggregates without the subtraction property
   // since we need to iterate over all interventions and recompute the aggregates
   vector<vector<T>> new_vals(n_interventions, vector<T> (n_groups, 0));
-  vector<idx_t> child_annotations = fade_data[op->children[0]->id].annotations;
+  vector<int> child_annotations = fade_data[op->children[0]->id].annotations;
   idx_t offset = 0;
   for (idx_t chunk_idx=0; chunk_idx < chunk_count; ++chunk_idx) {
 	  DataChunk &collection_chunk = op->children[0]->lineage_op->chunk_collection.GetChunk(chunk_idx);
@@ -309,7 +309,7 @@ vector<vector<T>> CountRecompute(PhysicalOperator* op,
   idx_t log_id = 0;
   bool cache_on = false;
   vector<vector<T>> new_vals(n_interventions, vector<T> (n_groups, 0));
-  vector<idx_t> child_annotations = fade_data[op->children[0]->id].annotations;
+  vector<int> child_annotations = fade_data[op->children[0]->id].annotations;
 
   if (op->type == PhysicalOperatorType::UNGROUPED_AGGREGATE) {
 	  idx_t row_count = op->children[0]->lineage_op->chunk_collection.Count();
@@ -446,7 +446,7 @@ void GenIntervention(PhysicalOperator* op, std::unordered_map<idx_t, FadeDataPer
 		  return;
 	  }
 	  // 1. access base table, 2. factorize
-	  std::pair<vector<idx_t>, idx_t> res = factorize(op, op->lineage_op, columns_spec);
+	  std::pair<vector<int>, idx_t> res = factorize(op, op->lineage_op, columns_spec);
 
 	  fade_data[op->id].annotations = res.first;
 	  fade_data[op->id].n_interventions = res.second;
@@ -646,3 +646,4 @@ std::vector<std::vector<int>> subsets(const std::vector<int>& nums) {
 */
 } // namespace duckdb
 #endif
+
