@@ -130,8 +130,13 @@ static void PragmaWhy(ClientContext &context, const FunctionParameters &paramete
 	// 1. find the query plan associated with qid
 	PhysicalOperator* op = context.client_data->lineage_manager->queryid_to_plan[qid].get();
 
+	EvalConfig config;
+	config.columns_spec_str = spec;
+	config.intervention_type = DELETE;
+	config.n_intervention = distinct;
+	config.topk = k;
 	// takes in query id, attributes to intervene on, conjunctive only or conjunctive and disjunction, or random
-	Fade::Why(op, k,  spec, distinct);
+	Fade::Why(op, config);
 }
 
 static void PragmaRexec(ClientContext &context, const FunctionParameters &parameters) {

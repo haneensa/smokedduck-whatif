@@ -20,32 +20,6 @@
 
 namespace duckdb {
 
-
-string get_header(EvalConfig config) {
-	std::ostringstream oss;
-	oss << R"(
-#include <iostream>
-#include <vector>
-#include <unordered_map>
-#include <immintrin.h>
-#include <barrier>
-#include <random>
-)";
-
-	if (config.use_duckdb) {
-		oss << R"(
-#include "duckdb.hpp"
-#include "duckdb/common/types/chunk_collection.hpp"
-)";
-	}
-
-	if (config.num_worker > 1) {
-		oss << "std::barrier sync_point(" + to_string(config.num_worker) + ");\n";
-	}
-
-	return oss.str();
-}
-
 string fill_random_code(EvalConfig config) {
 	std::ostringstream oss;
 
@@ -180,101 +154,6 @@ string get_agg_init(EvalConfig config, int row_count, int chunk_count, int opid,
 }
 
 
-string get_agg_finalize(EvalConfig config, FadeDataPerNode& node_data) {
-	std::ostringstream oss;
-
-	if (config.n_intervention == 1) {
-		if (config.use_duckdb) {
-			return R"(
-			}
-			offset +=  collection_chunk.size();
-		}
-	return 0;
-	}
-)";
-		} else {
-			return "\t }\n \treturn 0;\n}\n";
-		}
-	}
-
-	if (config.is_scalar) oss <<  "\n\t\t\t\t}//c\n"; // close inner loop
-
-	if (config.use_duckdb) {
-		oss << R"(
-			}//a.1
-		}//a.2
-		offset +=  collection_chunk.size();
-}
-)";
-	} else {
-		oss << R"(
-		}//b.1
-	} //b.2
-)";
-	}
-
-	if (config.num_worker > 1) {
-		oss << "\tsync_point.arrive_and_wait();\n";
-    		oss << "\tconst int group_count = " << node_data.n_groups << ";\n";
-		oss << R"(
-	for (int jc = 0; jc < group_count; jc += 16) {
-		if ((jc / 16) % num_threads == thread_id) {
-)";
-		for (auto &pair : node_data.alloc_vars) {
-      oss << "{\n";
-			int fid = node_data.alloc_vars_index[pair.first] ;
-			string type_str = node_data.alloc_vars_types[pair.first];
-			if (fid == -1) { // count
-				oss <<  type_str +"* __restrict__ final_out = (" + type_str + "* __restrict__)alloc_vars[\"out_count\"][0];\n";
-			} else {
-				oss <<  type_str +"* __restrict__ final_out = (" + type_str + "* __restrict__)alloc_vars[\"out_"+to_string(fid)+"\"][0];\n";
-			}
-			oss << R"(
-		    for (int j = jc; j < jc + 16 && j < group_count; ++j) {
-		        for (int i = 1; i < num_threads; ++i) {
-)";
-			if (fid == -1) { // count
-				oss <<  type_str +"* __restrict__ final_in = (" + type_str + "* __restrict__)alloc_vars[\"out_count\"][i];\n";
-			} else {
-				oss <<  type_str +"* __restrict__ final_in = (" + type_str + "* __restrict__)alloc_vars[\"out_"+to_string(fid)+"\"][i];\n";
-			}
-		  oss << R"(for (int k = 0; k < n_interventions; ++k) {
-						int index = j * n_interventions + k;
-)";
-			oss << "final_out[index] += final_in[index];\n";
-			oss << R"(
-					}//(int k = 0; k < n_interventions; ++k)
-				}//(int i = 1; i < num_threads; ++i)
-			}//(int j = jc; j < jc + 16 && j < group_count; ++j)
-    }
-)";
-		}
-		oss << R"(
-		}//if ((jc / 16) % num_threads == thread_id)
-	}//for (int jc = 0; jc < group_count; jc += 16)
-)";
-	}
-
-	oss << "\treturn 0;\n}\n";
-
-	return oss.str();
-}
-
-
-string get_agg_alloc(int fid, string fn, string out_type) {
-	std::ostringstream oss;
-	if (fn == "sum") {
-		oss << "\n";
-		oss << out_type << "*__restrict__ out_" + to_string(fid) + " = (" + out_type +"*)alloc_vars[\"out_" + to_string(fid) << "\"][thread_id];\n";
-	} else if (fn == "count") {
-		oss << R"(
-	int* __restrict__  out_count = (int*)alloc_vars["out_count"][thread_id];
-)";
-	}
-	return oss.str();
-}
-
-
 string get_agg_simd_eval(string fn, string out_var, string in_var, string data_type) {
 	std::ostringstream oss;
 	oss << "{\n";
@@ -361,30 +240,24 @@ string get_agg_eval(EvalConfig config, int agg_count, string fn, string out_var=
 // TODO: perfect hash agg, agg
 void GenRandomWhatifIntervention(EvalConfig config, PhysicalOperator* op,
                                  std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
-                                 std::unordered_map<std::string, float> columns_spec,
                                  void* handle) {
 	for (idx_t i = 0; i < op->children.size(); i++) {
-		GenRandomWhatifIntervention(config, op->children[i].get(), fade_data, columns_spec, handle);
+		GenRandomWhatifIntervention(config, op->children[i].get(), fade_data, handle);
 	}
 
 	// TODO: add option to push filter / pruned lineage
 	if (op->type == PhysicalOperatorType::TABLE_SCAN) {
-		if (columns_spec.find(op->lineage_op->table_name) == columns_spec.end()) {
-		//	return;
-		}
-
 		idx_t row_count = op->lineage_op->chunk_collection.Count();
 		if (fade_data[op->id].lineage[0].empty() == false) {
 			row_count = fade_data[op->id].lineage[0].size();
 		}
 
-		float probability = columns_spec[op->lineage_op->table_name];
 		string fname = "fill_random";
 		int (*random_fn)(int, float, int, void*) = (int(*)(int, float, int, void*))dlsym(handle, fname.c_str());
 		if (config.n_intervention == 1) {
-			random_fn(row_count, probability, fade_data[op->id].n_masks, fade_data[op->id].single_del_interventions);
+			random_fn(row_count, config.probability, fade_data[op->id].n_masks, fade_data[op->id].single_del_interventions);
 		} else {
-			random_fn(row_count, probability, fade_data[op->id].n_masks, fade_data[op->id].del_interventions);
+			random_fn(row_count, config.probability, fade_data[op->id].n_masks, fade_data[op->id].del_interventions);
 		}
 	}
 }
@@ -555,7 +428,7 @@ string FilterCodeAndAlloc(EvalConfig config, PhysicalOperator *op, shared_ptr<Op
 	return oss.str();
 }
 
-string HashAggregateIntervene2D(EvalConfig config, shared_ptr<OperatorLineage> lop,
+string HashAggregateIntervene2D(EvalConfig& config, shared_ptr<OperatorLineage> lop,
                                 std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
                                 PhysicalOperator* op) {
 	const int n_interventions = fade_data[op->id].n_interventions;
@@ -577,9 +450,7 @@ string HashAggregateIntervene2D(EvalConfig config, shared_ptr<OperatorLineage> l
 	fade_data[op->id].n_groups = n_groups;
 
 	idx_t row_count = op->children[0]->lineage_op->chunk_collection.Count();
-	fade_data[op->id].lineage[0] = std::move(Fade::GetGBLineage(lop, row_count));
 	bool include_count = false;
-
 	int batches = 4;
 	int agg_count = 0;
 	// Populate the aggregate child vectors
@@ -603,24 +474,12 @@ string HashAggregateIntervene2D(EvalConfig config, shared_ptr<OperatorLineage> l
 		if (name == "sum" || name == "sum_no_overflow" || name == "avg") {
 			int col_idx = i + gb->grouped_aggregate_data.groups.size();
 
-			// TODO: check data type
-			string input_type = "float";
-			string output_type = "float";
-
-			if (op->children[0]->lineage_op->chunk_collection.Types()[col_idx] == LogicalType::INTEGER) {
-				input_type = "int";
-				output_type = "int";
-			} else if (op->children[0]->lineage_op->chunk_collection.Types()[col_idx] == LogicalType::FLOAT) {
-				input_type = "float";
-				output_type = "float";
-			} else {
-				input_type = "double";
-				output_type = "float";
-			}
-
 			string out_var = "out_" + to_string(i); // new output
 			string in_arr = "col_" + to_string(i);  // input arrays
 			string in_val = "val_" + to_string(i);  // input values val = col_x[i]
+
+			string input_type = fade_data[op->id].alloc_vars_types[out_var];
+			string output_type = fade_data[op->id].alloc_vars_types[out_var];
 
 			if (config.use_duckdb) {
 				// use CollectionChunk that stores input data
@@ -630,74 +489,24 @@ string HashAggregateIntervene2D(EvalConfig config, shared_ptr<OperatorLineage> l
 				// use unordered_map<int, void*> that stores pointers to input data
 				get_data_code += "\t\t"+input_type+"* " + in_arr + " = reinterpret_cast<"+input_type+" *>(input_data_map[" +
 				                 to_string(i) + "]);\n";
-				if (op->children[0]->lineage_op->chunk_collection.Types()[col_idx] == LogicalType::INTEGER) {
-					fade_data[op->id].input_data_map[i] = Fade::GetInputVals<int, int>(op, op->lineage_op, col_idx);
-				} else if (op->children[0]->lineage_op->chunk_collection.Types()[col_idx] == LogicalType::FLOAT) {
-					fade_data[op->id].input_data_map[i] = Fade::GetInputVals<float, float>(op, op->lineage_op, col_idx);
-				} else if (op->children[0]->lineage_op->chunk_collection.Types()[col_idx] == LogicalType::DOUBLE) {
-					fade_data[op->id].input_data_map[i] = Fade::GetInputVals<double, float>(op, op->lineage_op, col_idx);
-				} else {
-					fade_data[op->id].input_data_map[i] = Fade::GetInputVals<float, float>(op, op->lineage_op, col_idx);
-				}
-
 			}
-
-			fade_data[op->id].alloc_vars[out_var].resize(config.num_worker);
-			for (int t=0; t < config.num_worker; ++t) {
-				if (op->children[0]->lineage_op->chunk_collection.Types()[col_idx] == LogicalType::INTEGER) {
-					fade_data[op->id].alloc_vars[out_var][t] = aligned_alloc(64, sizeof(int) * n_groups * n_interventions);
-					if (fade_data[op->id].alloc_vars[out_var][t] == nullptr) {
-						fade_data[op->id].alloc_vars[out_var][t] = malloc(sizeof(int) * n_groups * n_interventions);
-					}
-					fade_data[op->id].alloc_vars_types[out_var] = "int";
-					memset(fade_data[op->id].alloc_vars[out_var][t], 0, sizeof(int) * n_groups * n_interventions);
-				} else if (op->children[0]->lineage_op->chunk_collection.Types()[col_idx] == LogicalType::FLOAT) {
-					fade_data[op->id].alloc_vars_types[out_var] = "float";
-					fade_data[op->id].alloc_vars[out_var][t] = aligned_alloc(64, sizeof(float) * n_groups * n_interventions);
-					if (fade_data[op->id].alloc_vars[out_var][t] == nullptr) {
-						fade_data[op->id].alloc_vars[out_var][t] = malloc(sizeof(float) * n_groups * n_interventions);
-					}
-					memset(fade_data[op->id].alloc_vars[out_var][t], 0, sizeof(float) * n_groups * n_interventions);
-				} else {
-					fade_data[op->id].alloc_vars_types[out_var] = "float";
-					fade_data[op->id].alloc_vars[out_var][t] = aligned_alloc(64, sizeof(float) * n_groups * n_interventions);
-					if (fade_data[op->id].alloc_vars[out_var][t] == nullptr) {
-						fade_data[op->id].alloc_vars[out_var][t] = malloc(sizeof(float) * n_groups * n_interventions);
-					}
-					memset(fade_data[op->id].alloc_vars[out_var][t], 0, sizeof(float) * n_groups * n_interventions);
-				}
-			}
-
 
 			get_vals_code += "\t\t\t" + output_type +" " + in_val + "= " + in_arr + "[i];\n";
-
 			// access output arrays
-			alloc_code += get_agg_alloc(i, "sum", output_type);
+			alloc_code += Fade::get_agg_alloc(i, "sum", output_type);
 			// core agg operation
 			eval_code += get_agg_eval(config, agg_count++, "sum", out_var, in_val, output_type);
-			fade_data[op->id].alloc_vars_index[out_var] = i;
 		}
 	}
 
 	if (include_count == true) {
 		string out_var = "out_count";
-		alloc_code += get_agg_alloc(0, "count", "int");
+		alloc_code += Fade::get_agg_alloc(0, "count", "int");
 		eval_code += get_agg_eval(config, agg_count++, "count", out_var, "1", "int");
-		fade_data[op->id].alloc_vars[out_var].resize(config.num_worker);
-		fade_data[op->id].alloc_vars_types[out_var] = "int";
-		for (int t=0; t < config.num_worker; ++t) {
-			fade_data[op->id].alloc_vars[out_var][t] = aligned_alloc(64, sizeof(int) * n_groups * n_interventions);
-			if (fade_data[op->id].alloc_vars[out_var][t] == nullptr) {
-				fade_data[op->id].alloc_vars[out_var][t] = malloc(sizeof(int) * n_groups * n_interventions);
-			}
-			memset(fade_data[op->id].alloc_vars[out_var][t], 0, sizeof(int) * n_groups * n_interventions);
-		}
-		fade_data[op->id].alloc_vars_index[out_var] = -1;
 	}
 
-
 	string init_code = get_agg_init(config, row_count, op->children[0]->lineage_op->chunk_collection.ChunkCount(), op->id,  fade_data[op->id].n_interventions, "agg", alloc_code, get_data_code, get_vals_code);
-	string end_code = get_agg_finalize(config, fade_data[op->id]);
+	string end_code = Fade::get_agg_finalize(config, fade_data[op->id]);
 
 	code = init_code + eval_code + end_code;
 
@@ -720,18 +529,13 @@ void  HashAggregateIntervene2DEval(int thread_id, EvalConfig config, shared_ptr<
 }
 
 void GenCodeAndAlloc(EvalConfig& config, string& code, PhysicalOperator* op,
-                    std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
-                    std::unordered_map<std::string, float> columns_spec) {
+                    std::unordered_map<idx_t, FadeDataPerNode>& fade_data) {
 	for (idx_t i = 0; i < op->children.size(); i++) {
-		GenCodeAndAlloc(config, code, op->children[i].get(), fade_data, columns_spec);
+		GenCodeAndAlloc(config, code, op->children[i].get(), fade_data);
 	}
 
 
 	if (op->type == PhysicalOperatorType::TABLE_SCAN) {
-		if (columns_spec.find(op->lineage_op->table_name) == columns_spec.end()) {
-			//return;
-		}
-
 		// idx_t row_count = op->lineage_op->chunk_collection.Count();
 		idx_t row_count = op->lineage_op->log_index->table_size;
 
@@ -790,10 +594,11 @@ void GenCodeAndAlloc(EvalConfig& config, string& code, PhysicalOperator* op,
 		fade_data[op->id].single_del_interventions  = fade_data[op->children[0]->id].single_del_interventions;
 		fade_data[op->id].n_interventions = fade_data[op->children[0]->id].n_interventions;
 		fade_data[op->id].n_masks = fade_data[op->children[0]->id].n_masks;
+		Fade::HashAggregateAllocate(config, op->lineage_op, fade_data, op);
 		code += HashAggregateIntervene2D(config, op->lineage_op, fade_data, op);
-	} /*else if (op->type == PhysicalOperatorType::UNGROUPED_AGGREGATE) {
-	    UngroupedAggregateIntervene(op->lineage_op, fade_data, op);
-	} */ else if (op->type == PhysicalOperatorType::PROJECTION) {
+	} else if (op->type == PhysicalOperatorType::UNGROUPED_AGGREGATE) {
+	  //  UngroupedAggregateIntervene(op->lineage_op, fade_data, op);
+	}  else if (op->type == PhysicalOperatorType::PROJECTION) {
 		fade_data[op->id].n_masks  = fade_data[op->children[0]->id].n_masks;
 		fade_data[op->id].del_interventions  = fade_data[op->children[0]->id].del_interventions;
 		fade_data[op->id].single_del_interventions  = fade_data[op->children[0]->id].single_del_interventions;
@@ -807,13 +612,11 @@ void GenCodeAndAlloc(EvalConfig& config, string& code, PhysicalOperator* op,
 	}
 }
 
-
 void BindFunctions(EvalConfig config, void* handle, PhysicalOperator* op,
-                        std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
-                        std::unordered_map<std::string, float> columns_spec) {
+                        std::unordered_map<idx_t, FadeDataPerNode>& fade_data) {
 
 	for (idx_t i = 0; i < op->children.size(); i++) {
-		BindFunctions(config, handle, op->children[i].get(), fade_data, columns_spec);
+		BindFunctions(config, handle, op->children[i].get(), fade_data);
 	}
 
 	if (op->type == PhysicalOperatorType::FILTER) {
@@ -843,10 +646,9 @@ void BindFunctions(EvalConfig config, void* handle, PhysicalOperator* op,
 
 
 void Intervention2DEval(int thread_id, EvalConfig config, void* handle, PhysicalOperator* op,
-                        std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
-                        std::unordered_map<std::string, float> columns_spec) {
+                        std::unordered_map<idx_t, FadeDataPerNode>& fade_data) {
 	for (idx_t i = 0; i < op->children.size(); i++) {
-		Intervention2DEval(thread_id, config, handle, op->children[i].get(), fade_data, columns_spec);
+		Intervention2DEval(thread_id, config, handle, op->children[i].get(), fade_data);
 	}
 
 	if (op->type == PhysicalOperatorType::FILTER) {
@@ -899,10 +701,6 @@ string Fade::Whatif(PhysicalOperator *op, EvalConfig config) {
 	std::chrono::steady_clock::time_point start_time, end_time;
 	std::chrono::duration<double> time_span;
 
-	// 1. Parse Spec
-	// e.g. random delete table_name:prob, scale by factor: table_name.col:scale
-	std::unordered_map<std::string, float>  columns_spec = parseWhatifString(config);
-
 	// holds any extra data needed during exec
 	std::unordered_map<idx_t, FadeDataPerNode> fade_data;
 
@@ -915,7 +713,7 @@ string Fade::Whatif(PhysicalOperator *op, EvalConfig config) {
 
 	// 3. retrieve lineage
 	start_time = std::chrono::steady_clock::now();
-	GetLineage(config, op, fade_data, columns_spec);
+	GetLineage(config, op, fade_data);
 	end_time = std::chrono::steady_clock::now();
 	time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
 	double lineage_time = time_span.count();
@@ -934,7 +732,7 @@ string Fade::Whatif(PhysicalOperator *op, EvalConfig config) {
 	// 4. Alloc vars, generate eval code
 	string code;
 	start_time = std::chrono::steady_clock::now();
-	GenCodeAndAlloc(config, code, op, fade_data, columns_spec);
+	GenCodeAndAlloc(config, code, op, fade_data);
 	end_time = std::chrono::steady_clock::now();
 	time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
 	double prep_time = time_span.count();
@@ -956,19 +754,19 @@ string Fade::Whatif(PhysicalOperator *op, EvalConfig config) {
 
 	// 3. Prepare base interventions; should be one time cost per DB
 	start_time = std::chrono::steady_clock::now();
-	GenRandomWhatifIntervention(config, op, fade_data, columns_spec, handle);
+	GenRandomWhatifIntervention(config, op, fade_data, handle);
 	end_time = std::chrono::steady_clock::now();
 	time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
 	double intervention_gen_time = time_span.count();
 
-	BindFunctions(config, handle,  op, fade_data, columns_spec);
+	BindFunctions(config, handle,  op, fade_data);
 
 	std::vector<std::thread> workers;
 
 	start_time = std::chrono::steady_clock::now();
 
 	for (int i = 0; i < config.num_worker; ++i) {
-		workers.emplace_back(Intervention2DEval, i, config, handle,  op, std::ref(fade_data), columns_spec);
+		workers.emplace_back(Intervention2DEval, i, config, handle,  op, std::ref(fade_data));
 	}
 
 	// Wait for all tasks to complete
@@ -986,7 +784,7 @@ string Fade::Whatif(PhysicalOperator *op, EvalConfig config) {
 
 	system("rm loop.cpp loop.so");
 
-	ReleaseFade(config, handle, op, fade_data, columns_spec);
+	ReleaseFade(config, handle, op, fade_data);
 
 	return "select " + to_string(post_processing_time) + " as post_processing_time, "
 	       + to_string(intervention_gen_time) + " as intervention_gen_time, "

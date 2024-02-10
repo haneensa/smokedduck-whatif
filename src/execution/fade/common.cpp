@@ -15,6 +15,126 @@
 
 namespace duckdb {
 
+string Fade::get_header(EvalConfig config) {
+	std::ostringstream oss;
+	oss << R"(
+#include <iostream>
+#include <vector>
+#include <unordered_map>
+#include <immintrin.h>
+#include <barrier>
+#include <random>
+)";
+
+	if (config.use_duckdb) {
+		oss << R"(
+#include "duckdb.hpp"
+#include "duckdb/common/types/chunk_collection.hpp"
+)";
+	}
+
+	if (config.num_worker > 1) {
+		oss << "std::barrier sync_point(" + to_string(config.num_worker) + ");\n";
+	}
+
+	return oss.str();
+}
+
+string Fade::get_agg_alloc(int fid, string fn, string out_type) {
+	std::ostringstream oss;
+	if (fn == "sum") {
+		oss << "\n";
+		oss << out_type << "*__restrict__ out_" + to_string(fid) + " = (" + out_type +"*)alloc_vars[\"out_" + to_string(fid) << "\"][thread_id];\n";
+	} else if (fn == "count") {
+		oss << R"(
+	int* __restrict__  out_count = (int*)alloc_vars["out_count"][thread_id];
+)";
+	}
+	return oss.str();
+}
+
+
+string Fade::get_agg_finalize(EvalConfig config, FadeDataPerNode& node_data) {
+	std::ostringstream oss;
+
+	if (config.n_intervention == 1) {
+		if (config.use_duckdb) {
+			return R"(
+			}
+			offset +=  collection_chunk.size();
+		}
+	return 0;
+	}
+)";
+		} else {
+			return "\t }\n \treturn 0;\n}\n";
+		}
+	}
+
+	if (config.is_scalar) oss <<  "\n\t\t\t\t}//c\n"; // close inner loop
+
+	if (config.use_duckdb) {
+		oss << R"(
+			}//a.1
+		}//a.2
+		offset +=  collection_chunk.size();
+}
+)";
+	} else {
+		oss << R"(
+		}//b.1
+	} //b.2
+)";
+	}
+
+	if (config.num_worker > 1) {
+		oss << "\tsync_point.arrive_and_wait();\n";
+		oss << "\tconst int group_count = " << node_data.n_groups << ";\n";
+		oss << R"(
+	for (int jc = 0; jc < group_count; jc += 16) {
+		if ((jc / 16) % num_threads == thread_id) {
+)";
+		for (auto &pair : node_data.alloc_vars) {
+			oss << "{\n";
+			int fid = node_data.alloc_vars_index[pair.first] ;
+			string type_str = node_data.alloc_vars_types[pair.first];
+			if (fid == -1) { // count
+				oss <<  type_str +"* __restrict__ final_out = (" + type_str + "* __restrict__)alloc_vars[\"out_count\"][0];\n";
+			} else {
+				oss <<  type_str +"* __restrict__ final_out = (" + type_str + "* __restrict__)alloc_vars[\"out_"+to_string(fid)+"\"][0];\n";
+			}
+			oss << R"(
+		    for (int j = jc; j < jc + 16 && j < group_count; ++j) {
+		        for (int i = 1; i < num_threads; ++i) {
+)";
+			if (fid == -1) { // count
+				oss <<  type_str +"* __restrict__ final_in = (" + type_str + "* __restrict__)alloc_vars[\"out_count\"][i];\n";
+			} else {
+				oss <<  type_str +"* __restrict__ final_in = (" + type_str + "* __restrict__)alloc_vars[\"out_"+to_string(fid)+"\"][i];\n";
+			}
+			oss << R"(for (int k = 0; k < n_interventions; ++k) {
+						int index = j * n_interventions + k;
+)";
+			oss << "final_out[index] += final_in[index];\n";
+			oss << R"(
+					}//(int k = 0; k < n_interventions; ++k)
+				}//(int i = 1; i < num_threads; ++i)
+			}//(int j = jc; j < jc + 16 && j < group_count; ++j)
+    }
+)";
+		}
+		oss << R"(
+		}//if ((jc / 16) % num_threads == thread_id)
+	}//for (int jc = 0; jc < group_count; jc += 16)
+)";
+	}
+
+	oss << "\treturn 0;\n}\n";
+
+	return oss.str();
+}
+
+
 void* Fade::compile(std::string code, int id) {
 	// Write the loop code to a temporary file
 	std::ofstream file("loop.cpp");
@@ -27,7 +147,8 @@ void* Fade::compile(std::string code, int id) {
 		return nullptr;
 	} else {
 		std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
-		std::string build_command = "g++ -O3 -std=c++2a -mavx512f -march=native -shared -fPIC loop.cpp -o loop.so -L" + std::string(duckdb_lib_path) + " -lduckdb";
+		std::string build_command = "g++ -O3 -std=c++2a -mavx512f -march=native -shared -fPIC loop.cpp -o loop.so -L"
+		                            + std::string(duckdb_lib_path) + " -lduckdb";
 		std::cout << duckdb_lib_path << " " << build_command.c_str() << std::endl;
 		system(build_command.c_str());
 		void *handle = dlopen("./loop.so", RTLD_LAZY);
@@ -38,21 +159,29 @@ void* Fade::compile(std::string code, int id) {
 	}
 }
 
-std::unordered_map<std::string, float> Fade::parseWhatifString(EvalConfig& config) {
-	std::unordered_map<std::string, float> result;
+// table_name:prob|table_name:prob| ... e.g. 't1:0.3'
+std::unordered_map<std::string, std::vector<std::string>>  Fade::parseSpec(EvalConfig& config) {
+	std::unordered_map<std::string, std::vector<std::string>> result;
+
 	std::istringstream iss(config.columns_spec_str);
 	std::string token;
 
 	while (std::getline(iss, token, '|')) {
 		std::istringstream tokenStream(token);
-		std::string table, prob;
-
-		if (std::getline(tokenStream, table, ':')) {
-			if (std::getline(tokenStream, prob)) {
-				result[table] = std::stof(prob);
+		std::string table, column;
+		if (std::getline(tokenStream, table, '.')) {
+			if (std::getline(tokenStream, column)) {
+				// Convert column name to uppercase (optional)
+				for (char& c : column) {
+					c = std::tolower(c);
+				}
+				// Add the table name and column to the dictionary
+				result[table].push_back(column);
 			}
 		}
 	}
+
+
 
 	return result;
 }
@@ -231,10 +360,9 @@ void Fade::PruneLineage(EvalConfig& config, PhysicalOperator* op,
 }
 
 void Fade::GetLineage(EvalConfig& config, PhysicalOperator* op,
-                     std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
-                     std::unordered_map<std::string, float> columns_spec) {
+                     std::unordered_map<idx_t, FadeDataPerNode>& fade_data) {
 	for (idx_t i = 0; i < op->children.size(); i++) {
-		GetLineage(config, op->children[i].get(), fade_data, columns_spec);
+		GetLineage(config, op->children[i].get(), fade_data);
 	}
 
 	if (op->type == PhysicalOperatorType::TABLE_SCAN) {
@@ -314,8 +442,7 @@ void Fade::PrintOutput(FadeDataPerNode& info, T* data_ptr) {
 
 
 void Fade::ReleaseFade(EvalConfig& config, void* handle, PhysicalOperator* op,
-                 std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
-                 std::unordered_map<std::string, float> columns_spec) {
+                 std::unordered_map<idx_t, FadeDataPerNode>& fade_data) {
 
 	if (op->type != PhysicalOperatorType::PROJECTION &&
 	    !(op->type == PhysicalOperatorType::FILTER && config.prune) &&
@@ -352,10 +479,219 @@ void Fade::ReleaseFade(EvalConfig& config, void* handle, PhysicalOperator* op,
 	}
 
 	for (idx_t i = 0; i < op->children.size(); i++) {
-		ReleaseFade(config, handle, op->children[i].get(), fade_data, columns_spec);
+		ReleaseFade(config, handle, op->children[i].get(), fade_data);
 	}
 
 }
+
+void Fade::HashAggregateAllocate(EvalConfig& config, shared_ptr<OperatorLineage> lop,
+                           std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
+                           PhysicalOperator* op) {
+	const int n_interventions = fade_data[op->id].n_interventions;
+	PhysicalHashAggregate * gb = dynamic_cast<PhysicalHashAggregate *>(op);
+	auto &aggregates = gb->grouped_aggregate_data.aggregates;
+	// get n_groups: max(oid)+1
+	idx_t n_groups = 1;
+	if (op->type != PhysicalOperatorType::UNGROUPED_AGGREGATE) {
+		n_groups = lop->log_index->ha_hash_index.size(); //lop->chunk_collection.Count();
+	}
+
+	fade_data[op->id].n_groups = n_groups;
+
+	idx_t row_count = op->children[0]->lineage_op->chunk_collection.Count();
+	fade_data[op->id].lineage[0] = std::move(Fade::GetGBLineage(lop, row_count));
+	bool include_count = false;
+
+	// Populate the aggregate child vectors
+	for (idx_t i=0; i < aggregates.size(); i++) {
+		auto &aggr = aggregates[i]->Cast<BoundAggregateExpression>();
+		vector<idx_t> aggregate_input_idx;
+		for (auto &child_expr : aggr.children) {
+			D_ASSERT(child_expr->type == ExpressionType::BOUND_REF);
+			auto &bound_ref_expr = child_expr->Cast<BoundReferenceExpression>();
+			aggregate_input_idx.push_back(bound_ref_expr.index);
+		}
+		string name = aggr.function.name;
+
+		if (include_count == false && (name == "count" || name == "count_star")) {
+			include_count = true;
+			continue;
+		} else if (name == "avg") {
+			include_count = true;
+		}
+
+		if (name == "sum" || name == "sum_no_overflow" || name == "avg") {
+			int col_idx = i + gb->grouped_aggregate_data.groups.size();
+			string input_type = "float";
+			string output_type = "float";
+			if (op->children[0]->lineage_op->chunk_collection.Types()[col_idx] == LogicalType::INTEGER) {
+				input_type = "int";
+				output_type = "int";
+			} else if (op->children[0]->lineage_op->chunk_collection.Types()[col_idx] == LogicalType::FLOAT) {
+				input_type = "float";
+				output_type = "float";
+			} else {
+				input_type = "double";
+				output_type = "float";
+			}
+
+			string out_var = "out_" + to_string(i); // new output
+			string in_arr = "col_" + to_string(i);  // input arrays
+			string in_val = "val_" + to_string(i);  // input values val = col_x[i]
+
+			if (config.use_duckdb == false) {
+				if (op->children[0]->lineage_op->chunk_collection.Types()[col_idx] == LogicalType::INTEGER) {
+					fade_data[op->id].input_data_map[i] = Fade::GetInputVals<int, int>(op, op->lineage_op, col_idx);
+				} else if (op->children[0]->lineage_op->chunk_collection.Types()[col_idx] == LogicalType::FLOAT) {
+					fade_data[op->id].input_data_map[i] = Fade::GetInputVals<float, float>(op, op->lineage_op, col_idx);
+				} else if (op->children[0]->lineage_op->chunk_collection.Types()[col_idx] == LogicalType::DOUBLE) {
+					fade_data[op->id].input_data_map[i] = Fade::GetInputVals<double, float>(op, op->lineage_op, col_idx);
+				} else {
+					fade_data[op->id].input_data_map[i] = Fade::GetInputVals<float, float>(op, op->lineage_op, col_idx);
+				}
+			}
+
+			fade_data[op->id].alloc_vars[out_var].resize(config.num_worker);
+			for (int t=0; t < config.num_worker; ++t) {
+				if (op->children[0]->lineage_op->chunk_collection.Types()[col_idx] == LogicalType::INTEGER) {
+					fade_data[op->id].alloc_vars[out_var][t] = aligned_alloc(64, sizeof(int) * n_groups * n_interventions);
+
+					if (fade_data[op->id].alloc_vars[out_var][t] == nullptr) {
+						fade_data[op->id].alloc_vars[out_var][t] = malloc(sizeof(int) * n_groups * n_interventions);
+					}
+					fade_data[op->id].alloc_vars_types[out_var] = "int";
+					memset(fade_data[op->id].alloc_vars[out_var][t], 0, sizeof(int) * n_groups * n_interventions);
+				} else if (op->children[0]->lineage_op->chunk_collection.Types()[col_idx] == LogicalType::FLOAT) {
+					fade_data[op->id].alloc_vars_types[out_var] = "float";
+					fade_data[op->id].alloc_vars[out_var][t] = aligned_alloc(64, sizeof(float) * n_groups * n_interventions);
+					if (fade_data[op->id].alloc_vars[out_var][t] == nullptr) {
+						fade_data[op->id].alloc_vars[out_var][t] = malloc(sizeof(float) * n_groups * n_interventions);
+					}
+					memset(fade_data[op->id].alloc_vars[out_var][t], 0, sizeof(float) * n_groups * n_interventions);
+				} else {
+					fade_data[op->id].alloc_vars_types[out_var] = "float";
+					fade_data[op->id].alloc_vars[out_var][t] = aligned_alloc(64, sizeof(float) * n_groups * n_interventions);
+					if (fade_data[op->id].alloc_vars[out_var][t] == nullptr) {
+						fade_data[op->id].alloc_vars[out_var][t] = malloc(sizeof(float) * n_groups * n_interventions);
+					}
+					memset(fade_data[op->id].alloc_vars[out_var][t], 0, sizeof(float) * n_groups * n_interventions);
+				}
+			}
+			fade_data[op->id].alloc_vars_index[out_var] = i;
+		}
+	}
+
+	if (include_count == true) {
+		string out_var = "out_count";
+		fade_data[op->id].alloc_vars[out_var].resize(config.num_worker);
+		fade_data[op->id].alloc_vars_types[out_var] = "int";
+		for (int t=0; t < config.num_worker; ++t) {
+			fade_data[op->id].alloc_vars[out_var][t] = aligned_alloc(64, sizeof(int) * n_groups * n_interventions);
+			if (fade_data[op->id].alloc_vars[out_var][t] == nullptr) {
+				fade_data[op->id].alloc_vars[out_var][t] = malloc(sizeof(int) * n_groups * n_interventions);
+			}
+			memset(fade_data[op->id].alloc_vars[out_var][t], 0, sizeof(int) * n_groups * n_interventions);
+		}
+		fade_data[op->id].alloc_vars_index[out_var] = -1;
+	}
+}
+
+
+template<class T>
+pair<vector<int>, int> local_factorize(shared_ptr<OperatorLineage> lop, idx_t col_idx) {
+	std::unordered_map<T, int> dict;
+	vector<int> codes;
+	idx_t chunk_count = lop->chunk_collection.ChunkCount();
+	for (idx_t chunk_idx=0; chunk_idx < chunk_count; ++chunk_idx) {
+		DataChunk &collection_chunk = lop->chunk_collection.GetChunk(chunk_idx);
+		for (idx_t i=0; i < collection_chunk.size(); ++i) {
+			T v = collection_chunk.GetValue(col_idx, i).GetValue<T>();
+			if (dict.find(v) == dict.end()) {
+				dict[v] = dict.size();
+			}
+			codes.push_back(dict[v]);
+		}
+	}
+	return make_pair(codes, dict.size());
+}
+
+std::pair<vector<int>, int> Fade::factorize(PhysicalOperator* op, shared_ptr<OperatorLineage> lop,
+                                      std::unordered_map<std::string, std::vector<std::string>> columns_spec) {
+	string col_name = columns_spec[lop->table_name].back();
+	PhysicalTableScan * scan = dynamic_cast<PhysicalTableScan *>(op);
+	std::pair<vector<int>, int> fade_data;
+	std::pair< vector<int>, int> res;
+	for (idx_t i=0; i < scan->names.size(); i++) {
+		if (scan->names[i] == col_name) {
+			vector<idx_t> col_codes;
+			if (scan->types[i] == LogicalType::INTEGER) {
+				res = local_factorize<int>(lop, i);
+			} else if (scan->types[i] == LogicalType::VARCHAR) {
+				res = local_factorize<string>(lop, i);
+			} else if (scan->types[i] == LogicalType::FLOAT) {
+				res = local_factorize<float>(lop, i);
+			}
+			// TODO: combine independent offsets
+			fade_data.first = res.first;
+			fade_data.second = res.second;
+			break;
+		}
+	}
+
+	return fade_data;
+}
+
+vector<int> Fade::random_unique(shared_ptr<OperatorLineage> lop, idx_t distinct) {
+	vector<int> codes;
+	// Seed the random number generator
+	std::random_device rd;
+	std::mt19937 gen(rd());
+	idx_t row_count = lop->chunk_collection.Count();
+
+	// Generate random values
+	std::uniform_int_distribution<int> distribution(0, distinct - 1);
+
+	for (idx_t i = 0; i < row_count; ++i) {
+		int random_value = distribution(gen);
+		codes.push_back(random_value);
+	}
+
+	return codes;
+}
+
+
+void Fade::BindFunctions(EvalConfig config, void* handle, PhysicalOperator* op,
+                   std::unordered_map<idx_t, FadeDataPerNode>& fade_data) {
+
+	for (idx_t i = 0; i < op->children.size(); i++) {
+		BindFunctions(config, handle, op->children[i].get(), fade_data);
+	}
+
+	if (op->type == PhysicalOperatorType::FILTER) {
+		if (config.prune) return;
+		//if (fade_data[op->id].n_masks > 0) {
+		string fname = "filter_"+ to_string(op->id) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
+		fade_data[op->id].filter_fn = (int(*)(int, int*, void*, void*))dlsym(handle, fname.c_str());
+		//	}
+	} else if (op->type == PhysicalOperatorType::HASH_JOIN
+	           || op->type == PhysicalOperatorType::NESTED_LOOP_JOIN
+	           || op->type == PhysicalOperatorType::BLOCKWISE_NL_JOIN
+	           || op->type == PhysicalOperatorType::PIECEWISE_MERGE_JOIN
+	           || op->type == PhysicalOperatorType::CROSS_PRODUCT) {
+		//if (fade_data[op->id].n_masks > 0) {
+		string fname = "join_"+ to_string(op->id) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
+		fade_data[op->id].join_fn = (int(*)(int, int*, int*, void*, void*, void*))dlsym(handle, fname.c_str());
+		//}
+	} else if (op->type == PhysicalOperatorType::HASH_GROUP_BY) {
+		string fname = "agg_"+ to_string(op->id) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
+		if (config.use_duckdb) {
+			fade_data[op->id].agg_duckdb_fn = (int(*)(int, int*, void*, std::unordered_map<std::string, vector<void*>>&, ChunkCollection&))dlsym(handle, fname.c_str());
+		} else {
+			fade_data[op->id].agg_fn = (int(*)(int, int*, void*, std::unordered_map<std::string, vector<void*>>&,  std::unordered_map<int, void*>&))dlsym(handle, fname.c_str());
+		}
+	}
+}
+
 
 } // namespace duckdb
 #endif

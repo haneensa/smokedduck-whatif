@@ -46,8 +46,10 @@ struct FadeDataPerNode {
 
 enum InterventionType {
 	DELETE,
-	SCALE
+	SCALE,
+	SEARCH
 };
+
 struct EvalConfig {
 	int batch;
 	int mask_size;
@@ -60,30 +62,35 @@ struct EvalConfig {
 	int n_intervention;
 	int qid;
 	int num_worker;
+	float probability;
+	int topk;
 };
 
 class Fade {
 public:
 	Fade() {};
 
-	static void Why(PhysicalOperator* op, int k, string columns_spec, int distinct);
+	static void Why(PhysicalOperator* op,  EvalConfig config);
 	static string Whatif(PhysicalOperator* op, EvalConfig config);
+	static string PredicateSearch(PhysicalOperator* op, EvalConfig config);
 	static void Rexec(PhysicalOperator* op);
 
 	template<class T1, class T2>
 	static T2* GetInputVals(PhysicalOperator* op, shared_ptr<OperatorLineage> lop, idx_t col_idx);
 
+	static string get_header(EvalConfig config);
+	static string get_agg_alloc(int fid, string fn, string out_type);
+	static string get_agg_finalize(EvalConfig config, FadeDataPerNode& node_data);
+
 	static void* compile(std::string code, int id);
 
-	static std::unordered_map<std::string, float> parseWhatifString(EvalConfig& config);
-
+	static std::unordered_map<std::string, std::vector<std::string>> parseSpec(EvalConfig& config);
 
 	template <class T>
 	static void PrintOutput(FadeDataPerNode& info, T* data_ptr);
 
 	static void GetLineage(EvalConfig& config, PhysicalOperator* op,
-	                std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
-	                std::unordered_map<std::string, float> columns_spec);
+	                std::unordered_map<idx_t, FadeDataPerNode>& fade_data);
 
 	static void FillFilterLineage(PhysicalOperator *op, shared_ptr<OperatorLineage> lop,
 	                              std::unordered_map<idx_t, FadeDataPerNode>& fade_data);
@@ -98,9 +105,18 @@ public:
 	                  vector<int>& out_order);
 
 	static void ReleaseFade(EvalConfig& config, void* handle, PhysicalOperator* op,
-	                 std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
-	                 std::unordered_map<std::string, float> columns_spec);
+	                 std::unordered_map<idx_t, FadeDataPerNode>& fade_data);
 
+	static void HashAggregateAllocate(EvalConfig& config, shared_ptr<OperatorLineage> lop,
+	                                 std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
+	                                 PhysicalOperator* op);
+
+	static vector<int> random_unique(shared_ptr<OperatorLineage> lop, idx_t distinct);
+	static std::pair<vector<int>, int> factorize(PhysicalOperator* op, shared_ptr<OperatorLineage> lop,
+	                                      std::unordered_map<std::string, std::vector<std::string>> columns_spec);
+
+	static void BindFunctions(EvalConfig config, void* handle, PhysicalOperator* op,
+	                   std::unordered_map<idx_t, FadeDataPerNode>& fade_data);
 };
 
 } // namespace duckdb

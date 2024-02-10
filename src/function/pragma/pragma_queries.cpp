@@ -221,6 +221,8 @@ string PragmaWhatif(ClientContext &context, const FunctionParameters &parameters
 	InterventionType intervention_type =  DELETE;
 	if (intervention_type_str == "SCALE") {
 		intervention_type = SCALE;
+	} else if (intervention_type_str == "SEARCH") {
+		intervention_type = SEARCH;
 	}
 
 	string spec = parameters.values[2].ToString();
@@ -237,9 +239,17 @@ string PragmaWhatif(ClientContext &context, const FunctionParameters &parameters
 	// 1. find the query plan associated with qid
 	PhysicalOperator* op = context.client_data->lineage_manager->queryid_to_plan[qid].get();
 	int mask_size = 16;
+	float prob = 0.1;
+	int topk = 3;
 	// takes in query id, attributes to intervene on, conjunctive only or conjunctive and disjunction, or random
-	return Fade::Whatif(op, { batch, mask_size, is_scalar, use_duckdb, debug, prune,
-	                  spec, intervention_type, n_interventions, qid, num_workers } );
+
+	if (intervention_type == SEARCH) {
+			return Fade::PredicateSearch(op, { batch, mask_size, is_scalar, use_duckdb, debug, prune,
+		                                  spec, intervention_type, n_interventions, qid, num_workers, prob, topk} );
+	} else {
+		    return Fade::Whatif(op, { batch, mask_size, is_scalar, use_duckdb, debug, prune,
+											 spec, intervention_type, n_interventions, qid, num_workers, prob, topk} );
+	}
 }
 #endif
 

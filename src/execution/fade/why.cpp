@@ -10,93 +10,6 @@
 
 namespace duckdb {
 
-std::unordered_map<std::string, std::vector<std::string>> parseString(const std::string& input) {
-	std::unordered_map<std::string, std::vector<std::string>> result;
-	std::istringstream iss(input);
-	std::string token;
-
-	while (std::getline(iss, token, '|')) {
-		std::istringstream tokenStream(token);
-		std::string table, column;
-
-		if (std::getline(tokenStream, table, '.')) {
-			if (std::getline(tokenStream, column)) {
-				// Convert column name to uppercase (optional)
-				for (char& c : column) {
-					c = std::tolower(c);
-				}
-				// Add the table name and column to the dictionary
-				result[table].push_back(column);
-			}
-		}
-	}
-
-	return result;
-}
-
-template<class T>
-pair<vector<int>, int> local_factorize(shared_ptr<OperatorLineage> lop, idx_t col_idx) {
-	std::unordered_map<T, int> dict;
-	vector<int> codes;
-	idx_t chunk_count = lop->chunk_collection.ChunkCount();
-	for (idx_t chunk_idx=0; chunk_idx < chunk_count; ++chunk_idx) {
-		DataChunk &collection_chunk = lop->chunk_collection.GetChunk(chunk_idx);
-		for (idx_t i=0; i < collection_chunk.size(); ++i) {
-			T v = collection_chunk.GetValue(col_idx, i).GetValue<T>();
-			if (dict.find(v) == dict.end()) {
-				dict[v] = dict.size();
-			}
-			codes.push_back(dict[v]);
-		}
-	}
-	return make_pair(codes, dict.size());
-}
-
-std::pair<vector<int>, int> factorize(PhysicalOperator* op, shared_ptr<OperatorLineage> lop,
-                        std::unordered_map<std::string, std::vector<std::string>> columns_spec) {
-	string col_name = columns_spec[lop->table_name].back();
-	PhysicalTableScan * scan = dynamic_cast<PhysicalTableScan *>(op);
-	std::pair<vector<int>, int> fade_data;
-	std::pair< vector<int>, int> res;
-	for (idx_t i=0; i < scan->names.size(); i++) {
-		if (scan->names[i] == col_name) {
-			vector<idx_t> col_codes;
-			if (scan->types[i] == LogicalType::INTEGER) {
-				res = local_factorize<int>(lop, i);
-			} else if (scan->types[i] == LogicalType::VARCHAR) {
-				res = local_factorize<string>(lop, i);
-			} else if (scan->types[i] == LogicalType::FLOAT) {
-				res = local_factorize<float>(lop, i);
-			}
-			// TODO: combine independent offsets
-			fade_data.first = res.first;
-			fade_data.second = res.second;
-			break;
-		}
-	}
-
-	return fade_data;
-}
-
-
-vector<int> random_unique(shared_ptr<OperatorLineage> lop, idx_t distinct) {
-	vector<int> codes;
-	// Seed the random number generator
-	std::random_device rd;
-	std::mt19937 gen(rd());
-	idx_t row_count = lop->chunk_collection.Count();
-
-	// Generate random values
-	std::uniform_int_distribution<int> distribution(0, distinct - 1);
-
-	for (idx_t i = 0; i < row_count; ++i) {
-		int random_value = distribution(gen);
-		codes.push_back(random_value);
-	}
-
-	return codes;
-}
-
 void TableIntervene(shared_ptr<OperatorLineage> lop,
                     std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
                     PhysicalOperator* op,
@@ -435,53 +348,6 @@ void  UngroupedAggregateIntervene(shared_ptr<OperatorLineage> lop,
   }
 }
 
-void GenIntervention(PhysicalOperator* op, std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
-                     std::unordered_map<std::string, std::vector<std::string>> columns_spec) {
-  for (idx_t i = 0; i < op->children.size(); i++) {
-	  GenIntervention(op->children[i].get(), fade_data, columns_spec);
-  }
-
-  if (op->type == PhysicalOperatorType::TABLE_SCAN) {
-	  if (columns_spec.find(op->lineage_op->table_name) == columns_spec.end()) {
-		  return;
-	  }
-	  // 1. access base table, 2. factorize
-	  std::pair<vector<int>, idx_t> res = factorize(op, op->lineage_op, columns_spec);
-
-	  fade_data[op->id].annotations = res.first;
-	  fade_data[op->id].n_interventions = res.second;
-  }
-}
-
-void GenRandomIntervention(PhysicalOperator* op,
-                           std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
-                           std::unordered_map<std::string, std::vector<std::string>> columns_spec,
-                           idx_t distinct) {
-  for (idx_t i = 0; i < op->children.size(); i++) {
-	  GenRandomIntervention(op->children[i].get(), fade_data, columns_spec, distinct);
-  }
-
-  if (op->type == PhysicalOperatorType::TABLE_SCAN) {
-	  if (columns_spec.find(op->lineage_op->table_name) == columns_spec.end()) {
-		  return;
-	  }
-
-
-	  // conjunctive predicate intervention
-	  fade_data[op->id].annotations = random_unique(op->lineage_op, distinct);
-	  fade_data[op->id].n_interventions = distinct;
-
-	  // 2D matrix intervention
-	  // fade_data[op->id].del_intervention
-	  // fade_data[op->id].scale_intervention
-
-	  // single intervention
-	  // fade_data[op->id].single_del_intervention
-	  // fade_data[op->id].single_scale_intervention
-
-  }
-}
-
 void Intervention(PhysicalOperator* op,
                   std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
                   std::unordered_map<std::string, std::vector<std::string>> columns_spec) {
@@ -517,8 +383,9 @@ vector<idx_t> Rank(PhysicalOperator* op, int k) {
   return {};
 }
 
-void Fade::Why(PhysicalOperator* op, int k, string columns_spec_str, int distinct=0) {
-  std::unordered_map<std::string, std::vector<std::string>> columns_spec = parseString( columns_spec_str);
+void Fade::Why(PhysicalOperator* op,  EvalConfig config) {
+  /*
+  std::unordered_map<std::string, std::vector<std::string>> columns_spec = parseSpec( config);
 
   // holds any extra data needed during exec
   std::unordered_map<idx_t, FadeDataPerNode> fade_data;
@@ -526,18 +393,12 @@ void Fade::Why(PhysicalOperator* op, int k, string columns_spec_str, int distinc
   // 2. Post Process
   LineageManager::PostProcess(op);
 
-  // 3. Prune: 	needed only when intervention eval would generate heavy computations in JOIN/FILTER
-  // 			or if it'd help to use less memory space.
-  // Prune(op, {});
-
   // 4. Prepare base interventions; should be one time cost per DB
-  if (distinct <= 0) {
-	  GenIntervention(op, fade_data, columns_spec);
+  if (config.n_intervention <= 0) {
+	  Fade::GenIntervention(op, fade_data, columns_spec);
   } else {
-	  GenRandomIntervention(op, fade_data, columns_spec, distinct);
+	  GenRandomIntervention(op, fade_data, columns_spec, config.n_intervention);
   }
-
-  // TODO: add pass to allocate data structures for interventions
 
   // 4. run intervention
   std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
@@ -553,58 +414,10 @@ void Fade::Why(PhysicalOperator* op, int k, string columns_spec_str, int distinc
   // 4. generate disjunctive predicate iteratively and rank them
   // std::vector<int> inputSet = {1, 2, 3};
   // subsets(inputSet);
+   */
 }
 
 /*
-
-
-void Prune(PhysicalOperator* op, set<idx_t> parent_pruning_set, bool root=false) {
-    DataChunk result;
-    idx_t global_count = 0;
-    idx_t local_count = 0;
-    idx_t current_thread = 0;
-    idx_t log_id = 0;
-    bool cache_on = false;
-    vector<set<idx_t>> pruning_set_per_child(op->children.size(), {});
-    do {
-        cache_on = false;
-        result.Reset();
-        result.Destroy();
-        op->lineage_op->GetLineageAsChunk(result, global_count, local_count,
-                                          current_thread, log_id, cache_on);
-        result.Flatten();
-        if (op->type == PhysicalOperatorType::HASH_JOIN) {
-            unsigned int * lhs_index = reinterpret_cast<unsigned int *>(result.data[0].GetData());
-            unsigned int * rhs_index = reinterpret_cast<unsigned int *>(result.data[1].GetData());
-            int * out_index = reinterpret_cast<int *>(result.data[1].GetData());
-            for (idx_t i=0; i < result.size(); ++i) {
-                idx_t oid = out_index[i];
-                idx_t lhs = lhs_index[i];
-                idx_t rhs = rhs_index[i];
-                if (root == false && parent_pruning_set.find(oid) == parent_pruning_set.end()) {
-                    continue;
-                }
-                pruning_set_per_child[0].insert(lhs);
-                pruning_set_per_child[1].insert(rhs);
-            }
-        } else {
-            unsigned int * in_index = reinterpret_cast<unsigned int *>(result.data[0].GetData());
-            int * out_index = reinterpret_cast<int *>(result.data[1].GetData());
-            for (idx_t i=0; i < result.size(); ++i) {
-                idx_t oid = out_index[i];
-                idx_t iid = in_index[i];
-                if (root == false && parent_pruning_set.find(oid) == parent_pruning_set.end()) {
-                    continue;
-                }
-                pruning_set_per_child[0].insert(iid);
-            }
-        }
-    } while (cache_on || result.size() > 0);
-
-for (idx_t i = 0; i < op->children.size(); i++) {
-  Prune(op->children[i].get(), pruning_set_per_child[i]);
-}
-}
 
 void backtrack(const std::vector<int>& nums, const std::vector<int>& path, std::vector<std::vector<int>>& res, size_t size, int subset_sum, std::vector<int>& powerset_sum_opt) {
   if (path.size() == size) {
