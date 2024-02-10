@@ -68,8 +68,38 @@ public:
 
 	static void Why(PhysicalOperator* op, int k, string columns_spec, int distinct);
 	static string Whatif(PhysicalOperator* op, EvalConfig config);
-	//static void WhatifCompile(PhysicalOperator* op, string intervention_type, string columns_spec, int n_intervention);
 	static void Rexec(PhysicalOperator* op);
+
+	template<class T1, class T2>
+	static T2* GetInputVals(PhysicalOperator* op, shared_ptr<OperatorLineage> lop, idx_t col_idx);
+
+	static void* compile(std::string code, int id);
+
+	static std::unordered_map<std::string, float> parseWhatifString(EvalConfig& config);
+
+
+	template <class T>
+	static void PrintOutput(FadeDataPerNode& info, T* data_ptr);
+
+	static void GetLineage(EvalConfig& config, PhysicalOperator* op,
+	                std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
+	                std::unordered_map<std::string, float> columns_spec);
+
+	static void FillFilterLineage(PhysicalOperator *op, shared_ptr<OperatorLineage> lop,
+	                              std::unordered_map<idx_t, FadeDataPerNode>& fade_data);
+
+	static void FillJoinLineage(PhysicalOperator *op, shared_ptr<OperatorLineage> lop,
+	                     std::unordered_map<idx_t,FadeDataPerNode>& fade_data);
+
+	static std::vector<int> GetGBLineage(shared_ptr<OperatorLineage> lop, int row_count);
+
+	static void PruneLineage(EvalConfig& config, PhysicalOperator* op,
+	                  std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
+	                  vector<int>& out_order);
+
+	static void ReleaseFade(EvalConfig& config, void* handle, PhysicalOperator* op,
+	                 std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
+	                 std::unordered_map<std::string, float> columns_spec);
 
 };
 

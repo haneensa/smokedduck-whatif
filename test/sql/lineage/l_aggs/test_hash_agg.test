@@ -29,8 +29,8 @@ PRAGMA disable_lineage;
 PRAGMA disable_optimizer;
 PRAGMA threads=1;
 
-query I
-pragma WhatIf(2, 'd', 't1:0.3', 1024, 1, false, false);
+query IIIII
+pragma WhatIf(2, 'd', 't1:0.3', 1, 1, true, false, 1, true, true);
 ----
 
 
