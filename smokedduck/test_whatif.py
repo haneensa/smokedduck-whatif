@@ -36,7 +36,9 @@ is_scalar = args.is_scalar
 batch = 4
 debug = args.debug
 prune = args.prune
-itype = "'DELETE_SPEC'"
+itype = "'DELETE'"
+#itype = "'DELETE_SPEC'"
+#itype = "'SEARCH'"
 
 qid = str(i).zfill(2)
 distinct = args.interventions

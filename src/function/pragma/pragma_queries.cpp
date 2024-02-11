@@ -285,4 +285,3 @@ void PragmaQueries::RegisterFunction(BuiltinFunctions &set) {
 }
 
 } // namespace duckdb
-
