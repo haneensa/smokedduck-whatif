@@ -36,6 +36,7 @@ is_scalar = args.is_scalar
 batch = 4
 debug = args.debug
 prune = args.prune
+itype = "'DELETE_SPEC'"
 
 qid = str(i).zfill(2)
 distinct = args.interventions
@@ -61,7 +62,7 @@ lineage_capture_timing = end - start
 query_id = con.query_id
 print("=================", query_id, qid, use_duckdb, is_scalar, num_threads)
 # use_duckdb = false, is_scalr = true/false, batch = 4
-q = f"pragma WhatIf({query_id}, 'd', 'lineitem:0.3', {distinct}, {batch}, {is_scalar}, {use_duckdb}, {num_threads}, {debug}, {prune});"
+q = f"pragma WhatIf({query_id}, {itype}, 'lineitem.i', {distinct}, {batch}, {is_scalar}, {use_duckdb}, {num_threads}, {debug}, {prune});"
 timings = con.execute(q).fetchdf()
 print(timings)
 

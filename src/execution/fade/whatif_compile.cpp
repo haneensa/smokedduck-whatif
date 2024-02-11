@@ -247,7 +247,7 @@ void GenRandomWhatifIntervention(EvalConfig config, PhysicalOperator* op,
 	}
 
 	if (op->type == PhysicalOperatorType::TABLE_SCAN) {
-		if (spec.find(op->lineage_op->table_name) == spec.end() && config.intervention_type == InterventionType::SEARCH) {
+		if (spec.find(op->lineage_op->table_name) == spec.end() && config.intervention_type == InterventionType::DELETE_SPEC) {
 			return;
 		}
 
@@ -538,7 +538,9 @@ void GenCodeAndAlloc(EvalConfig& config, string& code, PhysicalOperator* op,
 
 
 	if (op->type == PhysicalOperatorType::TABLE_SCAN) {
-		if (spec.find(op->lineage_op->table_name) == spec.end() && config.intervention_type == InterventionType::SEARCH) {
+      std::cout << "check this scan " << op->lineage_op->table_name << std::endl;
+		if (spec.find(op->lineage_op->table_name) == spec.end() && config.intervention_type == InterventionType::DELETE_SPEC) {
+      std::cout << "skip this scan" << std::endl;
 			fade_data[op->id].n_interventions = 0;
 			fade_data[op->id].n_masks = 0;
 			return;

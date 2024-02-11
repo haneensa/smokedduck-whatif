@@ -223,6 +223,8 @@ string PragmaWhatif(ClientContext &context, const FunctionParameters &parameters
 		intervention_type = SCALE;
 	} else if (intervention_type_str == "SEARCH") {
 		intervention_type = SEARCH;
+	} else if (intervention_type_str == "DELETE_SPEC") {
+		intervention_type = DELETE_SPEC;
 	}
 
 	string spec = parameters.values[2].ToString();
