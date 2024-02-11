@@ -189,7 +189,7 @@ string get_agg_init_predicate(EvalConfig config, int row_count, int chunk_count,
 
 string get_agg_eval_predicate(EvalConfig config, int agg_count, string fn, string out_var="", string in_var="", string data_type="int") {
 	std::ostringstream oss;
-	// if functions are incrementally removable, then agg the part we want to remove
+	// if functions are incrementally removable, then agg the part
 	if (fn == "sum") {
 		oss << "\t\t";
 		oss << out_var + "[col+row] +=" + in_var + ";\n";
@@ -203,7 +203,6 @@ string get_agg_eval_predicate(EvalConfig config, int agg_count, string fn, strin
 string HashAggregateCodeAndAllocPredicate(EvalConfig& config, shared_ptr<OperatorLineage> lop,
                                 std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
                                 PhysicalOperator* op) {
-	const int n_interventions = fade_data[op->id].n_interventions;
 	string eval_code;
 	string code;
 	string alloc_code;

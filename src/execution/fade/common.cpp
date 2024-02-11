@@ -646,7 +646,7 @@ vector<int> Fade::random_unique(shared_ptr<OperatorLineage> lop, idx_t distinct)
 	// Seed the random number generator
 	std::random_device rd;
 	std::mt19937 gen(rd());
-	idx_t row_count = lop->chunk_collection.Count();
+	idx_t row_count = lop->log_index->table_size;
 
 	// Generate random values
 	std::uniform_int_distribution<int> distribution(0, distinct - 1);

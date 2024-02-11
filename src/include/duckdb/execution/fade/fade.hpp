@@ -40,8 +40,6 @@ struct FadeDataPerNode {
 	int (*join_fn)(int, int*, int*, void*, void*, void*);
 	int (*agg_duckdb_fn)(int, int*, void*, std::unordered_map<std::string, vector<void*>>&, ChunkCollection&);
 	int (*agg_fn)(int, int*, void*, std::unordered_map<std::string, vector<void*>>&,  std::unordered_map<int, void*>&);
-	    // Default constructor with default values
-	FadeDataPerNode() : n_interventions(1), n_masks(0), del_interventions(nullptr) {}
 };
 
 enum InterventionType {
