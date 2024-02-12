@@ -56,6 +56,7 @@ struct EvalConfig {
 	bool use_duckdb;
 	bool debug;
 	bool prune;
+	bool incremental;
 	string columns_spec_str;
 	InterventionType intervention_type;
 	int n_intervention;

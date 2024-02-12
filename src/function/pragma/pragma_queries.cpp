@@ -235,9 +235,10 @@ string PragmaWhatif(ClientContext &context, const FunctionParameters &parameters
 	int num_workers = parameters.values[7].GetValue<int>();
 	bool debug = parameters.values[8].GetValue<bool>();
 	bool prune = parameters.values[9].GetValue<bool>();
+	bool incremental = parameters.values[10].GetValue<bool>();
 
 	std::cout << "\nPragmaWhatif " << qid << " " << intervention_type_str << " " <<  spec << " " <<
-	    n_interventions << " " << batch << " "<< is_scalar << " " << use_duckdb << " " << prune << std::endl;
+	    n_interventions << " " << batch << " "<< is_scalar << " " << use_duckdb << " " << prune << " " << incremental << std::endl;
 	// 1. find the query plan associated with qid
 	PhysicalOperator* op = context.client_data->lineage_manager->queryid_to_plan[qid].get();
 	int mask_size = 16;
@@ -246,10 +247,10 @@ string PragmaWhatif(ClientContext &context, const FunctionParameters &parameters
 	// takes in query id, attributes to intervene on, conjunctive only or conjunctive and disjunction, or random
 
 	if (intervention_type == SEARCH) {
-			return Fade::PredicateSearch(op, { batch, mask_size, is_scalar, use_duckdb, debug, prune,
+			return Fade::PredicateSearch(op, { batch, mask_size, is_scalar, use_duckdb, debug, prune, incremental,
 		                                  spec, intervention_type, n_interventions, qid, num_workers, prob, topk} );
 	} else {
-		    return Fade::Whatif(op, { batch, mask_size, is_scalar, use_duckdb, debug, prune,
+		    return Fade::Whatif(op, { batch, mask_size, is_scalar, use_duckdb, debug, prune, incremental,
 											 spec, intervention_type, n_interventions, qid, num_workers, prob, topk} );
 	}
 }
@@ -280,7 +281,7 @@ void PragmaQueries::RegisterFunction(BuiltinFunctions &set) {
 	                                                                    LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::INTEGER,
 	                                                                    LogicalType::INTEGER, LogicalType::BOOLEAN,
 	                                                                    LogicalType::BOOLEAN, LogicalType::INTEGER,
-	                                                                    LogicalType::BOOLEAN, LogicalType::BOOLEAN}));
+	                                                                    LogicalType::BOOLEAN, LogicalType::BOOLEAN, LogicalType::BOOLEAN}));
 #endif
 }
 

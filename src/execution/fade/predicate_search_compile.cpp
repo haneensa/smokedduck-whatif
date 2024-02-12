@@ -181,24 +181,52 @@ string get_agg_init_predicate(EvalConfig config, int row_count, int chunk_count,
 )";
 	}
 
+
 	oss << get_vals_code;
 
 
 	return oss.str();
 }
 
+
 string get_agg_eval_predicate(EvalConfig config, int agg_count, string fn, string out_var="", string in_var="", string data_type="int") {
 	std::ostringstream oss;
-	// if functions are incrementally removable, then agg the part
-	if (fn == "sum") {
-		oss << "\t\t";
-		oss << out_var + "[col+row] +=" + in_var + ";\n";
-	} else if (fn == "count") {
-		oss << "\t\t";
-		oss << "out_count[col+row] += 1;\n";
+	if (config.incremental) { // if functions are incrementally removable, then agg the part
+		if (fn == "sum") {
+			oss << "\t\t";
+			oss << out_var + "[col+row] +=" + in_var + ";\n";
+		} else if (fn == "count") {
+			oss << "\t\t";
+			oss << "out_count[col+row] += 1;\n";
+		}
+		return oss.str();
 	}
+
+	if (agg_count % config.batch == 0) {
+		if (agg_count > 0) {
+			oss << "\n\t\t\t}\n"; // close for (int j=0; j < n_interventions; j++)
+		}
+
+		oss << R"(
+			for (int j=0; j < n_interventions; j++) {
+				if (row == j) continue;
+
+)";
+	}
+
+	if (fn == "sum") {
+		oss << "\t\t\t\t";
+		oss << out_var+"[col + j ] +="+ in_var+";\n";
+	} else if (fn == "count") {
+		oss << "\t\t\t\t";
+		oss << "out_count[col + j ] += 1;\n";
+	}
+
 	return oss.str();
 }
+
+
+
 
 string HashAggregateCodeAndAllocPredicate(EvalConfig& config, shared_ptr<OperatorLineage> lop,
                                 std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
@@ -279,11 +307,16 @@ string HashAggregateCodeAndAllocPredicate(EvalConfig& config, shared_ptr<Operato
 	string init_code = get_agg_init_predicate(config, row_count, op->children[0]->lineage_op->chunk_collection.ChunkCount(), op->id,  fade_data[op->id].n_interventions, "agg", alloc_code, get_data_code, get_vals_code);
 	string end_code;
 
+	if (config.incremental == false) {
+		end_code += "\n\t\t\t}\n";
+	}
+
 	if (config.use_duckdb) {
 		end_code += "\t} \n offset +=  collection_chunk.size();\n}\nreturn 0;\n}\n";
 	} else {
 		end_code += "\t}\n \treturn 0;\n}\n";
 	}
+
 
 	code = init_code + eval_code + end_code;
 

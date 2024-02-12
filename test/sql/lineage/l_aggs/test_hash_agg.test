@@ -31,13 +31,15 @@ PRAGMA threads=1;
 
 # qid:INT, Itype:STR, spec:STR, n_interventions:INT, batch:INT, is_scalar:BOOL, use_duckdb:BOOL, threads:INT, debug:BOOL, prune:BOOL
 
+
 query IIIII
-pragma WhatIf(2, 'DELETE', 't1.i', 1, 1, true, false, 1, true, true);
+pragma WhatIf(2, 'SEARCH', 't1.i', 0, 2, true, false, 1, true, true, true);
 ----
 
 
+
 query IIIII
-pragma WhatIf(2, 'SEARCH', 't1.i', 0, 1, true, false, 1, true, true);
+pragma WhatIf(2, 'DELETE', 't1.i', 1, 1, true, false, 1, true, true, true);
 ----
 
 
