@@ -52,10 +52,10 @@ class Lineage(ProvenanceModel):
         pass
 
     def pre_capture_pragmas(self) -> list:
-        return ["pragma enable_intermediate_tables", "pragma enable_lineage"]
+        return ["pragma enable_lineage"]
 
     def post_capture_pragmas(self) -> list:
-        return ["pragma disable_lineage", "pragma disable_intermediate_tables"]
+        return ["pragma disable_lineage"]
 
     def get_froms(self, plan: dict, query_id: int, op: Op) -> list:
         return [op.get_from_string()]

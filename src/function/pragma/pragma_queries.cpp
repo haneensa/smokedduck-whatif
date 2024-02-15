@@ -218,13 +218,13 @@ string PragmaUserAgent(ClientContext &context, const FunctionParameters &paramet
 string PragmaWhatif(ClientContext &context, const FunctionParameters &parameters) {
 	int qid = parameters.values[0].GetValue<int>();
 	string intervention_type_str = parameters.values[1].ToString();
-	InterventionType intervention_type =  DELETE;
+	InterventionType intervention_type =  DENSE_DELETE_ALL;
 	if (intervention_type_str == "SCALE") {
 		intervention_type = SCALE;
 	} else if (intervention_type_str == "SEARCH") {
 		intervention_type = SEARCH;
-	} else if (intervention_type_str == "DELETE_SPEC") {
-		intervention_type = DELETE_SPEC;
+	} else if (intervention_type_str == "DENSE_DELETE_SPEC") {
+		intervention_type = DENSE_DELETE_SPEC;
 	}
 
 	string spec = parameters.values[2].ToString();
@@ -236,13 +236,14 @@ string PragmaWhatif(ClientContext &context, const FunctionParameters &parameters
 	bool debug = parameters.values[8].GetValue<bool>();
 	bool prune = parameters.values[9].GetValue<bool>();
 	bool incremental = parameters.values[10].GetValue<bool>();
+	float prob = parameters.values[11].GetValue<float>();
 
 	std::cout << "\nPragmaWhatif " << qid << " " << intervention_type_str << " " <<  spec << " " <<
-	    n_interventions << " " << batch << " "<< is_scalar << " " << use_duckdb << " " << prune << " " << incremental << std::endl;
+	    n_interventions << " " << batch << " "<< is_scalar << " " << use_duckdb << " " <<
+      prune << " " << incremental << " " << prob << std::endl;
 	// 1. find the query plan associated with qid
 	PhysicalOperator* op = context.client_data->lineage_manager->queryid_to_plan[qid].get();
 	int mask_size = 16;
-	float prob = 0.1;
 	int topk = 3;
 	// takes in query id, attributes to intervene on, conjunctive only or conjunctive and disjunction, or random
 
@@ -281,7 +282,8 @@ void PragmaQueries::RegisterFunction(BuiltinFunctions &set) {
 	                                                                    LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::INTEGER,
 	                                                                    LogicalType::INTEGER, LogicalType::BOOLEAN,
 	                                                                    LogicalType::BOOLEAN, LogicalType::INTEGER,
-	                                                                    LogicalType::BOOLEAN, LogicalType::BOOLEAN, LogicalType::BOOLEAN}));
+	                                                                    LogicalType::BOOLEAN, LogicalType::BOOLEAN,
+                                                                      LogicalType::BOOLEAN, LogicalType::FLOAT}));
 #endif
 }
 

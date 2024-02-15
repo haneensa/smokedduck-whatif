@@ -132,7 +132,7 @@ static void PragmaWhy(ClientContext &context, const FunctionParameters &paramete
 
 	EvalConfig config;
 	config.columns_spec_str = spec;
-	config.intervention_type = DELETE;
+	config.intervention_type = DENSE_DELETE_ALL;
 	config.n_intervention = distinct;
 	config.topk = k;
 	// takes in query id, attributes to intervene on, conjunctive only or conjunctive and disjunction, or random

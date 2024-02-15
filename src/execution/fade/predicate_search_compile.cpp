@@ -209,7 +209,7 @@ string get_agg_eval_predicate(EvalConfig config, int agg_count, string fn, strin
 
 		oss << R"(
 			for (int j=0; j < n_interventions; j++) {
-				if (row == j) continue;
+				//if (row == j) continue;
 
 )";
 	}

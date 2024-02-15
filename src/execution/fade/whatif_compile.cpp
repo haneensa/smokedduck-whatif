@@ -12,12 +12,6 @@
 #include <thread>
 #include <vector>
 
-/*
-  1. traverse plan to construct template
-  2. compile
-  2. traverse plan to bind variables and execute code
-*/
-
 namespace duckdb {
 
 string fill_random_code(EvalConfig config) {
@@ -247,7 +241,7 @@ void GenRandomWhatifIntervention(EvalConfig config, PhysicalOperator* op,
 	}
 
 	if (op->type == PhysicalOperatorType::TABLE_SCAN) {
-		if (spec.find(op->lineage_op->table_name) == spec.end() && config.intervention_type == InterventionType::DELETE_SPEC) {
+		if (spec.find(op->lineage_op->table_name) == spec.end() && config.intervention_type == InterventionType::DENSE_DELETE_SPEC) {
 			return;
 		}
 
@@ -304,7 +298,13 @@ string JoinCodeAndAlloc(EvalConfig config, PhysicalOperator *op, shared_ptr<Oper
 	oss << "\tfor (int i=start; i < end; i++) {\n";
 
 	if (config.n_intervention == 1) {
-		oss << R"(out[i] = lhs_var[lhs_lineage[i]] * rhs_var[rhs_lineage[i]];)";
+		if ( fade_data[op->children[0]->id].n_interventions > 0 && fade_data[op->children[1]->id].n_interventions > 0) {
+		  oss << R"(out[i] = lhs_var[lhs_lineage[i]] * rhs_var[rhs_lineage[i]];)";
+		} else if (fade_data[op->children[0]->id].n_interventions > 0) {
+			oss << R"(out[i] = lhs_var[lhs_lineage[i]];)";
+		} else {
+			oss << R"(out[i] = rhs_var[rhs_lineage[i]];)";
+		}
 	} else if (config.is_scalar) {
 		oss << R"(
 		for (int j=0; j < n_masks; j++) {
@@ -538,13 +538,14 @@ void GenCodeAndAlloc(EvalConfig& config, string& code, PhysicalOperator* op,
 
 
 	if (op->type == PhysicalOperatorType::TABLE_SCAN) {
-      std::cout << "check this scan " << op->lineage_op->table_name << std::endl;
-		if (spec.find(op->lineage_op->table_name) == spec.end() && config.intervention_type == InterventionType::DELETE_SPEC) {
-      std::cout << "skip this scan" << std::endl;
+		if (spec.find(op->lineage_op->table_name) == spec.end() && config.intervention_type == InterventionType::DENSE_DELETE_SPEC) {
+      std::cout << "skip this scan " << op->lineage_op->table_name <<std::endl;
 			fade_data[op->id].n_interventions = 0;
 			fade_data[op->id].n_masks = 0;
 			return;
 		}
+    
+    std::cout << "check this scan " << op->lineage_op->table_name << std::endl;
 
 		idx_t row_count = op->lineage_op->log_index->table_size;
 		idx_t n_masks = std::ceil(config.n_intervention / config.mask_size);
@@ -561,7 +562,7 @@ void GenCodeAndAlloc(EvalConfig& config, string& code, PhysicalOperator* op,
 		fade_data[op->id].n_masks = fade_data[op->children[0]->id].n_masks;
 		fade_data[op->id].n_interventions = fade_data[op->children[0]->id].n_interventions;
 		idx_t n_masks = fade_data[op->id].n_masks;
-		if (n_masks > 0 || config.n_intervention == 1) {
+		if (n_masks > 0 || fade_data[op->id].n_interventions == 1) {
 			idx_t row_count = fade_data[op->id].lineage[0].size();
 			if (config.prune) {
 				fade_data[op->id].del_interventions  = fade_data[op->children[0]->id].del_interventions;
@@ -578,10 +579,11 @@ void GenCodeAndAlloc(EvalConfig& config, string& code, PhysicalOperator* op,
 	           || op->type == PhysicalOperatorType::BLOCKWISE_NL_JOIN
 	           || op->type == PhysicalOperatorType::PIECEWISE_MERGE_JOIN
 	           || op->type == PhysicalOperatorType::CROSS_PRODUCT) {
-		fade_data[op->id].n_interventions = fade_data[op->children[0]->id].n_interventions;
+		fade_data[op->id].n_interventions = fade_data[op->children[0]->id].n_interventions ||
+      fade_data[op->children[1]->id].n_interventions;
 		fade_data[op->id].n_masks = fade_data[op->children[0]->id].n_masks;
 		idx_t n_masks = fade_data[op->id].n_masks;
-		if (n_masks > 0 || config.n_intervention == 1) {
+		if (n_masks > 0 || fade_data[op->id].n_interventions == 1) {
 			idx_t row_count = fade_data[op->id].lineage[0].size();
 			if (config.n_intervention == 1) {
 				fade_data[op->id].single_del_interventions = new int8_t[row_count];
@@ -695,6 +697,11 @@ void Intervention2DEval(int thread_id, EvalConfig config, void* handle, Physical
 	}
 }
 
+/*
+  1. traverse plan to construct template
+  2. compile
+  2. traverse plan to bind variables and execute code
+*/
 string Fade::Whatif(PhysicalOperator *op, EvalConfig config) {
 	// timing vars
 	std::chrono::steady_clock::time_point start_time, end_time;
@@ -706,6 +713,7 @@ string Fade::Whatif(PhysicalOperator *op, EvalConfig config) {
 	// 1. Parse Spec = table_name.col:scale
 	std::unordered_map<std::string, std::vector<std::string>> columns_spec = parseSpec( config);
 
+  // TODO: combine post process and gen. materialize all lineage as 1D array and free lineage temp data
 	// 2. Post Process
 	start_time = std::chrono::steady_clock::now();
 	LineageManager::PostProcess(op);

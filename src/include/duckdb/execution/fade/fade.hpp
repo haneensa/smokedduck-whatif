@@ -43,8 +43,8 @@ struct FadeDataPerNode {
 };
 
 enum InterventionType {
-	DELETE,
-	DELETE_SPEC,
+	DENSE_DELETE_ALL,
+	DENSE_DELETE_SPEC,
 	SCALE,
 	SEARCH
 };
