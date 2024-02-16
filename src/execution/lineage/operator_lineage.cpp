@@ -19,6 +19,14 @@ void OperatorLineage::PostProcess() {
 	processed = true;
 }
 
+
+void OperatorLineage::Clear() {
+	// 3. clear
+	for (idx_t i : thread_vec) {
+		log_per_thread[i]->Clear();
+	}
+}
+
 void OperatorLineage::InitLog(idx_t thread_id, PhysicalOperator* op) {
   if (trace_lineage == false) return;
 

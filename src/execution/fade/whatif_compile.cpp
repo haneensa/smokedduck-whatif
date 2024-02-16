@@ -697,6 +697,20 @@ void Intervention2DEval(int thread_id, EvalConfig config, void* handle, Physical
 	}
 }
 
+
+void Clear(PhysicalOperator *op) {
+	// massage the data to make it easier to query
+	// for hash join, build hash table on the build side that map the address to id
+	// for group by, build hash table on the unique groups
+	if (op->lineage_op) {
+		op->lineage_op->Clear();
+	}
+
+	for (idx_t i = 0; i < op->children.size(); i++) {
+		Clear(op->children[i].get());
+	}
+}
+
 /*
   1. traverse plan to construct template
   2. compile
@@ -738,6 +752,8 @@ string Fade::Whatif(PhysicalOperator *op, EvalConfig config) {
 		time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
 		prune_time = time_span.count();
 	}
+
+	Clear(op);
 
 	// 4. Alloc vars, generate eval code
 	string code;

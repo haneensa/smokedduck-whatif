@@ -71,6 +71,8 @@ public:
 	virtual void BuildIndexes(shared_ptr<LogIndex> logIdx) {};
 	virtual void PostProcess(shared_ptr<LogIndex> logIdx) {};
 
+	virtual void Clear() {};
+
 	virtual ~Log() {
 		// Virtual destructor in the base class
 	}
@@ -78,8 +80,8 @@ public:
 	idx_t thid;
 	vector<std::pair<idx_t, idx_t>> output_index;
 	vector<std::pair<idx_t, idx_t>> cached_output_index;
-  bool processed;
-  idx_t out_offset;
+  	bool processed;
+  	idx_t out_offset;
 };
 
 // TableScanLog
@@ -110,6 +112,9 @@ class TableScanLog : public Log {
   idx_t ChunksCount() override;
   void BuildIndexes(shared_ptr<LogIndex> logIdx) override;
   void PostProcess(shared_ptr<LogIndex> logIdx) override;
+  void Clear() override {
+	  lineage.clear();
+  }
 
 public:
   vector<scan_artifact> lineage;
@@ -143,7 +148,11 @@ public:
   idx_t ChunksCount() override;
   void BuildIndexes(shared_ptr<LogIndex> logIdx) override;
   void PostProcess(shared_ptr<LogIndex> logIdx) override;
+  void Clear() override {
+	lineage.clear();
+  }
 
+  public:
   vector<filter_artifact> lineage;
 };
 
@@ -162,6 +171,9 @@ class OrderByLog : public Log {
   idx_t Size() override;
   idx_t Count() override;
   idx_t ChunksCount() override;
+  void Clear() override {
+	lineage.clear();
+  }
 
 public:
   vector<vector<idx_t>> lineage;
@@ -189,6 +201,9 @@ class LimitLog : public Log {
   idx_t Count() override;
   idx_t ChunksCount() override;
   void BuildIndexes(shared_ptr<LogIndex> logIdx) override;
+  void Clear() override {
+	lineage.clear();
+  }
 
 public:
   vector<limit_artifact> lineage;
@@ -220,6 +235,9 @@ class CrossLog : public Log {
 	                      idx_t &cache_offset, idx_t &cache_size, bool &cache,
 	                      shared_ptr<LogIndex> logIdx) override;
     
+  void Clear() override {
+	lineage.clear();
+  }
 
 public:
   vector<cross_artifact> lineage;
@@ -265,6 +283,11 @@ class NLJLog : public SharedJoinLog {
 	                      idx_t &cache_offset, idx_t &cache_size, bool &cache,
 	                      shared_ptr<LogIndex> logIdx) override;
   void PostProcess(shared_ptr<LogIndex> logIdx) override;
+
+  void Clear() override {
+	lineage.clear();
+  }
+
 public:
   vector<nlj_artifact> lineage;
 };
@@ -296,6 +319,9 @@ class BNLJLog : public SharedJoinLog {
 	                      shared_ptr<LogIndex> logIdx) override;
 
   void PostProcess(shared_ptr<LogIndex> logIdx) override;
+  void Clear() override {
+	lineage.clear();
+  }
 
 public:
   vector<bnlj_artifact> lineage;
@@ -328,6 +354,10 @@ class MergeLog : public SharedJoinLog {
 	                      shared_ptr<LogIndex> logIdx) override;
   void BuildIndexes(shared_ptr<LogIndex> logIdx) override;
   void PostProcess(shared_ptr<LogIndex> logIdx) override;
+  void Clear() override {
+	lineage.clear();
+	combine.clear();
+  }
 
 public:
   vector<merge_artifact> lineage;
@@ -359,6 +389,10 @@ class PHALog : public Log {
 	idx_t Count() override;
 	idx_t ChunksCount() override;
 	void BuildIndexes(shared_ptr<LogIndex> logIdx) override;
+	void Clear() override {
+		build_lineage.clear();
+		scan_lineage.clear();
+	}
 
 public:
   vector<vector<uint32_t>> build_lineage;
@@ -422,6 +456,20 @@ class HALog : public Log {
 	idx_t ChunksCount() override;
 	void BuildIndexes(shared_ptr<LogIndex> logIdx) override;
 	void PostProcess(shared_ptr<LogIndex> logIdx) override;
+	void Clear() override {
+		addchunk_log.clear();
+		sink_log.clear();
+		flushmove_log.clear();
+		partition_log.clear();
+		radix_log.clear();
+		combine_log.clear();
+		finalize_log.clear();
+		scan_log.clear();
+		distinct_index.clear();
+		distinct_scan.clear();
+		distinct_sink.clear();
+		grouping_set.clear();
+	}
 
 public:
   vector<hg_artifact> addchunk_log;
@@ -497,6 +545,12 @@ public:
   idx_t ChunksCount() override;
   void BuildIndexes(shared_ptr<LogIndex> logIdx) override;
   void PostProcess(shared_ptr<LogIndex> logIdx) override;
+  void Clear() override {
+	lineage_build.clear();
+	lineage_finalize.clear();
+	lineage_binary.clear();
+	lineage_binary_semiright.clear();
+  }
 
 public:
   vector<hj_build_artifact> lineage_build;

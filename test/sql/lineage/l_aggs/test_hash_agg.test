@@ -33,13 +33,13 @@ PRAGMA threads=1;
 
 
 query IIIII
-pragma WhatIf(2, 'SEARCH', 't1.i', 0, 2, true, false, 1, true, true, true);
+pragma WhatIf(2, 'SEARCH', 't1.i', 0, 2, true, false, 1, true, true, true, 0.1);
 ----
 
 
 
 query IIIII
-pragma WhatIf(2, 'DELETE', 't1.i', 1, 1, true, false, 1, true, true, true);
+pragma WhatIf(2, 'DELETE', 't1.i', 1, 1, true, false, 1, true, true, true, 0.1);
 ----
 
 

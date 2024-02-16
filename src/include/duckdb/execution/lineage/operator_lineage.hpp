@@ -48,6 +48,8 @@ public:
 
 	void PostProcess();
 
+	void Clear();
+
 public:
   idx_t opid;
   bool trace_lineage;

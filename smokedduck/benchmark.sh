@@ -18,7 +18,7 @@ touch ${csv}
 echo sf,qid,itype,prob,incremental,use_duckdb,is_scalar,prune,num_threads,distinct,batch,post_time,gen_time,prep_time,compile_time,eval_time,prune_time,lineage_time,ksemimodule_timing > ${csv}
 
 capture_lineage_overhead="false"
-if [ "$capture_lineage_overhead" = "false" ]; then
+if [ "$capture_lineage_overhead" = "true" ]; then
   lineage_csv="fade_data/lineage_overhead.csv"
   touch ${lineage_csv}
   echo qid,sf,query_timing,lineage_timing > ${lineage_csv}
