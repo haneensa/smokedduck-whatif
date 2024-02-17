@@ -286,6 +286,15 @@ if True:
     if include_dbt:
         # fig 1:
         # x-axis prob, y-axis dbt normalized latency against fade
+        data_single_v2 = pd.read_csv('dense_single_v3.csv')
+        data_single_v2["eval_time_ms"]=1000*data_single_v2["eval_time"]
+        data_single_v2["query"] = "Q"+data_single_v2["qid"].astype(str)
+        data_single_v2["cat"] = data_single_v2.apply(lambda row: str(row["num_threads"]) + " Threads", axis=1)
+        data_single_v2["cat"] = data_single_v2.apply(lambda row: row["cat"] + "+SIMD" if row["is_scalar"] == False else row["cat"] , axis=1)
+        data_single_v2["cat"] = data_single_v2.apply(lambda row: row["itype"]+" ^"+row["cat"] if row["incremental"] and row["itype"] == "S" else row["itype"] + row["cat"], axis=1)
+        data_single_v2["n"] = data_single_v2["distinct"]
+        data_single_v2["prune_label"] = data_single_v2.apply(lambda row:"Fade-P" if row["prune"] else "Fade" , axis=1)
+
 
         # TODO: add FaDe-Incr
         data["prune_label"] = data.apply(lambda row:"Fade-P" if row["prune"] else "Fade" , axis=1)
@@ -294,7 +303,7 @@ if True:
         (dbt.eval_time_ms / fade.eval_time_ms) as nor,
         dbt.eval_time_ms, fade.eval_time_ms
         from (select * from dbt_data where prune='True') as dbt JOIN
-        (select * from  data where itype='DD' and n=1 and num_threads=1) as fade
+        (select * from  data_single_v2 where n=1 and num_threads=1) as fade
         USING (query, sf)
         """).df()
         #(select * from  data where itype='S' and incremental='True' and n=1 and num_threads=1 and prune='True') as fade
@@ -310,7 +319,7 @@ if True:
             )
         p += legend_side
         p += facet_grid(".~prune_label", scales=esc("free_x"), space=esc("free_x"))
-        ggsave(f"figures/fade_dbt_vs_fade.png", p, postfix=postfix, width=3, height=2, scale=0.8)
+        ggsave(f"figures/fade_dbt_vs_fade.png", p, postfix=postfix, width=4, height=2.5, scale=0.8)
         
         dbt_fade_data_prune = con.execute("""select * from dbt_fade_data where prune_label='Fade-P'""").df()
         p = ggplot(dbt_fade_data_prune, aes(x='prob',  y="nor", color="query", fill="query",  group="query"))
@@ -321,12 +330,14 @@ if True:
             xkwargs=dict(breaks=[0.01, 0.05, 0.1,],  labels=list(map(esc,['0.01','0.05','0.1']))),
             )
         p += legend_side
-        ggsave(f"figures/fade_dbt_vs_fade_prune.png", p, postfix=postfix,  width=4, height=3, scale=0.8)
+        ggsave(f"figures/fade_dbt_vs_fade_prune.png", p, postfix=postfix,  width=3, height=2, scale=0.8)
 
         # fig 2:
         # reexecute
         fig1_data = con.execute("""
-            select 'Fade-prune' as system, query, prune, sf, eval_time_ms from data where n=1 and num_threads=1 and itype='DD' and prune='True'
+            select 'Fade-prune+' as system, query, prune, sf, eval_time_ms from data_single_v2 where n=1 and num_threads=1  and prune='True'
+            UNION ALL select 'Fade+' as system, query, prune, sf, eval_time_ms from data_single_v2 where n=1 and num_threads=1  and prune='False'
+            UNION ALL select 'Fade-prune' as system, query, prune, sf, eval_time_ms from data where n=1 and num_threads=1 and itype='DD' and prune='True'
             UNION ALL select 'Fade' as system, query, prune, sf, eval_time_ms from data where n=1 and num_threads=1 and itype='DD' and prune='False'
             UNION ALL select 'Q' as system, query, 'False' as prune, sf, query_timing*1000 as eval_time from lineage_data
             UNION ALL select 'Q+' as system, query, 'False' as prune, sf, lineage_timing*1000 as eval_time from lineage_data
@@ -339,6 +350,6 @@ if True:
         p += axis_labels('Query', 'Latency (ms) log', 'discrete', 'log10')
         p += legend_side
         p += facet_grid(".~sf", scales=esc("free_y"))
-        ggsave("figures/fade_dbt_single.png", p, width=6, height=3, scale=0.8)
+        ggsave("figures/fade_dbt_single.png", p, width=8, height=3, scale=0.8)
 
         # x-axis query, y-axis latency

@@ -25,6 +25,7 @@ parser.add_argument("--prune", help="prune", type=str, default="true")
 parser.add_argument("--itype", help="Intervention Type", type=str, default="DENSE_DELETE")
 parser.add_argument("--incremental", help="true if the agg functions are incremental", type=str, default="true")
 parser.add_argument("--prob", help="Deletion Probability", type=float, default="0.1")
+parser.add_argument("--batch", help="Agg functions batch", type=int, default="4")
 # DENSE_DELETE_ALL: dense matrix encoding and evaluation on all tables using prob specified by --prob
 # DENSE_DELETE_SPEC: same as DENSE_ALL except on only tables specified by --spec
 # SEARCH: conjunctive predicate search using sparse encoding
@@ -41,7 +42,7 @@ i = args.i
 use_duckdb = args.use_duckdb
 num_threads = args.t
 is_scalar = args.is_scalar
-batch = 4
+batch = args.batch
 debug = args.debug
 prune = args.prune
 prob = args.prob

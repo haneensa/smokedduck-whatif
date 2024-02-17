@@ -36,7 +36,7 @@ extern "C" int fill_random(int row_count, float prob, int n_masks, void* del_int
 
 	oss << "\nfor (int i = 0; i < row_count; ++i) {\n";
 	if (config.n_intervention == 1) {
-		oss << "\n del_interventions[i] = 1;"; // TODO: use random
+		oss << "\n del_interventions[i] = !(((double)rand() / RAND_MAX) < prob);"; // TODO: use random
 	} else {
 		oss << R"(
 		for (int j = 0; j < n_masks; ++j) {
@@ -56,7 +56,7 @@ extern "C" int fill_random(int row_count, float prob, int n_masks, void* del_int
 	return oss.str();
 }
 
-string get_agg_init(EvalConfig config, int row_count, int chunk_count, int opid, int n_interventions, string fn, string alloc_code,
+string get_agg_init(EvalConfig config, int total_agg_count, int row_count, int chunk_count, int opid, int n_interventions, string fn, string alloc_code,
                     string get_data_code, string get_vals_code) {
 	int n_masks = n_interventions / config.mask_size;
 	string fname = "agg_"+ to_string(opid) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
@@ -131,17 +131,33 @@ string get_agg_init(EvalConfig config, int row_count, int chunk_count, int opid,
 		oss << R"(
 		for (int i=0; i < collection_chunk.size(); ++i) {
 			int oid = lineage[i+offset];
-			int col = oid*n_interventions;
 )";
+		if (config.n_intervention == 1) {
+			if (total_agg_count > 1) {
+				oss << "\t\t\t\t\tif (var_0[i+offset] == 0) continue;\n";
+			}
+		} else {
+			oss << "\t\t\tint col = oid*n_interventions;\n";
+		}
 	} else {
+		// if incremental, iterate over size of the interventions. each element stores the id of the input to be deleted
+		// TODO: need to adjust filter and join to propagate input ids
+
 		oss << R"(
 	for (int i=start; i < end; i++) {
 		int oid = lineage[i];
-		int col = oid*n_interventions;
 )";
+		if (config.n_intervention == 1) {
+			if (total_agg_count > 1) {
+				oss << "\t\t\t\t\tif (var_0[i] == 0) continue;\n";
+			}
+		} else {
+			oss << "\t\t\tint col = oid*n_interventions;\n";
+		}
 	}
 
-	oss << get_vals_code;
+	if (config.n_intervention > 1)
+		oss << get_vals_code;
 
 
 	return oss.str();
@@ -177,24 +193,60 @@ string get_agg_eval_scalar(string fn, string out_var="", string in_var="") {
 	return oss.str();
 }
 
-string get_agg_eval(EvalConfig config, int agg_count, string fn, string out_var="", string in_var="", string data_type="int") {
+string get_single_agg_template(EvalConfig& config, int total_agg_count, int agg_count,
+                               string fn, string out_var="", string in_var="",
+                               string in_arr="", string data_type="int") {
 	std::ostringstream oss;
 
-	if (config.n_intervention == 1) {
-		if (fn == "sum") {
-			oss << "\t\t\t\t\t";
-			oss << out_var+"[col] +="+ in_var;
-		} else if (fn == "count") {
-			oss << "\t\t\t\t\t";
-			oss << "out_count[col] += 1 ";
-		}
+	// if incremental, then instead of iterating over the whole input data
+	// use_duckdb == False because I need to access elements directly. if I use duckdb, then first i need to locate the chunk, then access the element
+	// we iterate over the interventions, and each intervention stores the id of the tuple to be deleted
+
+	if (agg_count > 0 && agg_count % config.batch == 0) {
 		if (config.use_duckdb) {
-			oss  <<  " * var_0[i+offset];\n";
+			oss << R"(
+				}
+				for (int i=0; i < collection_chunk.size(); ++i) {
+				int oid = lineage[i+offset];
+)";
+			if (total_agg_count > 1) {
+				oss << "\t\t\t\t\tif (var_0[i+offset] == 0) continue;\n";
+			}
 		} else {
-			oss  <<  " * var_0[i];\n";
+			oss << R"(
+				}
+				for (int i=start; i < end; i++) {
+					int oid = lineage[i];
+)";
+			if (total_agg_count > 1) {
+				oss << "\t\t\t\t\tif (var_0[i] == 0) continue;\n";
+			}
 		}
-		return oss.str();
+
 	}
+
+	if (fn == "sum") {
+		oss << "\t\t\t\t\t";
+		oss << out_var+"[oid] +="+ in_arr + "[i]";
+	} else if (fn == "count") {
+		oss << "\t\t\t\t\t";
+		oss << "out_count[oid] += 1";
+	}
+	if (total_agg_count > 1) {
+		oss << ";\n";
+	} else {
+		if (config.use_duckdb) {
+			oss << " * var_0[i+offset];\n";
+		} else {
+			oss << " * var_0[i];\n";
+		}
+	}
+
+	return oss.str();
+}
+
+string get_batch_agg_template(EvalConfig& config, int agg_count, string fn, string out_var="", string in_var="", string data_type="int") {
+	std::ostringstream oss;
 
 	if (agg_count % config.batch == 0) {
 		if (agg_count > 0) {
@@ -209,11 +261,11 @@ string get_agg_eval(EvalConfig config, int agg_count, string fn, string out_var=
 				int row = j * mask_size;
 )";
 
-    if (config.use_duckdb) {
-		  oss << "\t\t\t\t__mmask16 tmp_mask = var_0[(i+offset)*n_masks+j];\n";
-    } else {
-		  oss << "\t\t\t\t__mmask16 tmp_mask = var_0[i*n_masks+j];\n";
-    }
+		if (config.use_duckdb) {
+			oss << "\t\t\t\t__mmask16 tmp_mask = var_0[(i+offset)*n_masks+j];\n";
+		} else {
+			oss << "\t\t\t\t__mmask16 tmp_mask = var_0[i*n_masks+j];\n";
+		}
 
 		if (config.is_scalar) {
 			oss << R"(
@@ -228,6 +280,19 @@ string get_agg_eval(EvalConfig config, int agg_count, string fn, string out_var=
 	} else {
 		oss << get_agg_simd_eval(fn, out_var, in_var, data_type);
 	}
+
+	return oss.str();
+}
+
+string get_agg_eval(EvalConfig& config, int total_agg_count, int agg_count, string fn, string out_var="", string in_var="", string in_arr="", string data_type="int") {
+	std::ostringstream oss;
+
+	if (config.n_intervention == 1) {
+		oss << get_single_agg_template(config, total_agg_count, agg_count, fn, out_var, in_var, in_arr, data_type);
+	} else {
+		oss << get_batch_agg_template(config, agg_count, fn, out_var, in_var, data_type);
+	}
+
 	return oss.str();
 }
 
@@ -257,6 +322,62 @@ void GenRandomWhatifIntervention(EvalConfig config, PhysicalOperator* op,
 	}
 }
 
+string get_batch_join_template(EvalConfig &config, PhysicalOperator *op,
+                          std::unordered_map<idx_t, FadeDataPerNode>& fade_data) {
+	std::ostringstream oss;
+	if (config.is_scalar) {
+		oss << R"(
+for (int j=0; j < n_masks; j++) {
+)";
+		if ( fade_data[op->children[0]->id].n_masks > 0 && fade_data[op->children[1]->id].n_masks > 0) {
+			oss << R"(out[i*n_masks+j] = lhs_var[lhs_lineage[i]*n_masks+j] * rhs_var[rhs_lineage[i]*n_masks+j];)";
+		} else if (fade_data[op->children[0]->id].n_masks > 0) {
+			oss << R"(out[i*n_masks+j] = lhs_var[lhs_lineage[i]*n_masks+j];)";
+		} else {
+			oss << R"(out[i*n_masks+j] = rhs_var[rhs_lineage[i]*n_masks+j];)";
+		}
+
+		oss << "\n\t\t\t}";
+	} else {
+		oss << R"(
+		for (int j=0; j < n_masks; j+=32) {
+)";
+		if ( fade_data[op->children[0]->id].n_masks > 0 && fade_data[op->children[1]->id].n_masks > 0) {
+			oss << R"(
+		__m512i a = _mm512_loadu_si512((__m512i*)&lhs_var[lhs_lineage[i]*n_masks+j]);
+		__m512i b = _mm512_loadu_si512((__m512i*)&rhs_var[rhs_lineage[i]*n_masks+j]);
+		_mm512_storeu_si512((__m512i*)&out[i*n_masks+j], _mm512_and_si512(a, b));
+)";
+		} else if (fade_data[op->children[0]->id].n_masks > 0) {
+			oss << R"(
+		__m512i a = _mm512_loadu_si512((__m512i*)&lhs_var[lhs_lineage[i]*n_masks+j]);
+		_mm512_storeu_si512((__m512i*)&out[i*n_masks+j], a);
+)";
+		} else {
+			oss << R"(
+		__m512i b = _mm512_loadu_si512((__m512i*)&rhs_var[rhs_lineage[i]*n_masks+j]);
+		_mm512_storeu_si512((__m512i*)&out[i*n_masks+j], b);
+)";
+		}
+
+		oss << "\n\t\t\t}";
+	}
+	return oss.str();
+}
+
+string get_single_join_template(EvalConfig &config, PhysicalOperator *op,
+                          std::unordered_map<idx_t, FadeDataPerNode>& fade_data) {
+	std::ostringstream oss;
+	if ( fade_data[op->children[0]->id].n_interventions > 0 && fade_data[op->children[1]->id].n_interventions > 0) {
+		oss << R"(out[i] = lhs_var[lhs_lineage[i]] * rhs_var[rhs_lineage[i]];)";
+	} else if (fade_data[op->children[0]->id].n_interventions > 0) {
+		oss << R"(out[i] = lhs_var[lhs_lineage[i]];)";
+	} else {
+		oss << R"(out[i] = rhs_var[rhs_lineage[i]];)";
+	}
+
+	return oss.str();
+}
 string JoinCodeAndAlloc(EvalConfig config, PhysicalOperator *op, shared_ptr<OperatorLineage> lop, std::unordered_map<idx_t, FadeDataPerNode>& fade_data) {
 	int n_masks = config.n_intervention / config.mask_size;
 	string fname = "join_"+ to_string(op->id) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
@@ -298,52 +419,10 @@ string JoinCodeAndAlloc(EvalConfig config, PhysicalOperator *op, shared_ptr<Oper
 	oss << "\tfor (int i=start; i < end; i++) {\n";
 
 	if (config.n_intervention == 1) {
-		if ( fade_data[op->children[0]->id].n_interventions > 0 && fade_data[op->children[1]->id].n_interventions > 0) {
-		  oss << R"(out[i] = lhs_var[lhs_lineage[i]] * rhs_var[rhs_lineage[i]];)";
-		} else if (fade_data[op->children[0]->id].n_interventions > 0) {
-			oss << R"(out[i] = lhs_var[lhs_lineage[i]];)";
-		} else {
-			oss << R"(out[i] = rhs_var[rhs_lineage[i]];)";
-		}
-	} else if (config.is_scalar) {
-		oss << R"(
-		for (int j=0; j < n_masks; j++) {
-)";
-
-		if ( fade_data[op->children[0]->id].n_masks > 0 && fade_data[op->children[1]->id].n_masks > 0) {
-			oss << R"(out[i*n_masks+j] = lhs_var[lhs_lineage[i]*n_masks+j] * rhs_var[rhs_lineage[i]*n_masks+j];)";
-		} else if (fade_data[op->children[0]->id].n_masks > 0) {
-			oss << R"(out[i*n_masks+j] = lhs_var[lhs_lineage[i]*n_masks+j];)";
-		} else {
-			oss << R"(out[i*n_masks+j] = rhs_var[rhs_lineage[i]*n_masks+j];)";
-		}
-
-		oss << "\n\t\t\t}";
+		oss << get_single_join_template(config, op, fade_data);
 	} else {
-		oss << R"(
-		for (int j=0; j < n_masks; j+=32) {
-)";
-		if ( fade_data[op->children[0]->id].n_masks > 0 && fade_data[op->children[1]->id].n_masks > 0) {
-			oss << R"(
-		__m512i a = _mm512_loadu_si512((__m512i*)&lhs_var[lhs_lineage[i]*n_masks+j]);
-		__m512i b = _mm512_loadu_si512((__m512i*)&rhs_var[rhs_lineage[i]*n_masks+j]);
-		_mm512_storeu_si512((__m512i*)&out[i*n_masks+j], _mm512_and_si512(a, b));
-)";
-		} else if (fade_data[op->children[0]->id].n_masks > 0) {
-			oss << R"(
-		__m512i a = _mm512_loadu_si512((__m512i*)&lhs_var[lhs_lineage[i]*n_masks+j]);
-		_mm512_storeu_si512((__m512i*)&out[i*n_masks+j], a);
-)";
-		} else {
-			oss << R"(
-		__m512i b = _mm512_loadu_si512((__m512i*)&rhs_var[rhs_lineage[i]*n_masks+j]);
-		_mm512_storeu_si512((__m512i*)&out[i*n_masks+j], b);
-)";		}
-
-		oss << "\n\t\t\t}";
+		oss << get_batch_join_template(config, op, fade_data);
 	}
-
-
 
 	if (config.num_worker > 1) {
 		oss << "\n\t\t}\n \tsync_point.arrive_and_wait();\n return 0; \n}\n";
@@ -497,17 +576,17 @@ string HashAggregateIntervene2D(EvalConfig& config, shared_ptr<OperatorLineage> 
 			// access output arrays
 			alloc_code += Fade::get_agg_alloc(i, "sum", output_type);
 			// core agg operation
-			eval_code += get_agg_eval(config, agg_count++, "sum", out_var, in_val, output_type);
+			eval_code += get_agg_eval(config, aggregates.size(), agg_count++, "sum", out_var, in_val,  in_arr, output_type);
 		}
 	}
 
 	if (include_count == true) {
 		string out_var = "out_count";
 		alloc_code += Fade::get_agg_alloc(0, "count", "int");
-		eval_code += get_agg_eval(config, agg_count++, "count", out_var, "1", "int");
+		eval_code += get_agg_eval(config, aggregates.size(), agg_count++, "count", out_var, "1", "", "int");
 	}
 
-	string init_code = get_agg_init(config, row_count, op->children[0]->lineage_op->chunk_collection.ChunkCount(), op->id,  fade_data[op->id].n_interventions, "agg", alloc_code, get_data_code, get_vals_code);
+	string init_code = get_agg_init(config, aggregates.size(), row_count, op->children[0]->lineage_op->chunk_collection.ChunkCount(), op->id,  fade_data[op->id].n_interventions, "agg", alloc_code, get_data_code, get_vals_code);
 	string end_code = Fade::get_agg_finalize(config, fade_data[op->id]);
 
 	code = init_code + eval_code + end_code;
@@ -825,4 +904,3 @@ string Fade::Whatif(PhysicalOperator *op, EvalConfig config) {
 
 } // namespace duckdb
 #endif
-
