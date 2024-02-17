@@ -85,6 +85,18 @@ if plot_scale:
 
 # figure 1: single intervention latency
 if single:
+    data_single_v2 = pd.read_csv('dense_single_v4.csv')
+    data_single_v2["eval_time_ms"]=1000*data_single_v2["eval_time"]
+    data_single_v2["query"] = "Q"+data_single_v2["qid"].astype(str)
+    data_single_v2["cat"] = data_single_v2.apply(lambda row: str(row["num_threads"]) + " Threads", axis=1)
+    data_single_v2["cat"] = data_single_v2.apply(lambda row: row["cat"] + "+SIMD" if row["is_scalar"] == False else row["cat"] , axis=1)
+    data_single_v2["cat"] = data_single_v2.apply(lambda row: row["itype"]+" ^"+row["cat"] if row["incremental"] and row["itype"] == "S" else row["itype"] + row["cat"], axis=1)
+    data_single_v2["n"] = data_single_v2["distinct"]
+    data_single_v2["prune_label"] = data_single_v2.apply(lambda row:"Fade-P" if row["prune"] else "Fade" , axis=1)
+    data_single_v2["sf_label"] = "SF="+data_single_v2["sf"].astype(str)
+
+
+    # TODO: add FaDe-Incr
     single_data = pd.read_csv('dense_single_test.csv')
     single_data["eval_time_ms"]=1000*single_data["eval_time"]
     single_data["query"] = "Q"+single_data["qid"].astype(str)
@@ -113,10 +125,11 @@ if single:
         UNION ALL select 'DBT-prune' as system, query, prune, sf, sf_label, eval_time_ms as eval_time from dbt_data where prob=0.1 and prune='True'
         UNION ALL select 'DBT' as system, query, prune, sf, sf_label, eval_time_ms as eval_time from dbt_data where prob=0.1 and prune='False'
         """
+    #'Fade' as system, query, prune, sf, sf_label, eval_time_ms from single_data where n=1 and num_threads=1 and prune='False'
+    #UNION ALL select 'Fade-prune' as system, query, prune, sf, sf_label, eval_time_ms from single_data where n=1 and num_threads=1 and prune='True'
     fig1_data = con.execute(f"""
-        select
-        'Fade' as system, query, prune, sf, sf_label, eval_time_ms from single_data where n=1 and num_threads=1 and prune='False'
-        UNION ALL select 'Fade-prune' as system, query, prune, sf, sf_label, eval_time_ms from single_data where n=1 and num_threads=1 and prune='True'
+        select 'Fade-prune' as system, query, prune, sf, sf_label,  eval_time_ms from data_single_v2 where n=1 and num_threads=1  and prune='True'
+        UNION ALL select 'Fade' as system, query, prune, sf, sf_label, eval_time_ms from data_single_v2 where n=1 and num_threads=1  and prune='False'
         UNION ALL select 'Q' as system, query, 'False' as prune, sf, sf_label,query_timing*1000 as eval_time from lineage_data
         UNION ALL select 'Q+' as system, query, 'False' as prune, sf, sf_label, lineage_timing*1000 as eval_time from lineage_data
         UNION ALL select 'Q++' as system, query, 'False' as prune, sf, sf_label, ksemimodule_timing*1000 as eval_time from single_data where n=1 and num_threads=1
@@ -154,6 +167,7 @@ if dense:
     data["cat"] = data.apply(lambda row: str(row["num_threads"]) + " Threads", axis=1)
     data["cat"] = data.apply(lambda row: row["cat"] + "+SIMD" if row["is_scalar"] == False else row["cat"] , axis=1)
     data["n"] = data["distinct"]
+    data["prune_label"] = data.apply(lambda row:"Fade-P" if row["prune"] else "Fade" , axis=1)
     if print_summary:
         print("======== Summary =============")
         summary_data = con.execute("""
@@ -286,18 +300,6 @@ if True:
     if include_dbt:
         # fig 1:
         # x-axis prob, y-axis dbt normalized latency against fade
-        data_single_v2 = pd.read_csv('dense_single_v3.csv')
-        data_single_v2["eval_time_ms"]=1000*data_single_v2["eval_time"]
-        data_single_v2["query"] = "Q"+data_single_v2["qid"].astype(str)
-        data_single_v2["cat"] = data_single_v2.apply(lambda row: str(row["num_threads"]) + " Threads", axis=1)
-        data_single_v2["cat"] = data_single_v2.apply(lambda row: row["cat"] + "+SIMD" if row["is_scalar"] == False else row["cat"] , axis=1)
-        data_single_v2["cat"] = data_single_v2.apply(lambda row: row["itype"]+" ^"+row["cat"] if row["incremental"] and row["itype"] == "S" else row["itype"] + row["cat"], axis=1)
-        data_single_v2["n"] = data_single_v2["distinct"]
-        data_single_v2["prune_label"] = data_single_v2.apply(lambda row:"Fade-P" if row["prune"] else "Fade" , axis=1)
-
-
-        # TODO: add FaDe-Incr
-        data["prune_label"] = data.apply(lambda row:"Fade-P" if row["prune"] else "Fade" , axis=1)
         dbt_fade_data = con.execute("""
         select sf, query, fade.prune_label, dbt.prune dbt_prune, fade.prune, fade.num_threads, dbt.prob,
         (dbt.eval_time_ms / fade.eval_time_ms) as nor,

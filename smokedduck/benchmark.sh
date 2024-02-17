@@ -8,12 +8,12 @@ distinct=("1") #"512" "1024" "2048" "2560")
 threads_num=("1") # "2" "4" "8")
 binary=("false" "true") # "false")
 prune_binary=("true" "false")
-csv="dense_single_v3.csv"
+csv="dense_single_v4.csv"
 debug="false" #"true"
 #itype_list=("SEARCH" "DENSE_DELETE_ALL" "DENSE_DELETE_SPEC")
 itype_list=("DENSE_DELETE_ALL")
 # if search then include incremental or not
-prob="1"
+prob="0.01"
 batch="8"
 use_duckdb="true"
 touch ${csv}

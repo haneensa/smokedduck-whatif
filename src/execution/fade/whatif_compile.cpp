@@ -310,9 +310,12 @@ void GenRandomWhatifIntervention(EvalConfig config, PhysicalOperator* op,
 			return;
 		}
 
-		idx_t row_count = fade_data[op->id].lineage[0].size();
+		idx_t row_count = op->lineage_op->log_index->table_size;
+    if (config.prune)
+		  row_count = fade_data[op->id].lineage[0].size();
 
 		string fname = "fill_random";
+    std::cout << op->lineage_op->table_name << std::endl;
 		int (*random_fn)(int, float, int, void*) = (int(*)(int, float, int, void*))dlsym(handle, fname.c_str());
 		if (config.n_intervention == 1) {
 			random_fn(row_count, config.probability, fade_data[op->id].n_masks, fade_data[op->id].single_del_interventions);
@@ -628,6 +631,8 @@ void GenCodeAndAlloc(EvalConfig& config, string& code, PhysicalOperator* op,
     std::cout << "check this scan " << op->lineage_op->table_name << std::endl;
 
 		idx_t row_count = op->lineage_op->log_index->table_size;
+    if (config.prune)
+		  row_count = fade_data[op->id].lineage[0].size();
 		idx_t n_masks = std::ceil(config.n_intervention / config.mask_size);
 		fade_data[op->id].n_interventions = config.n_intervention;
 
@@ -652,7 +657,8 @@ void GenCodeAndAlloc(EvalConfig& config, string& code, PhysicalOperator* op,
 			} else {
 				fade_data[op->id].del_interventions = new __mmask16[row_count * n_masks];
 			}
-			code += FilterCodeAndAlloc(config, op, op->lineage_op, fade_data);
+      if (config.prune == false)
+			  code += FilterCodeAndAlloc(config, op, op->lineage_op, fade_data);
 		}
 	} else if (op->type == PhysicalOperatorType::HASH_JOIN
 	           || op->type == PhysicalOperatorType::NESTED_LOOP_JOIN

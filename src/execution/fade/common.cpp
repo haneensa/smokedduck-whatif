@@ -351,8 +351,9 @@ void Fade::PruneLineage(EvalConfig& config, PhysicalOperator* op,
 			new_order[side] = lineage_unique;
 		}
 
-	}
-
+	} else if (op->type == PhysicalOperatorType::PROJECTION) {
+    new_order[0] = std::move(out_order);
+  }
 
 	for (idx_t i = 0; i < op->children.size(); i++) {
 		Fade::PruneLineage(config, op->children[i].get(), fade_data, new_order[i]);
