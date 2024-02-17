@@ -432,6 +432,7 @@ string FilterCodeAndAlloc(EvalConfig config, PhysicalOperator *op, shared_ptr<Op
 string HashAggregateIntervene2D(EvalConfig& config, shared_ptr<OperatorLineage> lop,
                                 std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
                                 PhysicalOperator* op) {
+  std::cout << "Hash Aggregate Intervene 2D" << std::endl;
 	const int n_interventions = fade_data[op->id].n_interventions;
 
 	string eval_code;
@@ -753,7 +754,7 @@ string Fade::Whatif(PhysicalOperator *op, EvalConfig config) {
 		prune_time = time_span.count();
 	}
 
-	Clear(op);
+  Clear(op);
 
 	// 4. Alloc vars, generate eval code
 	string code;
@@ -777,6 +778,7 @@ string Fade::Whatif(PhysicalOperator *op, EvalConfig config) {
 	double compile_time = time_span.count();
 
 	if (handle == nullptr) return "select 0";
+	
 
 	// 3. Prepare base interventions; should be one time cost per DB
 	start_time = std::chrono::steady_clock::now();

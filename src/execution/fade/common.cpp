@@ -375,6 +375,8 @@ void Fade::GetLineage(EvalConfig& config, PhysicalOperator* op,
 	           || op->type == PhysicalOperatorType::CROSS_PRODUCT) {
 		FillJoinLineage(op, op->lineage_op, fade_data);
 	} else if (op->type == PhysicalOperatorType::HASH_GROUP_BY) {
+	  idx_t row_count = op->children[0]->lineage_op->chunk_collection.Count();
+	  fade_data[op->id].lineage[0] = std::move(Fade::GetGBLineage(op->lineage_op, row_count));
 	} else if (op->type == PhysicalOperatorType::UNGROUPED_AGGREGATE) {
 	} else if (op->type == PhysicalOperatorType::PROJECTION) {
 	}
@@ -499,7 +501,6 @@ void Fade::HashAggregateAllocate(EvalConfig& config, shared_ptr<OperatorLineage>
 	fade_data[op->id].n_groups = n_groups;
 
 	idx_t row_count = op->children[0]->lineage_op->chunk_collection.Count();
-	fade_data[op->id].lineage[0] = std::move(Fade::GetGBLineage(lop, row_count));
 	bool include_count = false;
 
 	// Populate the aggregate child vectors

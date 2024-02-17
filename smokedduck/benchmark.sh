@@ -2,14 +2,16 @@
 
 export DUCKDB_LIB_PATH=/ProvEnhance/third_party/smokedduck-whatif/build/release/src
 
-query_nums=("1" "3" "5" "7" "9" "10" "12")
-sf_values=("1" "5" "10")  # "0.2" "0.4") # "5.0" "10.0") # (# "3.0" "4.0")
-distinct=("1") # "512" "1024" "2048" "2560")
+query_nums=("1") # "3" "5" "7" "9" "10" "12")
+sf_values=("1") # "5" "10")  # "0.2" "0.4") # "5.0" "10.0") # (# "3.0" "4.0")
+distinct=("1") #"512" "1024" "2048" "2560")
 threads_num=("1") # "2" "4" "8")
 binary=("false" "true") # "false")
-csv="dense_test.csv"
+prune_binary=( "true") # "false")
+csv="test.csv"
 debug="false" #"true"
 #itype_list=("SEARCH" "DENSE_DELETE_ALL" "DENSE_DELETE_SPEC")
+itype_list=("SEARCH") #"DENSE_DELETE_ALL")
 itype_list=("DENSE_DELETE_ALL")
 # if search then include incremental or not
 prob="0.4"
@@ -57,7 +59,7 @@ do
           fi
           
           # for use_duckdb in "${binary[@]}" do
-          for prune in "${binary[@]}"
+          for prune in "${prune_binary[@]}"
           do
               use_duckdb="true"
               for query_num in "${query_nums[@]}"
