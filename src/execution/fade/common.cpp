@@ -366,8 +366,7 @@ void Fade::GetLineage(EvalConfig& config, PhysicalOperator* op,
 		GetLineage(config, op->children[i].get(), fade_data);
 	}
 
-	if (op->type == PhysicalOperatorType::TABLE_SCAN) {
-	} else if (op->type == PhysicalOperatorType::FILTER) {
+	if (op->type == PhysicalOperatorType::TABLE_SCAN || op->type == PhysicalOperatorType::FILTER) {
 		FillFilterLineage(op, op->lineage_op, fade_data);
 	} else if (op->type == PhysicalOperatorType::HASH_JOIN
 	           || op->type == PhysicalOperatorType::NESTED_LOOP_JOIN

@@ -3,18 +3,19 @@
 export DUCKDB_LIB_PATH=/ProvEnhance/third_party/smokedduck-whatif/build/release/src
 
 query_nums=("1" "3" "5" "7" "9" "10" "12")
-sf_values=("1") # "5" "10")  # "0.2" "0.4") # "5.0" "10.0") # (# "3.0" "4.0")
-distinct=("1") #"512" "1024" "2048" "2560")
-threads_num=("1") # "2" "4" "8")
-binary=("false" "true") # "false")
+sf_values=("1") # "5") # "10")  # "0.2" "0.4") # "5.0" "10.0") # (# "3.0" "4.0")
+distinct=("1" "512" "1024" "2048" "2560")
+threads_num=("1" "2" "4" "8")
+is_scalar_binary=("false" "true") 
+#duckdb_binary=("false" "true")
 prune_binary=("true" "false")
-csv="dense_single_v4.csv"
+csv="dense_all_sf1_0.1.csv"
 debug="false" #"true"
 #itype_list=("SEARCH" "DENSE_DELETE_ALL" "DENSE_DELETE_SPEC")
 itype_list=("DENSE_DELETE_ALL")
 # if search then include incremental or not
-prob="0.01"
-batch="8"
+prob_list=("0.1") # "0.001" "0.002" "0.005" "0.01" "0.02" "0.05" "0.1") # "0.2" "0.3" "0.4" "0.5")
+batch="4"
 use_duckdb="true"
 touch ${csv}
 # add prob, itype, incremental
@@ -39,7 +40,7 @@ do
   do
     for n in "${distinct[@]}"
     do
-      for is_scalar in "${binary[@]}"
+      for is_scalar in "${is_scalar_binary[@]}"
       do
         if [ "$is_scalar" = "false" ] && [ "$n" -eq 1 ]; then
           echo "skip because SIMD is set and n_interventions == 1"
@@ -64,10 +65,18 @@ do
           do
               for query_num in "${query_nums[@]}"
               do
-                if [ "$itype" = "SEARCH" ] ; then
+                for prob in "${prob_list[@]}"
+                do
+                  if [ "$prob" != "0.1" ] && [ "$n" -ne 1 ]; then
+                    echo "skip because n <> 1 and prob <> 0.1"
+                    continue
+                  fi
+                  
+                  #if [ "$itype" = "SEARCH" ] || { [ "$n" -eq 1 ] && [ "$use_duckdb" = "false" ]; } ; then
+                  #  python3 smokedduck/test_whatif.py  --batch ${batch} --prune ${prune} --sf ${sf} --csv ${csv} --i ${query_num} --use-duckdb ${use_duckdb} --t ${thread} --is-scalar ${is_scalar} --debug ${debug} --interventions ${n} --itype ${itype} --prob ${prob} --incremental "false"
+                  #fi
                   python3 smokedduck/test_whatif.py  --batch ${batch} --prune ${prune} --sf ${sf} --csv ${csv} --i ${query_num} --use-duckdb ${use_duckdb} --t ${thread} --is-scalar ${is_scalar} --debug ${debug} --interventions ${n} --itype ${itype} --prob ${prob} --incremental "false"
-                fi
-                python3 smokedduck/test_whatif.py  --batch ${batch} --prune ${prune} --sf ${sf} --csv ${csv} --i ${query_num} --use-duckdb ${use_duckdb} --t ${thread} --is-scalar ${is_scalar} --debug ${debug} --interventions ${n} --itype ${itype} --prob ${prob} --incremental "true"
+                done
               done # query_num
           # done # use_duckdb
           done # prune

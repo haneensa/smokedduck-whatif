@@ -16,7 +16,6 @@ namespace duckdb {
 
 string fill_random_code(EvalConfig config) {
 	std::ostringstream oss;
-
 	oss << R"(
 extern "C" int fill_random(int row_count, float prob, int n_masks, void* del_interventions_ptr) {
 	std::cout << "fill_random: " << row_count  << " " << prob << " " <<  n_masks << std::endl;
@@ -69,7 +68,8 @@ string get_agg_init(EvalConfig config, int total_agg_count, int row_count, int c
 	} else {
 		oss << R"(extern "C" int )"
 		    << fname
-		    << R"((int thread_id, int* lineage, void* var_0_ptr, std::unordered_map<std::string, std::vector<void*>>& alloc_vars, std::unordered_map<int, void*>& input_data_map) {
+		    << R"((int thread_id, int* lineage, void* __restrict__ var_0_ptr, std::unordered_map<std::string, std::vector<void*>>& alloc_vars,
+              std::unordered_map<int, void*>& input_data_map) {
 )";
 	}
 
@@ -118,47 +118,62 @@ string get_agg_init(EvalConfig config, int total_agg_count, int row_count, int c
 		oss << "\t__m512 zeros = _mm512_setzero_ps();\n";
 	}
 
-	if (config.use_duckdb) {
+	if (config.incremental && config.n_intervention == 1 && config.use_duckdb == false) {
+		// convert intervention array to annotation array where var[i]==1
+		oss << get_data_code;
 		oss << R"(
+	std::vector<int> annotations;
+	for (int i=start; i < end; ++i) {
+		if (var_0[i]==0) annotations.push_back(i);
+	}
+
+	for (int i=0; i < annotations.size(); ++i) {
+		int oid = lineage[i];
+		int iid = annotations[i];
+)";
+	} else {
+
+		if (config.use_duckdb) {
+			oss << R"(
 	int offset = 0;
 	for (int chunk_idx=start; chunk_idx < end; ++chunk_idx) {
 		duckdb::DataChunk &collection_chunk = chunk_collection.GetChunk(chunk_idx);
   )";
-	}
+		}
 
-	oss << get_data_code;
-	if (config.use_duckdb) {
-		oss << R"(
+		oss << get_data_code;
+		if (config.use_duckdb) {
+			oss << R"(
 		for (int i=0; i < collection_chunk.size(); ++i) {
 			int oid = lineage[i+offset];
 )";
-		if (config.n_intervention == 1) {
-			if (total_agg_count > 1) {
-				oss << "\t\t\t\t\tif (var_0[i+offset] == 0) continue;\n";
+			if (config.n_intervention == 1) {
+				if (total_agg_count > 1) {
+					oss << "\t\t\t\t\tif (var_0[i+offset] == 0) continue;\n";
+				}
+			} else {
+				oss << "\t\t\tint col = oid*n_interventions;\n";
 			}
 		} else {
-			oss << "\t\t\tint col = oid*n_interventions;\n";
-		}
-	} else {
-		// if incremental, iterate over size of the interventions. each element stores the id of the input to be deleted
-		// TODO: need to adjust filter and join to propagate input ids
+			// if incremental, iterate over size of the interventions. each element stores the id of the input to be deleted
+			// TODO: need to adjust filter and join to propagate input ids
 
-		oss << R"(
+			oss << R"(
 	for (int i=start; i < end; i++) {
 		int oid = lineage[i];
 )";
-		if (config.n_intervention == 1) {
-			if (total_agg_count > 1) {
-				oss << "\t\t\t\t\tif (var_0[i] == 0) continue;\n";
+			if (config.n_intervention == 1) {
+				if (total_agg_count > 1) {
+					oss << "\t\t\t\t\tif (var_0[i] == 0) continue;\n";
+				}
+			} else {
+				oss << "\t\t\tint col = oid*n_interventions;\n";
 			}
-		} else {
-			oss << "\t\t\tint col = oid*n_interventions;\n";
 		}
+
+		if (config.n_intervention > 1)
+			oss << get_vals_code;
 	}
-
-	if (config.n_intervention > 1)
-		oss << get_vals_code;
-
 
 	return oss.str();
 }
@@ -203,7 +218,14 @@ string get_single_agg_template(EvalConfig& config, int total_agg_count, int agg_
 	// we iterate over the interventions, and each intervention stores the id of the tuple to be deleted
 
 	if (agg_count > 0 && agg_count % config.batch == 0) {
-		if (config.use_duckdb) {
+		if (config.incremental && config.use_duckdb == false) {
+			oss << R"(
+				}
+				for (int i=0; i < annotations.size(); i++) {
+					int oid = lineage[i];
+					int iid = annotations[i];
+)";
+		} else if (config.use_duckdb) {
 			oss << R"(
 				}
 				for (int i=0; i < collection_chunk.size(); ++i) {
@@ -225,22 +247,34 @@ string get_single_agg_template(EvalConfig& config, int total_agg_count, int agg_
 
 	}
 
-	if (fn == "sum") {
-		oss << "\t\t\t\t\t";
-		oss << out_var+"[oid] +="+ in_arr + "[i]";
-	} else if (fn == "count") {
-		oss << "\t\t\t\t\t";
-		oss << "out_count[oid] += 1";
-	}
-	if (total_agg_count > 1) {
-		oss << ";\n";
+	if (config.incremental && config.use_duckdb == false) {
+		// out_var[oid] += in_var[i];
+		if (fn == "sum") {
+			oss << "\t\t\t\t\t";
+			oss << out_var+"[oid] +="+ in_arr + "[iid];\n";
+		} else if (fn == "count") {
+			oss << "\t\t\t\t\t";
+			oss << "out_count[oid] += 1;\n";
+		}
 	} else {
-		if (config.use_duckdb) {
-			oss << " * var_0[i+offset];\n";
+		if (fn == "sum") {
+			oss << "\t\t\t\t\t";
+			oss << out_var+"[oid] +="+ in_arr + "[i]";
+		} else if (fn == "count") {
+			oss << "\t\t\t\t\t";
+			oss << "out_count[oid] += 1";
+		}
+		if (total_agg_count > 1) {
+			oss << ";\n";
 		} else {
-			oss << " * var_0[i];\n";
+			if (config.use_duckdb) {
+				oss << " * var_0[i+offset];\n";
+			} else {
+				oss << " * var_0[i];\n";
+			}
 		}
 	}
+
 
 	return oss.str();
 }
@@ -315,7 +349,7 @@ void GenRandomWhatifIntervention(EvalConfig config, PhysicalOperator* op,
 		  row_count = fade_data[op->id].lineage[0].size();
 
 		string fname = "fill_random";
-    std::cout << op->lineage_op->table_name << std::endl;
+    std::cout << op->lineage_op->table_name << " " << row_count << std::endl;
 		int (*random_fn)(int, float, int, void*) = (int(*)(int, float, int, void*))dlsym(handle, fname.c_str());
 		if (config.n_intervention == 1) {
 			random_fn(row_count, config.probability, fade_data[op->id].n_masks, fade_data[op->id].single_del_interventions);
@@ -597,18 +631,13 @@ string HashAggregateIntervene2D(EvalConfig& config, shared_ptr<OperatorLineage> 
 	return code;
 }
 
-void  HashAggregateIntervene2DEval(int thread_id, EvalConfig config, shared_ptr<OperatorLineage> lop,
-                                  std::unordered_map<idx_t, FadeDataPerNode> fade_data,
+void  HashAggregateIntervene2DEval(int thread_id, EvalConfig& config, shared_ptr<OperatorLineage> lop,
+                                  std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
                                   PhysicalOperator* op, void* handle, void* var_0) {
-	PhysicalHashAggregate * gb = dynamic_cast<PhysicalHashAggregate *>(op);
-	vector<pair<idx_t, idx_t>> aggregate_input_idx;
-	idx_t row_count = op->children[0]->lineage_op->chunk_collection.Count();
-	std::vector<int> lineage = fade_data[op->id].lineage[0];
-
 	if (config.use_duckdb) {
-		int result = fade_data[op->id].agg_duckdb_fn(thread_id, lineage.data(), var_0, fade_data[op->id].alloc_vars, op->children[0]->lineage_op->chunk_collection);
+    fade_data[op->id].agg_duckdb_fn(thread_id, fade_data[op->id].lineage[0].data(), var_0, fade_data[op->id].alloc_vars, op->children[0]->lineage_op->chunk_collection);
 	} else {
-		int result = fade_data[op->id].agg_fn(thread_id, lineage.data(), var_0, fade_data[op->id].alloc_vars, fade_data[op->id].input_data_map);
+    fade_data[op->id].agg_fn(thread_id, fade_data[op->id].lineage[0].data(), var_0, fade_data[op->id].alloc_vars, fade_data[op->id].input_data_map);
 	}
 }
 
@@ -734,7 +763,7 @@ void BindFunctions(EvalConfig config, void* handle, PhysicalOperator* op,
 }
 
 
-void Intervention2DEval(int thread_id, EvalConfig config, void* handle, PhysicalOperator* op,
+void Intervention2DEval(int thread_id, EvalConfig& config, void* handle, PhysicalOperator* op,
                         std::unordered_map<idx_t, FadeDataPerNode>& fade_data) {
 	for (idx_t i = 0; i < op->children.size(); i++) {
 		Intervention2DEval(thread_id, config, handle, op->children[i].get(), fade_data);
@@ -780,7 +809,7 @@ void Intervention2DEval(int thread_id, EvalConfig config, void* handle, Physical
 	} else if (op->type == PhysicalOperatorType::UNGROUPED_AGGREGATE) {
 	   // UngroupedAggregateIntervene(op->lineage_op, fade_data, op);
 	} else if (op->type == PhysicalOperatorType::PROJECTION) {
-	}
+  }
 }
 
 
@@ -877,15 +906,17 @@ string Fade::Whatif(PhysicalOperator *op, EvalConfig config) {
 	std::vector<std::thread> workers;
 
 	start_time = std::chrono::steady_clock::now();
-
-	for (int i = 0; i < config.num_worker; ++i) {
-		workers.emplace_back(Intervention2DEval, i, config, handle,  op, std::ref(fade_data));
-	}
-
-	// Wait for all tasks to complete
-	for (std::thread& worker : workers) {
-		worker.join();
-	}
+  if (config.num_worker > 1) {
+    for (int i = 0; i < config.num_worker; ++i) {
+      workers.emplace_back(Intervention2DEval, i, std::ref(config), handle,  op, std::ref(fade_data));
+    }
+    // Wait for all tasks to complete
+    for (std::thread& worker : workers) {
+      worker.join();
+    }
+  } else {
+      Intervention2DEval(0, config, handle,  op, fade_data);
+  }
 
 	end_time = std::chrono::steady_clock::now();
 	time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
@@ -910,3 +941,4 @@ string Fade::Whatif(PhysicalOperator *op, EvalConfig config) {
 
 } // namespace duckdb
 #endif
+
