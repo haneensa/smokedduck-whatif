@@ -3,13 +3,13 @@
 export DUCKDB_LIB_PATH=/ProvEnhance/third_party/smokedduck-whatif/build/release/src
 
 query_nums=("1" "3" "5" "7" "9" "10" "12")
-sf_values=("1") # "5") # "10")  # "0.2" "0.4") # "5.0" "10.0") # (# "3.0" "4.0")
+sf_values=("1") # "5" "10")  # "0.2" "0.4") # "5.0" "10.0") # (# "3.0" "4.0")
 distinct=("1" "512" "1024" "2048" "2560")
 threads_num=("1" "2" "4" "8")
 is_scalar_binary=("false" "true") 
 #duckdb_binary=("false" "true")
 prune_binary=("true" "false")
-csv="dense_all_sf1_0.1.csv"
+csv="dense_all_sf1test.csv"
 debug="false" #"true"
 #itype_list=("SEARCH" "DENSE_DELETE_ALL" "DENSE_DELETE_SPEC")
 itype_list=("DENSE_DELETE_ALL")

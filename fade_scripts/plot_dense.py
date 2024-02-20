@@ -29,6 +29,7 @@ legend_side = legend + theme(**{
   "legend.position":esc("right"),
 })
 
+dbt_prob = 0.05
 con = duckdb.connect(':default:')
 plot = True
 print_summary = True
@@ -37,10 +38,35 @@ dense = True
 single = False
 plot_scale = True
 
+if plot_scale:
+    scale_data = pd.read_csv('fade_data/dense_scale_all.csv')
+    scale_data["eval_time_ms"] = 1000 * scale_data["eval_time"]
+    scale_data["query"] = "Q"+scale_data["qid"].astype(str)
+    scale_data["cat"] = scale_data.apply(lambda row: str(row["num_threads"]) + " Threads", axis=1)
+    scale_data["cat"] = scale_data.apply(lambda row: row["cat"] + "+SIMD" if row["is_scalar"] == False else row["cat"] , axis=1)
+    scale_data["n"] = scale_data["distinct"]
+    scale_data["sf_label"] = "SF="+scale_data["sf"].astype(str)
+    
+    scale_fig_data = con.execute("""select *, query, sf, n, is_scalar,
+        n / eval_time as throughput 
+        from scale_data where n=2560 and is_scalar='False'""").df()
+    postfix = """
+    data$query = factor(data$query, levels=c('Q1', 'Q3', 'Q5', 'Q7', 'Q9', 'Q10', 'Q12'))
+        """
+    p = ggplot(scale_fig_data, aes(x='sf',  y="throughput", color='query', group='query', shape='query'))
+    p += geom_point(stat=esc('identity'))
+    p +=  geom_line()
+    p += axis_labels('SF (log)', "Interventions / Seconds (log)", "log10", "log10", xkwargs=dict(breaks=[1,5,10]),
+            ykwargs=dict(breaks=[1000,10000,100000,1000000],  labels=list(map(esc,['10e3','10e4','10e5','10e6']))),
+            )
+    p += legend_side
+    ggsave("figures/fade_throughput.png", p, postfix=postfix, width=4, height=2.5, scale=0.8)
+
+
 # for each query,
 #data = pd.read_csv('dense_feb9_sf1_timings.csv')
 if include_dbt:
-    dbt_data = pd.read_csv("dbtoast.csv")
+    dbt_data = pd.read_csv("fade_data/dbtoast.csv")
     dbt_data["eval_time_ms"]=dbt_data["eval_time"]
     dbt_data["query"] = "Q"+dbt_data["qid"].astype(str)
     dbt_data["cat"] = dbt_data.apply(lambda row: "DBT_prune" if row["prune"] else "DBT", axis=1)
@@ -92,7 +118,7 @@ lineage_data["query"] = "Q"+lineage_data["qid"].astype(str)
 lineage_data["sf_label"] = "SF="+lineage_data["sf"].astype(str)
 
 #data = pd.read_csv('dense_delete_all_sf1.csv')
-dense_data = pd.read_csv('dense_all_sf1_v2.csv')
+dense_data = pd.read_csv('fade_data/dense_all_sf1_v2.csv')
 dense_data["eval_time_ms"]=1000*dense_data["eval_time"]
 dense_data["query"] = "Q"+dense_data["qid"].astype(str)
 dense_data["cat"] = dense_data.apply(lambda row: str(row["num_threads"]) + " Threads", axis=1)
@@ -316,14 +342,14 @@ if single:
     if plot:
         dbt_q = ""
         if include_dbt:
-            dbt_q = """
-            UNION ALL select 'DBT-p' as system, query, prune, sf, sf_label, eval_time_ms as eval_time, 'False' as incremental from dbt_data where prob=0.1 and prune='True'
-            UNION ALL select 'DBT' as system, query, prune, sf, sf_label, eval_time_ms as eval_time, 'False' as incremental from dbt_data where prob=0.1 and prune='False'
+            dbt_q = f"""
+            UNION ALL select 'DBT-p' as system, query, prune, sf, sf_label, eval_time_ms as eval_time, 'False' as incremental from dbt_data where prob={dbt_prob} and prune='True'
+            UNION ALL select 'DBT' as system, query, prune, sf, sf_label, eval_time_ms as eval_time, 'False' as incremental from dbt_data where prob={dbt_prob} and prune='False'
             """
         #UNION select 'Fade-p-I' as system, query, prune, sf, sf_label,  eval_time_ms, incremental
-        #    from dense_data where n=1 and num_threads=1  and prune='True' and prob=0.1 and incremental='True'
+        #    from dense_data where n=1 and num_threads=1  and prune='True' and prob={dbt_prob} and incremental='True'
         #UNION ALL select 'Fade-I' as system, query, prune, sf, sf_label, eval_time_ms, incremental
-        #    from dense_data where n=1 and num_threads=1  and prune='False' and prob=0.1 and incremental='True'
+        #    from dense_data where n=1 and num_threads=1  and prune='False' and prob={dbt_prob} and incremental='True'
         #UNION ALL select 'Q' as system, query, 'False' as prune, sf, sf_label, query_timing*1000 as eval_time, 'False' as incremental
         #    from lineage_data
         #UNION ALL select 'Q+' as system, query, 'False' as prune, sf, sf_label, lineage_timing*1000 as eval_time, 'False' as incremental
@@ -331,9 +357,9 @@ if single:
         #UNION ALL select 'Q++' as system, query, 'False' as prune, sf, sf_label, ksemimodule_timing*1000 as eval_time, 'False' as incremental
         fig1_data = con.execute(f"""
             select 'Fade-p' as system, query, prune, sf, sf_label,  eval_time_ms, incremental
-                from dense_data where n=1 and num_threads=1 and prune='True' and prob=0.1 and incremental='False'
+                from dense_data where n=1 and num_threads=1 and prune='True' and prob={dbt_prob} and incremental='False'
             UNION ALL select 'Fade' as system, query, prune, sf, sf_label, eval_time_ms, incremental
-                from dense_data where n=1 and num_threads=1  and prune='False' and prob=0.1 and incremental='False'
+                from dense_data where n=1 and num_threads=1  and prune='False' and prob={dbt_prob} and incremental='False'
                 {dbt_q} """).df()
         postfix = """
         data$query = factor(data$query, levels=c('Q1', 'Q3', 'Q5', 'Q7', 'Q9', 'Q10', 'Q12'))
@@ -424,35 +450,37 @@ if single:
             ggsave(f"figures/fade_dbt_vs_fade_prune.png", p, postfix=postfix,  width=3, height=2, scale=0.8)
 
 if dense:
-    dense_data_v2 = pd.read_csv('dense_all_sf1_0.1.csv')
+    dense_data_v2 = pd.read_csv(f"fade_data/dense_all_sf1_0.1.csv")
     dense_data_v2["eval_time_ms"]=1000*dense_data_v2["eval_time"]
     dense_data_v2["query"] = "Q"+dense_data_v2["qid"].astype(str)
     dense_data_v2["cat"] = dense_data_v2.apply(lambda row: str(row["num_threads"]) + " Threads", axis=1)
     dense_data_v2["cat"] = dense_data_v2.apply(lambda row: row["cat"] + "+SIMD" if row["is_scalar"] == False else row["cat"] , axis=1)
-    dense_data_v2["cat"] = dense_data_v2.apply(lambda row: row["itype"]+" ^"+row["cat"] if row["incremental"] and row["itype"] == "S" else row["itype"] + row["cat"], axis=1)
+    #dense_data_v2["cat"] = dense_data_v2.apply(lambda row: row["itype"]+" ^"+row["cat"] if row["incremental"] and row["itype"] == "S" else row["itype"] + row["cat"], axis=1)
     dense_data_v2["n"] = dense_data_v2["distinct"]
     dense_data_v2["prune_label"] = dense_data_v2.apply(lambda row:"Fade-P" if row["prune"] else "Fade" , axis=1)
     dense_data_v2["sf_label"] = "SF="+dense_data_v2["sf"].astype(str)
 
+    #data$cat = factor(data$cat, levels=c('1 Threads', '2 Threads', '4 Threads', '8 Threads', '1 Threads+SIMD', '2 Threads+SIMD', '4 Threads+SIMD', '8 Threads+SIMD'))
     postfix = """
     data$query = factor(data$query, levels=c('Q1', 'Q3', 'Q5', 'Q7', 'Q9', 'Q10', 'Q12'))
-    data$cat = factor(data$cat, levels=c('1 Threads', '2 Threads', '4 Threads', '8 Threads', '1 Threads+SIMD', '2 Threads+SIMD', '4 Threads+SIMD', '8 Threads+SIMD'))
         """
 
-    print(con.execute("select * from dense_data where incremental='False' and n>1").df())
+    print("======== DENSE Batching=============")
+
+    print(con.execute("select * from dense_data_v2 where incremental='False' and n>1").df())
     # Batching latency performance varying number of interventions
-    fig2_data = con.execute("""select sf, prune, t1.query, t1.cat, qid, t1.n, t1.num_threads, t1.distinct,
+    fig2_data = con.execute(f"""select sf, prune, t1.query, t1.cat, qid, t1.n, t1.num_threads, t1.distinct,
         t1.num_threads, t1.is_scalar, (base.eval_time_ms * t1.n)/ t1.eval_time_ms as speedup,
         t1.eval_time_ms
-        from ( select * from dense_data where incremental='False' and num_threads=1 and is_scalar='true' and sf=1 and prob=0.1) as t1 JOIN
-             ( select * from dense_data where incremental='False' and n=1 and num_threads=1 and is_scalar='true' and sf=1 and prob=0.1) as base
+        from ( select * from dense_data_v2 where incremental='False' and num_threads=1 and is_scalar='True' and sf=1 and prob=0.1) as t1 JOIN
+             ( select * from dense_data_v2 where incremental='False' and n=1 and num_threads=1 and is_scalar='True' and sf=1 and prob=0.1) as base
              USING (sf, qid, prune) """).df()
     print(fig2_data)
     cat = 'distinct'
     if plot:
         p = ggplot(fig2_data, aes(x='query',  y="eval_time_ms", color=cat, fill=cat, group=cat))
         p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.6), width=0.5)
-        p += axis_labels('Query', "Latency (ms)", "discrete")
+        p += axis_labels('Query', "Latency (ms, log)", "discrete", "log10")
         p += legend_side
         p += facet_grid(".~sf~prune", scales=esc("free_y"))
         ggsave("figures/fade_batching_latency_sf1.png", p, postfix=postfix, width=8, height=3, scale=0.8)
@@ -465,15 +493,49 @@ if dense:
         p += facet_grid(".~sf~prune", scales=esc("free_y"))
         ggsave("figures/fade_batching_speedup_sf1.png", p, postfix=postfix, width=8, height=3, scale=0.8)
 
+    print("======== DENSE Pruning =============")
+    prune_data = con.execute(f"""select sf, n, t1.query, t1.cat, qid, t1.n, t1.num_threads, t1.distinct,
+        t1.num_threads, t1.is_scalar, (base.eval_time_ms * t1.n)/ t1.eval_time_ms as speedup,
+        t1.eval_time_ms
+        from ( select * from dense_data_v2 where incremental='False' and num_threads=1 and is_scalar='True' and sf=1 and prob=0.1 and prune='True') as t1 JOIN
+             ( select * from dense_data_v2 where incremental='False' and num_threads=1 and is_scalar='True' and sf=1 and prob=0.1 and prune='False') as base
+             USING (sf, qid, n) """).df()
+    print(prune_data)
+    cat = 'distinct'
+    if plot:
+        p = ggplot(prune_data, aes(x='query',  y="eval_time_ms", color=cat, fill=cat, group=cat))
+        p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.6), width=0.5)
+        p += axis_labels('Query', "Latency (ms, log)", "discrete", "log10")
+        p += legend_side
+        p += facet_grid(".~sf", scales=esc("free_y"))
+        ggsave("figures/fade_pruning_latency_sf1.png", p, postfix=postfix, width=8, height=3, scale=0.8)
+
+        # Batching speedup over single intervention performance varying number of interventions
+        p = ggplot(prune_data, aes(x='query',  y="speedup", color=cat, fill=cat, group=cat))
+        p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.6), width=0.5)
+        p += axis_labels('Query', "Speedup", "discrete", "log10")
+        p += legend_side
+        p += facet_grid(".~sf", scales=esc("free_y"))
+        ggsave("figures/fade_pruning_speedup_sf1.png", p, postfix=postfix, width=8, height=3, scale=0.8)
+
+    print("======== DENSE Vec =============")
 
     # Additional vectorization speedup over batched execution of  varying numbers of interventions
     fig3_data = con.execute("""select sf, prune, qid, n, t1.query, t1.cat, t1.num_threads,
         t1.distinct, t1.is_scalar, (base.eval_time_ms / t1.eval_time_ms) as speedup, t1.eval_time_ms,
         base.eval_time_ms from fig2_data as base JOIN 
-            (select * from dense_data where num_threads=1 and is_scalar='false' and sf=1) as t1
+            (select * from dense_data_v2 where num_threads=1 and is_scalar='False' and sf=1) as t1
             USING (sf, qid, n, prune)""").df()
 
+    print(fig3_data)
     if plot:
+        p = ggplot(fig3_data, aes(x='query',  y="eval_time_ms", color=cat, fill=cat, group=cat))
+        p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.6), width=0.5)
+        p += axis_labels('Query', "Latency (ms, log)", "discrete", "log10")
+        p += legend_side
+        p += facet_grid(".~sf~prune", scales=esc("free_y"))
+        ggsave("figures/fade_vec_latency_sf1.png", p, postfix=postfix, width=8, height=3, scale=0.8)
+
         p = ggplot(fig3_data, aes(x='query',  y="speedup", color=cat, fill=cat, group=cat))
         p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.6), width=0.5)
         p += axis_labels('Query', "Speedup", "discrete")
@@ -481,15 +543,23 @@ if dense:
         p += facet_grid(".~sf~prune", scales=esc("free_y"))
         ggsave("figures/fade_vec_speedup_sf1.png", p, postfix=postfix, width=8, height=3, scale=0.8)
 
+    print("======== DENSE Threads =============")
     # Additional threading speedup for 2, 4 and 8 threads over batched execution
     fig4_data = con.execute("""select sf, qid, prune,  n, t1.query, t1.cat, t1.num_threads,
         t1.distinct, t1.is_scalar, (base.eval_time_ms / t1.eval_time_ms) as speedup, t1.eval_time_ms,
         base.eval_time_ms from fig2_data as base JOIN 
-            (select * from dense_data where is_scalar='true' and sf=1 and n=2560) as t1
+            (select * from dense_data_v2 where is_scalar='True' and sf=1 and n=2560) as t1
             USING (sf, qid, n, prune)""").df()
 
-    cat = 'num_threads'
     if plot:
+        cat = 'num_threads'
+        p = ggplot(fig4_data, aes(x='query',  y="eval_time_ms", color=cat, fill=cat, group=cat))
+        p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.6), width=0.5)
+        p += axis_labels('Query', "Latency (ms, log)", "discrete", "log10")
+        p += legend_side
+        p += facet_grid(".~sf~prune", scales=esc("free_y"))
+        ggsave("figures/fade_threading_latency_sf1.png", p, postfix=postfix, width=8, height=3, scale=0.8)
+        
         p = ggplot(fig4_data, aes(x='query',  y="speedup", color=cat, fill=cat, group=cat))
         p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.6), width=0.5)
         p += axis_labels('Query', "Speedup", "discrete")
@@ -497,44 +567,63 @@ if dense:
         p += facet_grid(".~sf~prune", scales=esc("free_y"))
         ggsave("figures/fade_threading_speedup_sf1.png", p, postfix=postfix, width=8, height=3, scale=0.8)
 
-        data_distinct = con.execute("select * from dense_data where num_threads=8 and is_scalar='false'").df()
-        cat = 'distinct'
-        p = ggplot(data_distinct, aes(x='query',  y="eval_time_ms", color=cat, fill=cat, group=cat))
-        p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.6), width=0.5)
-        p += axis_labels('Query', "Latency (ms)", "discrete")
-        p += legend_side
-        p += facet_grid(".~sf~prune", scales=esc("free_y"))
-        ggsave("figures/fade_best_distinct_sf1.png", p, postfix=postfix, width=8, height=3, scale=0.8)
 
-
-        data_distinct = con.execute("select * from dense_data where n=2560").df()
-        cat = 'cat'
-        p = ggplot(data_distinct, aes(x='query',  y="eval_time_ms", color=cat, fill=cat, group=cat))
-        p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.9), width=0.88)
-        p += axis_labels('Query', "Latency (ms)", "discrete")
-        p += legend_bottom
-        p += legend_side
-        p += facet_grid(".~sf~prune", scales=esc("free_y"))
-        ggsave("figures/fade_2560_sf1.png", p, postfix=postfix, width=8, height=3, scale=0.8)
-
-    data_distinct = con.execute("""select sf, prune, t1.query, t1.cat,qid, n, t1.num_threads, t1.is_scalar,
-    base.eval_time_ms / t1.eval_time_ms as speedup from ( select * from dense_data where n=2560 ) as t1 JOIN
-    (select * from dense_data where n=2560 and num_threads=1 and is_scalar='true') as base USING (sf, qid, n, prune) """).df()
+    data_distinct = con.execute("""select sf, t1.prune_label, t1.query, t1.cat,qid, n, t1.num_threads, t1.is_scalar,
+                        t1.eval_time_ms, base.eval_time_ms / t1.eval_time_ms as speedup
+    from ( select * from dense_data_v2 where n=2560 ) as t1 JOIN
+         ( select * from dense_data_v2 where n=2560 and num_threads=1 and is_scalar='true' and prune='False') as base 
+         USING (sf, qid, n) """).df()
 
     if plot:
         cat = 'cat'
         p = ggplot(data_distinct, aes(x='query',  y="speedup", color=cat, fill=cat, group=cat))
         p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.9), width=0.88)
-        p += axis_labels('Query', "Speedup", "discrete")
+        p += axis_labels('Query', "Speedup (log)", "discrete", "log10")
         p += legend_bottom
         p += legend_side
-        p += facet_grid(".~sf~prune", scales=esc("free_y"))
+        p += facet_grid(".~sf~prune_label", scales=esc("free_y"))
         ggsave("figures/fade_2560_sf1_speedup.png", p, postfix=postfix, width=8, height=3, scale=0.8)
+        
+        p = ggplot(data_distinct, aes(x='query',  y="eval_time_ms", color=cat, fill=cat, group=cat))
+        p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.9), width=0.88)
+        p += axis_labels('Query', "Latency (ms, log)", "discrete", "log10")
+        p += legend_bottom
+        p += legend_side
+        p += facet_grid(".~sf~prune_label", scales=esc("free_y"))
+        ggsave("figures/fade_2560_sf1_latency.png", p, postfix=postfix, width=8, height=3, scale=0.8)
+        
+
+        data_distinct = con.execute(f"""select sf, t1.prune_label, t1.query, t1.cat,qid, t1.n, t1.distinct, t1.num_threads, t1.is_scalar,
+                            t1.eval_time_ms, base.eval_time_ms, base.eval_time_ms*t1.n,
+                            (t1.n*base.eval_time_ms) / t1.eval_time_ms as speedup
+        from ( select * from dense_data_v2 where num_threads=8 and is_scalar='False' and prune='True') as t1 JOIN
+             ( select * from dbt_data  where prob={dbt_prob} and prune='True') as base 
+             USING (sf, qid) """).df()
+        print("======== DENSE Threads =============")
+        print(data_distinct)
+        cat = 'distinct'
+        p = ggplot(data_distinct, aes(x='query',  y="eval_time_ms", color=cat, fill=cat, group=cat))
+        p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.6), width=0.5)
+        p += axis_labels('Query', "Latency (ms, log)", "discrete", "log10")
+        p += legend_side
+        p += facet_grid(".~sf", scales=esc("free_y"))
+        ggsave("figures/fade_best_distinct_latency_sf1.png", p, postfix=postfix, width=4, height=2.5, scale=0.8)
+        
+        # TODO: add dbt comparison
+        p = ggplot(data_distinct, aes(x='query',  y="speedup", color=cat, fill=cat, group=cat))
+        p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.6), width=0.5)
+        p += axis_labels('Query', "Speedup (log)", "discrete", "log10")
+        p += legend_side
+        p += facet_grid(".~sf", scales=esc("free_y"))
+        ggsave("figures/fade_best_distinct_speedup_sf1.png", p, postfix=postfix, width=4, height=2.5, scale=0.8)
+
+
+
 
 # TODO: add incremental single evaluation. hold the indices of elements to be deleted. this would be equivalent eval to dbtoast
 
 if False:
-    data_spec = pd.read_csv('dense_delete_spec_sf1.csv')
+    data_spec = pd.read_csv('fade_data/dense_delete_spec_sf1.csv')
     data_search = pd.read_csv('search_sf1.csv')
     data_spec["itype"] = "DD"
     data_search["itype"] = "S"
@@ -562,15 +651,15 @@ if False:
     if include_dbt:
         # fig 2:
         # reexecute
-        fig1_data = con.execute("""
+        fig1_data = con.execute(f"""
             select 'Fade-prune+' as system, query, prune, sf, eval_time_ms from dense_data where n=1 and num_threads=1  and prune='True' and incremental='False'
             UNION ALL select 'Fade+' as system, query, prune, sf, eval_time_ms from dense_data where n=1 and num_threads=1  and prune='False' and incremental='False'
             UNION ALL select 'Fade-prune' as system, query, prune, sf, eval_time_ms from data where n=1 and num_threads=1 and prune='True'
             UNION ALL select 'Fade' as system, query, prune, sf, eval_time_ms from data where n=1 and num_threads=1 and prune='False'
             UNION ALL select 'Q' as system, query, 'False' as prune, sf, query_timing*1000 as eval_time from lineage_data
             UNION ALL select 'Q+' as system, query, 'False' as prune, sf, lineage_timing*1000 as eval_time from lineage_data
-            UNION ALL select 'DBT-prune' as system, query, prune, sf, eval_time_ms as eval_time from dbt_data where prob=0.1 and prune='True'
-            UNION ALL select 'DBT' as system, query, prune, sf, eval_time_ms as eval_time from dbt_data where prob=0.1 and prune='False'
+            UNION ALL select 'DBT-prune' as system, query, prune, sf, eval_time_ms as eval_time from dbt_data where prob={dbt_prob} and prune='True'
+            UNION ALL select 'DBT' as system, query, prune, sf, eval_time_ms as eval_time from dbt_data where prob={dbt_prob} and prune='False'
                 """).df()
         cat = "system"
         p = ggplot(fig1_data, aes(x='query', y='eval_time_ms', color=cat, fill=cat, group=cat))
@@ -580,28 +669,4 @@ if False:
         p += facet_grid(".~sf", scales=esc("free_y"))
         ggsave("figures/fade_dbt_single.png", p, width=8, height=3, scale=0.8)
         # x-axis query, y-axis latency
-
-if plot_scale:
-    scale_data = pd.read_csv('dense_scale_all.csv')
-    scale_data["eval_time_ms"] = 1000 * scale_data["eval_time"]
-    scale_data["query"] = "Q"+scale_data["qid"].astype(str)
-    scale_data["cat"] = scale_data.apply(lambda row: str(row["num_threads"]) + " Threads", axis=1)
-    scale_data["cat"] = scale_data.apply(lambda row: row["cat"] + "+SIMD" if row["is_scalar"] == False else row["cat"] , axis=1)
-    scale_data["n"] = scale_data["distinct"]
-    scale_data["sf_label"] = "SF="+scale_data["sf"].astype(str)
-    
-    scale_fig_data = con.execute("""select *, query, sf, n, is_scalar,
-        n / eval_time as throughput 
-        from scale_data where n=2560 and is_scalar='False'""").df()
-    postfix = """
-    data$query = factor(data$query, levels=c('Q1', 'Q3', 'Q5', 'Q7', 'Q9', 'Q10', 'Q12'))
-        """
-    p = ggplot(scale_fig_data, aes(x='sf',  y="throughput", color='query', group='query', shape='query'))
-    p += geom_point(stat=esc('identity'))
-    p +=  geom_line()
-    p += axis_labels('SF (log)', "Interventions / Seconds (log)", "log10", "log10", xkwargs=dict(breaks=[1,5,10]),
-            ykwargs=dict(breaks=[1000,10000,100000,1000000],  labels=list(map(esc,['10e3','10e4','10e5','10e6']))),
-            )
-    p += legend_side
-    ggsave("figures/fade_throughput.png", p, postfix=postfix, width=4, height=2.5, scale=0.8)
 
