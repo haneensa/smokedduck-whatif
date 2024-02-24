@@ -56,12 +56,14 @@ string Fade::get_agg_alloc(int fid, string fn, string out_type) {
 string Fade::group_partitions_by_intervention(EvalConfig config, FadeDataPerNode& node_data) {
 	std::ostringstream oss;
 	if (config.num_worker > 1) {
+		//fade_data[op->id].alloc_vars[out_var][t] = aligned_alloc(64, sizeof(int) * n_groups * n_interventions);
 		oss << "\tsync_point.arrive_and_wait();\n";
 		oss << "\tconst int group_count = " << node_data.n_groups << ";\n";
-		oss << R"(
-	for (int jc = 0; jc < n_interventions; jc += 100) {
-		if ((jc / 100) % num_threads == thread_id) {
-)";
+		oss << "\tconst int tot_count = group_count *  n_interventions ;\n";
+		oss << "\tconst int out_batch_size = tot_count/ num_threads ;\n";
+		oss << "\tconst int out_start = thread_id * out_batch_size;\n";
+		oss << "\tint out_end = out_start + out_batch_size;\n";
+		oss << "\tif (out_end >= tot_count) { out_end = tot_count; }\n";
 		for (auto &pair : node_data.alloc_vars) {
 			oss << "{\n";
 			int fid = node_data.alloc_vars_index[pair.first] ;
@@ -72,8 +74,7 @@ string Fade::group_partitions_by_intervention(EvalConfig config, FadeDataPerNode
 				oss <<  type_str +"* __restrict__ final_out = (" + type_str + "* __restrict__)alloc_vars[\"out_"+to_string(fid)+"\"][0];\n";
 			}
 			oss << R"(
-			  for (int k = 0; k <group_count; ++k) {
-		        for (int i = 1; i < num_threads; ++i) {
+		    for (int i = 1; i < num_threads; ++i) {
 )";
 			if (fid == -1) { // count
 				oss <<  type_str +"* __restrict__ final_in = (" + type_str + "* __restrict__)alloc_vars[\"out_count\"][i];\n";
@@ -81,21 +82,15 @@ string Fade::group_partitions_by_intervention(EvalConfig config, FadeDataPerNode
 				oss <<  type_str +"* __restrict__ final_in = (" + type_str + "* __restrict__)alloc_vars[\"out_"+to_string(fid)+"\"][i];\n";
 			}
 			oss << R"(
-		    for (int j = jc; j < jc + 100 && j < n_interventions; ++j) {
-						int index = k * n_interventions + j;
+			  for (int j = out_start; j <out_end; ++j) {
 )";
-			oss << "final_out[index] += final_in[index];\n";
+			oss << "final_out[j] += final_in[j];\n";
 			oss << R"(
-					}//(int k = 0; k < n_interventions; ++k)
 				}//(int i = 1; i < num_threads; ++i)
-			}//(int j = jc; j < jc + 16 && j < group_count; ++j)
+			}//j
     }
 )";
 		}
-		oss << R"(
-		}//if ((jc / 16) % num_threads == thread_id)
-	}//for (int jc = 0; jc < group_count; jc += 16)
-)";
 	}
 
 // iterate over annotations
