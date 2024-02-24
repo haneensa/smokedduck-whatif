@@ -15,7 +15,8 @@
 namespace duckdb {
 
 
-string FilterCodeAndAllocPredicate(EvalConfig config, PhysicalOperator *op, shared_ptr<OperatorLineage> lop, std::unordered_map<idx_t, FadeDataPerNode>& fade_data) {
+string FilterCodeAndAllocPredicate(EvalConfig& config, PhysicalOperator *op,
+    shared_ptr<OperatorLineage> lop, std::unordered_map<idx_t, FadeDataPerNode>& fade_data) {
 	string fname = "filter_"+ to_string(op->id) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
 	std::ostringstream oss;
 	oss << R"(extern "C" int )"
@@ -108,7 +109,6 @@ string JoinCodeAndAllocPredicate(EvalConfig config, PhysicalOperator *op, shared
 
 string get_agg_init_predicate(EvalConfig config, int row_count, int chunk_count, int opid, int n_interventions, string fn, string alloc_code,
                     string get_data_code, string get_vals_code) {
-	int n_masks = n_interventions / config.mask_size;
 	string fname = "agg_"+ to_string(opid) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
 	std::ostringstream oss;
 	if (config.use_duckdb) {
@@ -152,7 +152,7 @@ string get_agg_init_predicate(EvalConfig config, int row_count, int chunk_count,
 		oss << "\tconst int start = 0;\n";
 		oss << "\tconst int end   = row_count;\n";
 	}
-	oss << "std::cout << \"agg \" << chunk_count << \" \" <<  row_count << \" \" << n_interventions << \" \" << start << \" \" << end << std::endl;";
+//	oss << "std::cout << \"agg \" << chunk_count << \" \" <<  row_count << \" \" << n_interventions << \" \" << start << \" \" << end << std::endl;";
 
 	oss << alloc_code;
 
@@ -312,11 +312,13 @@ string HashAggregateCodeAndAllocPredicate(EvalConfig& config, shared_ptr<Operato
 	}
 
 	if (config.use_duckdb) {
-		end_code += "\t} \n offset +=  collection_chunk.size();\n}\nreturn 0;\n}\n";
+		end_code += "\t} \n offset +=  collection_chunk.size();\n}";
 	} else {
-		end_code += "\t}\n \treturn 0;\n}\n";
+		end_code += "\t}\n";
 	}
 
+	end_code += Fade::group_partitions(config, fade_data[op->id]);
+	end_code +=  "\treturn 0;\n}\n";
 
 	code = init_code + eval_code + end_code;
 
@@ -325,7 +327,7 @@ string HashAggregateCodeAndAllocPredicate(EvalConfig& config, shared_ptr<Operato
 
 void GenCodeAndAllocPredicate(EvalConfig& config, string& code, PhysicalOperator* op,
                               std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
-                              std::unordered_map<std::string, std::vector<std::string>> columns_spec) {
+                              std::unordered_map<std::string, std::vector<std::string>>& columns_spec) {
 	for (idx_t i = 0; i < op->children.size(); i++) {
 		GenCodeAndAllocPredicate(config, code, op->children[i].get(), fade_data, columns_spec);
 	}
@@ -339,7 +341,7 @@ void GenCodeAndAllocPredicate(EvalConfig& config, string& code, PhysicalOperator
 		// TODO: compile factorize or randomGen
 		if (config.n_intervention == 0) {
 			// factorize need access to base table
-			std::pair<vector<int>, idx_t> res = Fade::factorize(op, op->lineage_op, columns_spec);
+			std::pair<int*, idx_t> res = Fade::factorize(op, op->lineage_op, columns_spec);
 			fade_data[op->id].annotations = res.first;
 			fade_data[op->id].n_interventions = res.second;
 		} else {
@@ -352,7 +354,8 @@ void GenCodeAndAllocPredicate(EvalConfig& config, string& code, PhysicalOperator
 		if ( fade_data[op->id].n_interventions <= 1) {
 			return;
 		}
-		fade_data[op->id].annotations.resize(fade_data[op->id].lineage[0].size());
+    // alloc
+		fade_data[op->id].annotations = new int[fade_data[op->id].lineage[0].size()];
 		code += FilterCodeAndAllocPredicate(config, op, op->lineage_op, fade_data);
 	} else if (op->type == PhysicalOperatorType::HASH_JOIN
 	           || op->type == PhysicalOperatorType::NESTED_LOOP_JOIN
@@ -363,11 +366,11 @@ void GenCodeAndAllocPredicate(EvalConfig& config, string& code, PhysicalOperator
 		idx_t right_n_interventions =  fade_data[op->children[1]->id].n_interventions;
 		fade_data[op->id].n_interventions = left_n_interventions * right_n_interventions;
 		if (fade_data[op->id].n_interventions <= 1) return;
-		fade_data[op->id].annotations.resize(fade_data[op->id].lineage[0].size());
+		fade_data[op->id].annotations = new int[fade_data[op->id].lineage[0].size()];
 		code += JoinCodeAndAllocPredicate(config, op, op->lineage_op, fade_data);
 	} else if (op->type == PhysicalOperatorType::HASH_GROUP_BY) {
 		idx_t row_count = op->children[0]->lineage_op->chunk_collection.Count();
-		fade_data[op->id].annotations.resize(row_count);
+		//fade_data[op->id].annotations = new int[row_count];
 		fade_data[op->id].n_interventions = fade_data[op->children[0]->id].n_interventions;
 		Fade::HashAggregateAllocate(config, op->lineage_op, fade_data, op);
 		code += HashAggregateCodeAndAllocPredicate(config, op->lineage_op, fade_data, op);
@@ -378,19 +381,22 @@ void GenCodeAndAllocPredicate(EvalConfig& config, string& code, PhysicalOperator
 	}
 }
 
-void Intervention2DEvalPredicate(int thread_id, EvalConfig config, void* handle, PhysicalOperator* op,
+void Intervention2DEvalPredicate(int thread_id, EvalConfig& config, void* handle, PhysicalOperator* op,
                         std::unordered_map<idx_t, FadeDataPerNode>& fade_data) {
 	for (idx_t i = 0; i < op->children.size(); i++) {
 		Intervention2DEvalPredicate(thread_id, config, handle, op->children[i].get(), fade_data);
 	}
 
 	if (op->type == PhysicalOperatorType::FILTER) {
-		if (config.prune) return;
+		if (config.prune) {
+		  fade_data[op->id].annotations = fade_data[op->children[0]->id].annotations;
+      return;
+    }
 		if (fade_data[op->id].n_interventions <= 1) return;
 		idx_t row_count = fade_data[op->id].lineage[0].size();
 		int result = fade_data[op->id].filter_fn(thread_id, fade_data[op->id].lineage[0].data(),
-			                                         fade_data[op->children[0]->id].annotations.data(),
-			                                         fade_data[op->id].annotations.data());
+			                                         fade_data[op->children[0]->id].annotations,
+			                                         fade_data[op->id].annotations);
 	} else if (op->type == PhysicalOperatorType::HASH_JOIN
 	           || op->type == PhysicalOperatorType::NESTED_LOOP_JOIN
 	           || op->type == PhysicalOperatorType::BLOCKWISE_NL_JOIN
@@ -399,22 +405,23 @@ void Intervention2DEvalPredicate(int thread_id, EvalConfig config, void* handle,
 		if (fade_data[op->id].n_interventions <= 1) return;
 		idx_t row_count = fade_data[op->id].lineage[0].size();
 		int result = fade_data[op->id].join_fn(thread_id, fade_data[op->id].lineage[0].data(),
-			                                       fade_data[op->id].lineage[1].data(), fade_data[op->children[0]->id].annotations.data(),
-			                                       fade_data[op->children[1]->id].annotations.data(), fade_data[op->id].annotations.data());
+			                                       fade_data[op->id].lineage[1].data(), fade_data[op->children[0]->id].annotations,
+			                                       fade_data[op->children[1]->id].annotations, fade_data[op->id].annotations);
 	} else if (op->type == PhysicalOperatorType::HASH_GROUP_BY) {
 		if (fade_data[op->id].n_interventions <= 1) return;
 		if (config.use_duckdb) {
 			int result = fade_data[op->id].agg_duckdb_fn(thread_id, fade_data[op->id].lineage[0].data(),
-			                                             fade_data[op->children[0]->id].annotations.data(), fade_data[op->id].alloc_vars,
+			                                             fade_data[op->children[0]->id].annotations, fade_data[op->id].alloc_vars,
 			                                             op->children[0]->lineage_op->chunk_collection);
 		} else {
 			int result = fade_data[op->id].agg_fn(thread_id, fade_data[op->id].lineage[0].data(),
-			                                      fade_data[op->children[0]->id].annotations.data(), fade_data[op->id].alloc_vars,
+			                                      fade_data[op->children[0]->id].annotations, fade_data[op->id].alloc_vars,
 			                                      fade_data[op->id].input_data_map);
 		}
 	} else if (op->type == PhysicalOperatorType::UNGROUPED_AGGREGATE) {
 	} else if (op->type == PhysicalOperatorType::PROJECTION) {
-		fade_data[op->id].annotations = std::move(fade_data[op->children[0]->id].annotations);
+    // TODO: fix pass pointer instead of copying
+		fade_data[op->id].annotations = fade_data[op->children[0]->id].annotations;
 	}
 }
 
@@ -514,8 +521,9 @@ string Fade::PredicateSearch(PhysicalOperator *op, EvalConfig config) {
 
 	start_time = std::chrono::steady_clock::now();
 
+  // if final aggregate count is less than number of interventions, then skip
 	for (int i = 0; i < config.num_worker; ++i) {
-		workers.emplace_back(Intervention2DEvalPredicate, i, config, handle,  op, std::ref(fade_data));
+		workers.emplace_back(Intervention2DEvalPredicate, i, std::ref(config), handle,  op, std::ref(fade_data));
 	}
 
 	// Wait for all tasks to complete

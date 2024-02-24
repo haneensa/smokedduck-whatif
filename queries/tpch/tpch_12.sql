@@ -25,4 +25,4 @@ WHERE
     AND l_receiptdate >= CAST('1994-01-01' AS date)
     AND l_receiptdate < CAST('1995-01-01' AS date)
 GROUP BY
-    l_shipmode;
+    l_shipmode

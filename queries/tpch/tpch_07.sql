@@ -31,4 +31,4 @@ FROM (
 GROUP BY
     supp_nation,
     cust_nation,
-    l_year;
+    l_year

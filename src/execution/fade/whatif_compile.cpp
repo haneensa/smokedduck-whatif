@@ -14,7 +14,7 @@
 
 namespace duckdb {
 
-string fill_random_code(EvalConfig config) {
+string fill_random_code(EvalConfig& config) {
 	std::ostringstream oss;
 	oss << R"(
 extern "C" int fill_random(int row_count, float prob, int n_masks, void* del_interventions_ptr) {
@@ -39,7 +39,7 @@ extern "C" int fill_random(int row_count, float prob, int n_masks, void* del_int
 	} else {
 		oss << R"(
 		for (int j = 0; j < n_masks; ++j) {
-			__mmask16 randomValue = static_cast<int16_t>(dist_255(gen));
+		//	__mmask16 randomValue = static_cast<int16_t>(dist_255(gen));
 			del_interventions[i*n_masks+j] = 255;
 		}
 )";
@@ -49,13 +49,14 @@ extern "C" int fill_random(int row_count, float prob, int n_masks, void* del_int
 	oss << R"(
 	}
 
+  std::cout << "random done" << std::endl;
 	return 0;
 }
 )";
 	return oss.str();
 }
 
-string get_agg_init(EvalConfig config, int total_agg_count, int row_count, int chunk_count, int opid, int n_interventions, string fn, string alloc_code,
+string get_agg_init(EvalConfig& config, int total_agg_count, int row_count, int chunk_count, int opid, int n_interventions, string fn, string alloc_code,
                     string get_data_code, string get_vals_code) {
 	int n_masks = n_interventions / config.mask_size;
 	string fname = "agg_"+ to_string(opid) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
@@ -331,7 +332,7 @@ string get_agg_eval(EvalConfig& config, int total_agg_count, int agg_count, stri
 }
 
 // TODO: perfect hash agg, agg
-void GenRandomWhatifIntervention(EvalConfig config, PhysicalOperator* op,
+void GenRandomWhatifIntervention(EvalConfig& config, PhysicalOperator* op,
                                  std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
                                  void* handle,
                                  std::unordered_map<std::string, std::vector<std::string>>& spec) {
@@ -354,6 +355,9 @@ void GenRandomWhatifIntervention(EvalConfig config, PhysicalOperator* op,
 		if (config.n_intervention == 1) {
 			random_fn(row_count, config.probability, fade_data[op->id].n_masks, fade_data[op->id].single_del_interventions);
 		} else {
+      std::cout << " del_interventions " << row_count << " "
+        << " " << fade_data[op->id].del_interventions << std::endl;
+      std::cout << " check: " << fade_data[op->id].del_interventions[row_count-1*fade_data[op->id].n_masks] << std::endl;
 			random_fn(row_count, config.probability, fade_data[op->id].n_masks, fade_data[op->id].del_interventions);
 		}
 	}
@@ -362,38 +366,44 @@ void GenRandomWhatifIntervention(EvalConfig config, PhysicalOperator* op,
 string get_batch_join_template(EvalConfig &config, PhysicalOperator *op,
                           std::unordered_map<idx_t, FadeDataPerNode>& fade_data) {
 	std::ostringstream oss;
-	if (config.is_scalar) {
+	if (true || config.is_scalar) {
 		oss << R"(
+    int lhs_col = lhs_lineage[i] * n_masks;
+    int rhs_col = rhs_lineage[i] * n_masks;
+    int col = i*n_masks;
 for (int j=0; j < n_masks; j++) {
 )";
 		if ( fade_data[op->children[0]->id].n_masks > 0 && fade_data[op->children[1]->id].n_masks > 0) {
-			oss << R"(out[i*n_masks+j] = lhs_var[lhs_lineage[i]*n_masks+j] * rhs_var[rhs_lineage[i]*n_masks+j];)";
+			oss << R"(out[col+j] = lhs_var[lhs_col+j] * rhs_var[rhs_col+j];)";
 		} else if (fade_data[op->children[0]->id].n_masks > 0) {
-			oss << R"(out[i*n_masks+j] = lhs_var[lhs_lineage[i]*n_masks+j];)";
+			oss << R"(out[col+j] = lhs_var[lhs_col+j];)";
 		} else {
-			oss << R"(out[i*n_masks+j] = rhs_var[rhs_lineage[i]*n_masks+j];)";
+			oss << R"(out[col+j] = rhs_var[rhs_cols+j];)";
 		}
 
 		oss << "\n\t\t\t}";
 	} else {
 		oss << R"(
+    int lhs_col = lhs_lineage[i] * n_masks;
+    int rhs_col = rhs_lineage[i] * n_masks;
+    int col = i*n_masks;
 		for (int j=0; j < n_masks; j+=32) {
 )";
 		if ( fade_data[op->children[0]->id].n_masks > 0 && fade_data[op->children[1]->id].n_masks > 0) {
 			oss << R"(
-		__m512i a = _mm512_loadu_si512((__m512i*)&lhs_var[lhs_lineage[i]*n_masks+j]);
-		__m512i b = _mm512_loadu_si512((__m512i*)&rhs_var[rhs_lineage[i]*n_masks+j]);
-		_mm512_storeu_si512((__m512i*)&out[i*n_masks+j], _mm512_and_si512(a, b));
+		__m512i a = _mm512_loadu_si512((__m512i*)&lhs_var[lhs_col+j]);
+		__m512i b = _mm512_loadu_si512((__m512i*)&rhs_var[rhs_col+j]);
+		_mm512_storeu_si512((__m512i*)&out[col+j], _mm512_and_si512(a, b));
 )";
 		} else if (fade_data[op->children[0]->id].n_masks > 0) {
 			oss << R"(
-		__m512i a = _mm512_loadu_si512((__m512i*)&lhs_var[lhs_lineage[i]*n_masks+j]);
-		_mm512_storeu_si512((__m512i*)&out[i*n_masks+j], a);
+		__m512i a = _mm512_loadu_si512((__m512i*)&lhs_var[lhs_col+j]);
+		_mm512_storeu_si512((__m512i*)&out[col+j], a);
 )";
 		} else {
 			oss << R"(
-		__m512i b = _mm512_loadu_si512((__m512i*)&rhs_var[rhs_lineage[i]*n_masks+j]);
-		_mm512_storeu_si512((__m512i*)&out[i*n_masks+j], b);
+		__m512i b = _mm512_loadu_si512((__m512i*)&rhs_var[rhs_col+j]);
+		_mm512_storeu_si512((__m512i*)&out[col+j], b);
 )";
 		}
 
@@ -415,13 +425,13 @@ string get_single_join_template(EvalConfig &config, PhysicalOperator *op,
 
 	return oss.str();
 }
-string JoinCodeAndAlloc(EvalConfig config, PhysicalOperator *op, shared_ptr<OperatorLineage> lop, std::unordered_map<idx_t, FadeDataPerNode>& fade_data) {
+string JoinCodeAndAlloc(EvalConfig& config, PhysicalOperator *op, shared_ptr<OperatorLineage> lop, std::unordered_map<idx_t, FadeDataPerNode>& fade_data) {
 	int n_masks = config.n_intervention / config.mask_size;
 	string fname = "join_"+ to_string(op->id) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
 	std::ostringstream oss;
 	oss << R"(extern "C" int )"
 		    << fname
-		    << R"((int thread_id, int* lhs_lineage, int* rhs_lineage,  void* __restrict__ lhs_var_ptr,  void* __restrict__ rhs_var_ptr,  void* __restrict__ out_ptr) {
+		    << R"((int thread_id, int* __restrict__ lhs_lineage, int* __restrict__  rhs_lineage,  void* __restrict__ lhs_var_ptr,  void* __restrict__ rhs_var_ptr,  void* __restrict__ out_ptr) {
 )";
 
 	if (config.n_intervention == 1) {
@@ -471,13 +481,13 @@ string JoinCodeAndAlloc(EvalConfig config, PhysicalOperator *op, shared_ptr<Oper
 }
 
 
-string FilterCodeAndAlloc(EvalConfig config, PhysicalOperator *op, shared_ptr<OperatorLineage> lop, std::unordered_map<idx_t, FadeDataPerNode>& fade_data) {
+string FilterCodeAndAlloc(EvalConfig& config, PhysicalOperator *op, shared_ptr<OperatorLineage> lop, std::unordered_map<idx_t, FadeDataPerNode>& fade_data) {
 	int n_masks = config.n_intervention / config.mask_size;
 	string fname = "filter_"+ to_string(op->id) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
 	std::ostringstream oss;
 	oss << R"(extern "C" int )"
 	    << fname
-	    << R"((int thread_id, int* lineage,  void* __restrict__ var_ptr, void* __restrict__ out_ptr) {
+	    << R"((int thread_id, int* __restrict__ lineage,  void* __restrict__ var_ptr, void* __restrict__ out_ptr) {
 )";
 
 	if (config.n_intervention == 1) {
@@ -516,7 +526,7 @@ string FilterCodeAndAlloc(EvalConfig config, PhysicalOperator *op, shared_ptr<Op
 		out[i] = var[lineage[i]];
 	}
 )";
-	} else if (config.is_scalar) {
+	} else if (true /*config.is_scalar*/) {
 		oss << R"(
 	for (int i=start; i < end; ++i) {
 		for (int j=0; j < n_masks; ++j) {
@@ -669,6 +679,8 @@ void GenCodeAndAlloc(EvalConfig& config, string& code, PhysicalOperator* op,
 			fade_data[op->id].single_del_interventions = new int8_t[row_count];
 		} else {
 			fade_data[op->id].del_interventions = new __mmask16[row_count * n_masks];
+      std::cout << "alloc del_interventions " << row_count << " " << n_masks
+        << " " << fade_data[op->id].del_interventions << std::endl;
 		}
 
 		fade_data[op->id].n_masks = n_masks;
@@ -730,7 +742,7 @@ void GenCodeAndAlloc(EvalConfig& config, string& code, PhysicalOperator* op,
 	}
 }
 
-void BindFunctions(EvalConfig config, void* handle, PhysicalOperator* op,
+void BindFunctions(EvalConfig& config, void* handle, PhysicalOperator* op,
                         std::unordered_map<idx_t, FadeDataPerNode>& fade_data) {
 
 	for (idx_t i = 0; i < op->children.size(); i++) {
@@ -768,7 +780,7 @@ void Intervention2DEval(int thread_id, EvalConfig& config, void* handle, Physica
 	for (idx_t i = 0; i < op->children.size(); i++) {
 		Intervention2DEval(thread_id, config, handle, op->children[i].get(), fade_data);
 	}
-
+    
 	if (op->type == PhysicalOperatorType::FILTER) {
 		if (config.prune) return;
 		if (fade_data[op->id].n_masks > 0 || fade_data[op->id].n_interventions == 1) {
@@ -941,4 +953,3 @@ string Fade::Whatif(PhysicalOperator *op, EvalConfig config) {
 
 } // namespace duckdb
 #endif
-

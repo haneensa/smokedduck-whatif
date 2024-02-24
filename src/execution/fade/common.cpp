@@ -53,40 +53,60 @@ string Fade::get_agg_alloc(int fid, string fn, string out_type) {
 	return oss.str();
 }
 
-
-string Fade::get_agg_finalize(EvalConfig config, FadeDataPerNode& node_data) {
+string Fade::group_partitions_by_intervention(EvalConfig config, FadeDataPerNode& node_data) {
 	std::ostringstream oss;
-
-	if (config.n_intervention == 1) {
-		if (config.use_duckdb) {
-			return R"(
+	if (config.num_worker > 1) {
+		oss << "\tsync_point.arrive_and_wait();\n";
+		oss << "\tconst int group_count = " << node_data.n_groups << ";\n";
+		oss << R"(
+	for (int jc = 0; jc < n_interventions; jc += 100) {
+		if ((jc / 100) % num_threads == thread_id) {
+)";
+		for (auto &pair : node_data.alloc_vars) {
+			oss << "{\n";
+			int fid = node_data.alloc_vars_index[pair.first] ;
+			string type_str = node_data.alloc_vars_types[pair.first];
+			if (fid == -1) { // count
+				oss <<  type_str +"* __restrict__ final_out = (" + type_str + "* __restrict__)alloc_vars[\"out_count\"][0];\n";
+			} else {
+				oss <<  type_str +"* __restrict__ final_out = (" + type_str + "* __restrict__)alloc_vars[\"out_"+to_string(fid)+"\"][0];\n";
 			}
-			offset +=  collection_chunk.size();
-		}
-	return 0;
-	}
+			oss << R"(
+			  for (int k = 0; k <group_count; ++k) {
+		        for (int i = 1; i < num_threads; ++i) {
 )";
-		} else {
-			return "\t }\n \treturn 0;\n}\n";
+			if (fid == -1) { // count
+				oss <<  type_str +"* __restrict__ final_in = (" + type_str + "* __restrict__)alloc_vars[\"out_count\"][i];\n";
+			} else {
+				oss <<  type_str +"* __restrict__ final_in = (" + type_str + "* __restrict__)alloc_vars[\"out_"+to_string(fid)+"\"][i];\n";
+			}
+			oss << R"(
+		    for (int j = jc; j < jc + 100 && j < n_interventions; ++j) {
+						int index = k * n_interventions + j;
+)";
+			oss << "final_out[index] += final_in[index];\n";
+			oss << R"(
+					}//(int k = 0; k < n_interventions; ++k)
+				}//(int i = 1; i < num_threads; ++i)
+			}//(int j = jc; j < jc + 16 && j < group_count; ++j)
+    }
+)";
 		}
+		oss << R"(
+		}//if ((jc / 16) % num_threads == thread_id)
+	}//for (int jc = 0; jc < group_count; jc += 16)
+)";
 	}
 
-	if (config.is_scalar) oss <<  "\n\t\t\t\t}//c\n"; // close inner loop
+// iterate over annotations
+// 
+  return oss.str();
 
-	if (config.use_duckdb) {
-		oss << R"(
-			}//a.1
-		}//a.2
-		offset +=  collection_chunk.size();
 }
-)";
-	} else {
-		oss << R"(
-		}//b.1
-	} //b.2
-)";
-	}
 
+
+string Fade::group_partitions(EvalConfig config, FadeDataPerNode& node_data) {
+	std::ostringstream oss;
 	if (config.num_worker > 1) {
 		oss << "\tsync_point.arrive_and_wait();\n";
 		oss << "\tconst int group_count = " << node_data.n_groups << ";\n";
@@ -129,6 +149,46 @@ string Fade::get_agg_finalize(EvalConfig config, FadeDataPerNode& node_data) {
 )";
 	}
 
+// iterate over annotations
+// 
+  return oss.str();
+
+}
+
+string Fade::get_agg_finalize(EvalConfig config, FadeDataPerNode& node_data) {
+	std::ostringstream oss;
+
+	if (config.n_intervention == 1) {
+		if (config.use_duckdb) {
+			return R"(
+			}
+			offset +=  collection_chunk.size();
+		}
+	return 0;
+	}
+)";
+		} else {
+			return "\t }\n \treturn 0;\n}\n";
+		}
+	}
+
+	if (config.is_scalar) oss <<  "\n\t\t\t\t}//c\n"; // close inner loop
+
+	if (config.use_duckdb) {
+		oss << R"(
+			}//a.1
+		}//a.2
+		offset +=  collection_chunk.size();
+}
+)";
+	} else {
+		oss << R"(
+		}//b.1
+	} //b.2
+)";
+	}
+
+	oss << Fade::group_partitions(config, node_data);
 	oss << "\treturn 0;\n}\n";
 
 	return oss.str();
@@ -599,10 +659,12 @@ void Fade::HashAggregateAllocate(EvalConfig& config, shared_ptr<OperatorLineage>
 
 
 template<class T>
-pair<vector<int>, int> local_factorize(shared_ptr<OperatorLineage> lop, idx_t col_idx) {
+pair<int*, int> local_factorize(shared_ptr<OperatorLineage> lop, idx_t col_idx) {
 	std::unordered_map<T, int> dict;
-	vector<int> codes;
 	idx_t chunk_count = lop->chunk_collection.ChunkCount();
+	idx_t row_count = lop->chunk_collection.Count();
+	int* codes = new int[row_count];
+  int count = 0;
 	for (idx_t chunk_idx=0; chunk_idx < chunk_count; ++chunk_idx) {
 		DataChunk &collection_chunk = lop->chunk_collection.GetChunk(chunk_idx);
 		for (idx_t i=0; i < collection_chunk.size(); ++i) {
@@ -610,18 +672,18 @@ pair<vector<int>, int> local_factorize(shared_ptr<OperatorLineage> lop, idx_t co
 			if (dict.find(v) == dict.end()) {
 				dict[v] = dict.size();
 			}
-			codes.push_back(dict[v]);
+			codes[count++] = dict[v];
 		}
 	}
 	return make_pair(codes, dict.size());
 }
 
-std::pair<vector<int>, int> Fade::factorize(PhysicalOperator* op, shared_ptr<OperatorLineage> lop,
-                                      std::unordered_map<std::string, std::vector<std::string>> columns_spec) {
+std::pair<int*, int> Fade::factorize(PhysicalOperator* op, shared_ptr<OperatorLineage> lop,
+                                      std::unordered_map<std::string, std::vector<std::string>>& columns_spec) {
 	string col_name = columns_spec[lop->table_name].back();
 	PhysicalTableScan * scan = dynamic_cast<PhysicalTableScan *>(op);
-	std::pair<vector<int>, int> fade_data;
-	std::pair< vector<int>, int> res;
+	std::pair<int*, int> fade_data;
+	std::pair<int*, int> res;
 	for (idx_t i=0; i < scan->names.size(); i++) {
 		if (scan->names[i] == col_name) {
 			vector<idx_t> col_codes;
@@ -642,26 +704,26 @@ std::pair<vector<int>, int> Fade::factorize(PhysicalOperator* op, shared_ptr<Ope
 	return fade_data;
 }
 
-vector<int> Fade::random_unique(shared_ptr<OperatorLineage> lop, idx_t distinct) {
-	vector<int> codes;
+int* Fade::random_unique(shared_ptr<OperatorLineage> lop, idx_t distinct) {
 	// Seed the random number generator
 	std::random_device rd;
 	std::mt19937 gen(rd());
 	idx_t row_count = lop->log_index->table_size;
+	int* codes = new int[row_count];
 
 	// Generate random values
 	std::uniform_int_distribution<int> distribution(0, distinct - 1);
-
+  int count = 0;
 	for (idx_t i = 0; i < row_count; ++i) {
 		int random_value = distribution(gen);
-		codes.push_back(random_value);
+		codes[count++] = random_value;
 	}
 
 	return codes;
 }
 
 
-void Fade::BindFunctions(EvalConfig config, void* handle, PhysicalOperator* op,
+void Fade::BindFunctions(EvalConfig& config, void* handle, PhysicalOperator* op,
                    std::unordered_map<idx_t, FadeDataPerNode>& fade_data) {
 
 	for (idx_t i = 0; i < op->children.size(); i++) {

@@ -24,4 +24,4 @@ FROM (
         AND p_name LIKE '%green%') AS profit
 GROUP BY
     nation,
-    o_year;
+    o_year

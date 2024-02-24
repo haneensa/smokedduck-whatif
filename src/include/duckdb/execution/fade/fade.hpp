@@ -19,7 +19,7 @@ class PhysicalOperator;
 // holds allocated data per node
 // interventions, annotations, etc
 struct FadeDataPerNode {
-	vector<int> annotations;
+	int* annotations;
 	idx_t n_interventions;
 	idx_t n_masks;
 	idx_t n_groups;
@@ -81,6 +81,8 @@ public:
 	static string get_header(EvalConfig config);
 	static string get_agg_alloc(int fid, string fn, string out_type);
 	static string get_agg_finalize(EvalConfig config, FadeDataPerNode& node_data);
+	static string group_partitions(EvalConfig config, FadeDataPerNode& node_data);
+	static string group_partitions_by_intervention(EvalConfig config, FadeDataPerNode& node_data);
 
 	static void* compile(std::string code, int id);
 
@@ -111,11 +113,11 @@ public:
 	                                 std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
 	                                 PhysicalOperator* op);
 
-	static vector<int> random_unique(shared_ptr<OperatorLineage> lop, idx_t distinct);
-	static std::pair<vector<int>, int> factorize(PhysicalOperator* op, shared_ptr<OperatorLineage> lop,
-	                                      std::unordered_map<std::string, std::vector<std::string>> columns_spec);
+	static int* random_unique(shared_ptr<OperatorLineage> lop, idx_t distinct);
+	static std::pair<int*, int> factorize(PhysicalOperator* op, shared_ptr<OperatorLineage> lop,
+	                                      std::unordered_map<std::string, std::vector<std::string>>& columns_spec);
 
-	static void BindFunctions(EvalConfig config, void* handle, PhysicalOperator* op,
+	static void BindFunctions(EvalConfig& config, void* handle, PhysicalOperator* op,
 	                   std::unordered_map<idx_t, FadeDataPerNode>& fade_data);
 };
 

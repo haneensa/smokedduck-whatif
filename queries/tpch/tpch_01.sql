@@ -15,4 +15,4 @@ WHERE
     l_shipdate <= CAST('1998-09-02' AS date)
 GROUP BY
     l_returnflag,
-    l_linestatus;
+    l_linestatus

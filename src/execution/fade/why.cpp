@@ -14,7 +14,7 @@ void TableIntervene(shared_ptr<OperatorLineage> lop,
                     std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
                     PhysicalOperator* op,
                     std::unordered_map<std::string, std::vector<std::string>> columns_spec) {
-	if (fade_data[op->id].annotations.empty()) return;
+	//if (fade_data[op->id].annotations.empty()) return;
 
 	bool cache_on = false;
 	DataChunk result;
@@ -54,7 +54,7 @@ void  FilterIntervene(shared_ptr<OperatorLineage> lop,
   idx_t local_count = 0;
   idx_t current_thread = 0;
   idx_t log_id = 0;
-  vector<int> child_annotations = fade_data[op->children[0]->id].annotations;
+  int* child_annotations = fade_data[op->children[0]->id].annotations;
 
   do {
 		cache_on = false;
@@ -66,7 +66,7 @@ void  FilterIntervene(shared_ptr<OperatorLineage> lop,
 		unsigned int * in_index = reinterpret_cast<unsigned int *>(result.data[0].GetData());
 		for (idx_t i=0; i < result.size(); ++i) {
 			idx_t iid = in_index[i];
-			fade_data[op->id].annotations.push_back(child_annotations[iid]);
+			//fade_data[op->id].annotations.push_back(child_annotations[iid]);
 		}
   } while (cache_on || result.size() > 0);
 }
@@ -92,8 +92,8 @@ void  JoinIntervene(shared_ptr<OperatorLineage> lop,
   idx_t current_thread = 0;
   idx_t log_id = 0;
 
-  vector<int> lhs_child_annotations = fade_data[op->children[0]->id].annotations;
-  vector<int> rhs_child_annotations = fade_data[op->children[1]->id].annotations;
+  int* lhs_child_annotations = fade_data[op->children[0]->id].annotations;
+  int* rhs_child_annotations = fade_data[op->children[1]->id].annotations;
   if (left_n_interventions > 1 && right_n_interventions > 1) {
 		do {
 			cache_on = false;
@@ -107,7 +107,7 @@ void  JoinIntervene(shared_ptr<OperatorLineage> lop,
 			for (idx_t i=0; i < result.size(); ++i) {
 				idx_t lhs = lhs_index[i];
 				idx_t rhs = rhs_index[i];
-				annotations.push_back(lhs_child_annotations[lhs] * right_n_interventions + rhs_child_annotations[rhs]);
+		//		annotations.push_back(lhs_child_annotations[lhs] * right_n_interventions + rhs_child_annotations[rhs]);
 			}
 		} while (cache_on || result.size() > 0);
   } else if (left_n_interventions > 1) {
@@ -121,7 +121,7 @@ void  JoinIntervene(shared_ptr<OperatorLineage> lop,
 			unsigned int * lhs_index = reinterpret_cast<unsigned int *>(result.data[0].GetData());
 			for (idx_t i=0; i < result.size(); ++i) {
 				idx_t lhs = lhs_index[i];
-				annotations.push_back(lhs_child_annotations[lhs]);
+		//		annotations.push_back(lhs_child_annotations[lhs]);
 			}
 		} while (cache_on || result.size() > 0);
   } else if (right_n_interventions > 1) {
@@ -135,12 +135,12 @@ void  JoinIntervene(shared_ptr<OperatorLineage> lop,
 			unsigned int * rhs_index = reinterpret_cast<unsigned int *>(result.data[1].GetData());
 			for (idx_t i=0; i < result.size(); ++i) {
 				idx_t rhs = rhs_index[i];
-				annotations.push_back(rhs_child_annotations[rhs]);
+		//		annotations.push_back(rhs_child_annotations[rhs]);
 			}
 		} while (cache_on || result.size() > 0);
   }
 
-  fade_data[op->id].annotations = std::move(annotations);
+//  fade_data[op->id].annotations = std::move(annotations);
 }
 
 template<class T>
@@ -163,7 +163,7 @@ vector<vector<T>> SumRecompute(PhysicalOperator* op,
   // this is necessary only if we are computing aggregates without the subtraction property
   // since we need to iterate over all interventions and recompute the aggregates
   vector<vector<T>> new_vals(n_interventions, vector<T> (n_groups, 0));
-  vector<int> child_annotations = fade_data[op->children[0]->id].annotations;
+  int* child_annotations = fade_data[op->children[0]->id].annotations;
   idx_t offset = 0;
   for (idx_t chunk_idx=0; chunk_idx < chunk_count; ++chunk_idx) {
 	  DataChunk &collection_chunk = op->children[0]->lineage_op->chunk_collection.GetChunk(chunk_idx);
@@ -171,7 +171,7 @@ vector<vector<T>> SumRecompute(PhysicalOperator* op,
 	  T* col = reinterpret_cast<T*>(collection_chunk.data[col_idx].GetData());
 	  if (op->type == PhysicalOperatorType::UNGROUPED_AGGREGATE) {
 		  for (idx_t i=0; i < collection_chunk.size(); ++i) {
-				new_vals[child_annotations[i+offset]][0] += col[i];
+			//	new_vals[child_annotations[i+offset]][0] += col[i];
 		  }
 	  } else {
 		  for (idx_t i=0; i < collection_chunk.size(); ++i) {
@@ -202,7 +202,7 @@ vector<vector<T>> SumRecompute(PhysicalOperator* op,
 		  T val = input_values[iid];
 		  // for i in interventions
 		  // 	if intervention[i][iid]==1 /* not deleted */ then update(new_vals[i][oid], val)
-		  new_vals[child_annotations[iid]][oid] += val;
+		//  new_vals[child_annotations[iid]][oid] += val;
 	  }
 
   } while (cache_on || result.size() > 0);
@@ -222,12 +222,12 @@ vector<vector<T>> CountRecompute(PhysicalOperator* op,
   idx_t log_id = 0;
   bool cache_on = false;
   vector<vector<T>> new_vals(n_interventions, vector<T> (n_groups, 0));
-  vector<int> child_annotations = fade_data[op->children[0]->id].annotations;
+  int* child_annotations = fade_data[op->children[0]->id].annotations;
 
   if (op->type == PhysicalOperatorType::UNGROUPED_AGGREGATE) {
 	  idx_t row_count = op->children[0]->lineage_op->chunk_collection.Count();
 	  for (idx_t i=0; i < row_count; ++i) {
-		  new_vals[child_annotations[i]][0] += 1;
+		 // new_vals[child_annotations[i]][0] += 1;
 	  }
   }
 
@@ -249,7 +249,7 @@ vector<vector<T>> CountRecompute(PhysicalOperator* op,
 		  idx_t oid = out_index[i];
 		  // for i in interventions
 		  // if intervention[i][iid]==1 /* not deleted */ then update(new_vals[i][oid], val)
-		  new_vals[child_annotations[iid]][oid] += 1;
+		//  new_vals[child_annotations[iid]][oid] += 1;
 	  }
   } while (cache_on || result.size() > 0);
   return new_vals;
@@ -371,7 +371,7 @@ void Intervention(PhysicalOperator* op,
   } else if (op->type == PhysicalOperatorType::UNGROUPED_AGGREGATE) {
 	  UngroupedAggregateIntervene(op->lineage_op, fade_data, op);
   } else if (op->type == PhysicalOperatorType::PROJECTION) {
-	  fade_data[op->id].annotations  = fade_data[op->children[0]->id].annotations;
+//	  fade_data[op->id].annotations  = fade_data[op->children[0]->id].annotations;
 	  fade_data[op->id].n_interventions  = fade_data[op->children[0]->id].n_interventions;
   }
 }
