@@ -121,8 +121,10 @@ string get_agg_init_predicate(EvalConfig config, int row_count, int chunk_count,
 		    << fname
 		    << R"((int thread_id, int* lineage, void* var_0_ptr, std::unordered_map<std::string, std::vector<void*>>& alloc_vars, std::unordered_map<int, void*>& input_data_map) {
 )";
-	}
-
+  }
+	
+	oss << "\tconst int num_threads  = " << config.num_worker << ";\n";
+  oss << "\tif (thread_id >= num_threads)  return 0;\n";
 	oss << "\t int* __restrict__ var_0 = (int* __restrict__)var_0_ptr;\n";
 
 	oss << "\tconst int chunk_count = " << chunk_count << ";\n";
@@ -130,7 +132,6 @@ string get_agg_init_predicate(EvalConfig config, int row_count, int chunk_count,
 	oss << "\tconst int n_interventions  = " << n_interventions << ";\n";
 
 	if (config.num_worker > 0) {
-		oss << "\tconst int num_threads  = " << config.num_worker << ";\n";
 		if (config.use_duckdb) {
 			int batch_size = chunk_count / config.num_worker;
 			if (chunk_count % config.num_worker > 0)
@@ -152,7 +153,7 @@ string get_agg_init_predicate(EvalConfig config, int row_count, int chunk_count,
 		oss << "\tconst int start = 0;\n";
 		oss << "\tconst int end   = row_count;\n";
 	}
-//	oss << "std::cout << \"agg \" << chunk_count << \" \" <<  row_count << \" \" << n_interventions << \" \" << start << \" \" << end << std::endl;";
+	oss << "std::cout << \"agg \" << chunk_count << \" \" <<  row_count << \" \" << n_interventions << \" \" << start << \" \" << end << std::endl;";
 
 	oss << alloc_code;
 
@@ -239,15 +240,9 @@ string HashAggregateCodeAndAllocPredicate(EvalConfig& config, shared_ptr<Operato
 
 	PhysicalHashAggregate * gb = dynamic_cast<PhysicalHashAggregate *>(op);
 	auto &aggregates = gb->grouped_aggregate_data.aggregates;
-	// get n_groups: max(oid)+1
-	idx_t n_groups = 1;
-	if (op->type != PhysicalOperatorType::UNGROUPED_AGGREGATE) {
-		n_groups = lop->log_index->ha_hash_index.size(); //lop->chunk_collection.Count();
-	}
-
-	fade_data[op->id].n_groups = n_groups;
 
 	idx_t row_count = op->children[0]->lineage_op->chunk_collection.Count();
+  // if n_groups * n_interventions > rows then use single thread
 	bool include_count = false;
 	int batches = 4;
 	int agg_count = 0;
@@ -372,8 +367,16 @@ void GenCodeAndAllocPredicate(EvalConfig& config, string& code, PhysicalOperator
 		idx_t row_count = op->children[0]->lineage_op->chunk_collection.Count();
 		//fade_data[op->id].annotations = new int[row_count];
 		fade_data[op->id].n_interventions = fade_data[op->children[0]->id].n_interventions;
+    // get n_groups: max(oid)+1
+    fade_data[op->id].n_groups = op->lineage_op->log_index->ha_hash_index.size(); //lop->chunk_collection.Count();
+    // if n_groups * n_interventions > rows then use single thread
+    int n_threads = config.num_worker;
+    if (fade_data[op->id].n_groups * fade_data[op->id].n_interventions  > row_count) {
+      config.num_worker = 1;
+    }
 		Fade::HashAggregateAllocate(config, op->lineage_op, fade_data, op);
 		code += HashAggregateCodeAndAllocPredicate(config, op->lineage_op, fade_data, op);
+    config.num_worker = n_threads;
 	} else if (op->type == PhysicalOperatorType::UNGROUPED_AGGREGATE) {
 	  //  UngroupedAggregateIntervene(op->lineage_op, fade_data, op);
 	}  else if (op->type == PhysicalOperatorType::PROJECTION) {

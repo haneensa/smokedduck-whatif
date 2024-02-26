@@ -2,14 +2,14 @@
 
 export DUCKDB_LIB_PATH=/ProvEnhance/third_party/smokedduck-whatif/build/release/src
 
-query_nums=("1") # "3" "5" "7" "9" "10" "12")
-sf_values=("1") # "5" "10")  # "0.2" "0.4") # "5.0" "10.0") # (# "3.0" "4.0")
-distinct=("512") # "1024" "2048" "2560")
-threads_num=("1" "8") # "4" "8")
+query_nums=("1" "3" "5" "7" "9" "10" "12")
+sf_values=("10") # "5" "10")  # "0.2" "0.4") # "5.0" "10.0") # (# "3.0" "4.0")
+distinct=("1024" "2048" "2560")
+threads_num=("1" "2" "4" "8")
 is_scalar_binary=("true") # "true") 
 #duckdb_binary=("false" "true")
-prune_binary=("true") #"false" "true") #"true" "false")
-csv="search_all_test.csv"
+prune_binary=("false" "true") #"false" "true") #"true" "false")
+csv="search_all_feb25_b.csv"
 debug="false" #"true"
 #itype_list=("SEARCH" "DENSE_DELETE_ALL" "DENSE_DELETE_SPEC")
 #itype_list=("DENSE_DELETE_ALL")
@@ -76,7 +76,7 @@ do
                   if [ "$itype" = "SEARCH" ] || { [ "$n" -eq 1 ] && [ "$use_duckdb" = "false" ]; } ; then
                     python3 smokedduck/test_whatif.py  --batch ${batch} --prune ${prune} --sf ${sf} --csv ${csv} --i ${query_num} --use-duckdb ${use_duckdb} --t ${thread} --is-scalar ${is_scalar} --debug ${debug} --interventions ${n} --itype ${itype} --prob ${prob} --incremental "true"
                   fi
-                  #python3 smokedduck/test_whatif.py  --batch ${batch} --prune ${prune} --sf ${sf} --csv ${csv} --i ${query_num} --use-duckdb ${use_duckdb} --t ${thread} --is-scalar ${is_scalar} --debug ${debug} --interventions ${n} --itype ${itype} --prob ${prob} --incremental "false"
+                  python3 smokedduck/test_whatif.py  --batch ${batch} --prune ${prune} --sf ${sf} --csv ${csv} --i ${query_num} --use-duckdb ${use_duckdb} --t ${thread} --is-scalar ${is_scalar} --debug ${debug} --interventions ${n} --itype ${itype} --prob ${prob} --incremental "false"
                 done
               done # query_num
           # done # use_duckdb

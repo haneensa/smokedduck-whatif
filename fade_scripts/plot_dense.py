@@ -662,7 +662,7 @@ if dense:
 include_search = True
 if include_search:
     data_spec = pd.read_csv('fade_data/dense_delete_spec_sf1.csv')
-    data_search = pd.read_csv('fade_data/search_all.csv')
+    data_search = pd.read_csv('fade_data/search_all_feb25.csv')
     data_cube = pd.read_csv('fade_data/cube_search.csv')
     data_spec["itype"] = "DD"
     data_search["itype"] = "S"
@@ -686,6 +686,9 @@ if include_search:
     # speedup: base x-axis DENSE_DELETE_SPEC
 
     if plot:
+        postfix = """
+        data$query = factor(data$query, levels=c('Q1', 'Q3', 'Q5', 'Q7', 'Q9', 'Q10', 'Q12'))
+            """
         plot_data = con.execute("""
         select query, eval_time_ms, prune, n, sf, cat from data where n>1 and itype<>'DD' and incremental='True'
         UNION ALL
@@ -700,7 +703,14 @@ if include_search:
         p += axis_labels('Query', "Run time (ms, log)", "discrete", "log10")
         p += legend_bottom
         p += facet_grid(".~prune~n~sf", scales=esc("free_y"))
-        ggsave("figures/fade_search.png", p,width=10, height=10, scale=0.8)
+        ggsave("figures/fade_search_fade25.png", p, postfix=postfix, width=10, height=10, scale=0.8)
+        sf1_plot_data = con.execute("select * from plot_data where sf=1 and n=2560").df()
+        p = ggplot(sf1_plot_data, aes(x='query',  y="eval_time_ms", color=cat, fill=cat, group=cat))
+        p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.9), width=0.88)
+        p += axis_labels('Query', "Run time (ms, log)", "discrete", "log10")
+        p += legend_bottom
+        p += facet_grid(".~prune", scales=esc("free_y"))
+        ggsave("figures/fade_search_fade25_sf1.png", p, postfix=postfix, width=4, height=3, scale=0.8)
 
     if include_dbt:
         # fig 2:
