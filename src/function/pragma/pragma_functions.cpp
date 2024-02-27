@@ -119,32 +119,6 @@ static void PragmaDisableOptimizer(ClientContext &context, const FunctionParamet
 
 #ifdef LINEAGE
 
-static void PragmaWhy(ClientContext &context, const FunctionParameters &parameters) {
-	int qid = parameters.values[0].GetValue<int>();
-	int k = parameters.values[1].GetValue<int>();
-	string spec =  parameters.values[2].ToString();
-	int distinct = parameters.values[3].GetValue<int>();
-
-	std::cout << "\nPragmaWhy " << qid << " " << k << " " <<  spec << std::endl;
-
-	// 1. find the query plan associated with qid
-	PhysicalOperator* op = context.client_data->lineage_manager->queryid_to_plan[qid].get();
-
-	EvalConfig config;
-	config.columns_spec_str = spec;
-	config.intervention_type = DENSE_DELETE_ALL;
-	config.n_intervention = distinct;
-	config.topk = k;
-	// takes in query id, attributes to intervene on, conjunctive only or conjunctive and disjunction, or random
-	Fade::Why(op, config);
-}
-
-static void PragmaRexec(ClientContext &context, const FunctionParameters &parameters) {
-	int qid = parameters.values[0].GetValue<int>();
-	PhysicalOperator* op = context.client_data->lineage_manager->queryid_to_plan[qid].get();
-	Fade::Rexec(op);
-}
-
 static void PragmaEnableLineage(ClientContext &context, const FunctionParameters &parameters) {
 	context.client_data->lineage_manager->trace_lineage = true;
 	ClientConfig::GetConfig(context).trace_lineage = true;
@@ -186,9 +160,6 @@ static void PragmaClearLineage(ClientContext &context, const FunctionParameters 
 void PragmaFunctions::RegisterFunction(BuiltinFunctions &set) {
 	RegisterEnableProfiling(set);
 #ifdef LINEAGE
-	set.AddFunction(PragmaFunction::PragmaCall("Why", PragmaWhy, {LogicalType::INTEGER,
-	                                                              LogicalType::INTEGER, LogicalType::VARCHAR, LogicalType::INTEGER}));
-	set.AddFunction(PragmaFunction::PragmaCall("Rexec", PragmaRexec, {LogicalType::INTEGER}));
     set.AddFunction(PragmaFunction::PragmaStatement("enable_lineage", PragmaEnableLineage));
 	set.AddFunction(PragmaFunction::PragmaStatement("disable_lineage", PragmaDisableLineage));
 	set.AddFunction(PragmaFunction::PragmaStatement("enable_intermediate_tables", PragmaEnableIntermediateTables));

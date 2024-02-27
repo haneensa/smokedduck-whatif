@@ -70,10 +70,8 @@ class Fade {
 public:
 	Fade() {};
 
-	static void Why(PhysicalOperator* op,  EvalConfig config);
 	static string Whatif(PhysicalOperator* op, EvalConfig config);
 	static string PredicateSearch(PhysicalOperator* op, EvalConfig config);
-	static void Rexec(PhysicalOperator* op);
 
 	template<class T1, class T2>
 	static T2* GetInputVals(PhysicalOperator* op, shared_ptr<OperatorLineage> lop, idx_t col_idx);

@@ -5,6 +5,7 @@
 #include "duckdb/execution/lineage/lineage_manager.hpp"
 #include "duckdb/execution/operator/aggregate/physical_hash_aggregate.hpp"
 #include "duckdb/execution/operator/aggregate/physical_ungrouped_aggregate.hpp"
+#include "duckdb/execution/operator/scan/physical_table_scan.hpp"
 #include "duckdb/planner/expression/bound_reference_expression.hpp"
 #include <fstream>
 #include <dlfcn.h>
