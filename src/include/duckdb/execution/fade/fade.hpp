@@ -21,6 +21,7 @@ class PhysicalOperator;
 struct FadeDataPerNode {
 	int* annotations;
 	idx_t n_interventions;
+	std::set<int> del_set;
 	idx_t n_masks;
 	idx_t n_groups;
 	// single_del_intervention.size() == input table size
@@ -36,10 +37,11 @@ struct FadeDataPerNode {
 	std::unordered_map<string, int> alloc_vars_index;
 	std::unordered_map<int, void*> input_data_map;
 	vector<int> lineage[2];
-	int (*filter_fn)(int, int*, void*, void*);
-	int (*join_fn)(int, int*, int*, void*, void*, void*);
-	int (*agg_duckdb_fn)(int, int*, void*, std::unordered_map<std::string, vector<void*>>&, ChunkCollection&);
-	int (*agg_fn)(int, int*, void*, std::unordered_map<std::string, vector<void*>>&,  std::unordered_map<int, void*>&);
+	vector<int> forward_lineage[2];
+	int (*filter_fn)(int, int*, void*, void*, std::set<int>&, std::set<int>&);
+	int (*join_fn)(int, int*, int*, void*, void*, void*, std::set<int>&,  std::set<int>&, std::set<int>&);
+	int (*agg_duckdb_fn)(int, int*, void*, std::unordered_map<std::string, vector<void*>>&, ChunkCollection&, std::set<int>&);
+	int (*agg_fn)(int, int*, void*, std::unordered_map<std::string, vector<void*>>&,  std::unordered_map<int, void*>&, std::set<int>&);
 };
 
 enum InterventionType {

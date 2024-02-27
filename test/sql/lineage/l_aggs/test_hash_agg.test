@@ -29,26 +29,15 @@ PRAGMA disable_lineage;
 PRAGMA disable_optimizer;
 PRAGMA threads=1;
 
-# qid:INT, Itype:STR, spec:STR, n_interventions:INT, batch:INT, is_scalar:BOOL, use_duckdb:BOOL, threads:INT, debug:BOOL, prune:BOOL
+# qid:INT, Itype:STR, spec:STR, n_interventions:INT, batch:INT, is_scalar:BOOL, use_duckdb:BOOL, threads:INT, debug:BOOL, prune:BOOL, incremental:BOOL, prob:float
 
+
+query IIIII
+pragma WhatIf(2, 'DELETE', 't1.i', 1, 1, true, false, 1, true, true, true, 0.05);
+----
 
 query IIIII
 pragma WhatIf(2, 'SEARCH', 't1.i', 0, 2, true, false, 1, true, true, true, 0.1);
 ----
 
 
-
-query IIIII
-pragma WhatIf(2, 'DELETE', 't1.i', 1, 1, true, false, 1, true, true, true, 0.1);
-----
-
-
-
-# qid, type, table:prob, n_interventions
-query I
-pragma Rexec(2);
-----
-
-query I
-pragma Why(2, 3, 't1.i', 10);
-----

@@ -25,6 +25,7 @@ string Fade::get_header(EvalConfig config) {
 #include <immintrin.h>
 #include <barrier>
 #include <random>
+#include <set>
 )";
 
 	if (config.use_duckdb) {
@@ -730,7 +731,7 @@ void Fade::BindFunctions(EvalConfig& config, void* handle, PhysicalOperator* op,
 		if (config.prune) return;
 		//if (fade_data[op->id].n_masks > 0) {
 		string fname = "filter_"+ to_string(op->id) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
-		fade_data[op->id].filter_fn = (int(*)(int, int*, void*, void*))dlsym(handle, fname.c_str());
+		fade_data[op->id].filter_fn = (int(*)(int, int*, void*, void*, std::set<int>&, std::set<int>&))dlsym(handle, fname.c_str());
 		//	}
 	} else if (op->type == PhysicalOperatorType::HASH_JOIN
 	           || op->type == PhysicalOperatorType::NESTED_LOOP_JOIN
@@ -739,14 +740,16 @@ void Fade::BindFunctions(EvalConfig& config, void* handle, PhysicalOperator* op,
 	           || op->type == PhysicalOperatorType::CROSS_PRODUCT) {
 		//if (fade_data[op->id].n_masks > 0) {
 		string fname = "join_"+ to_string(op->id) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
-		fade_data[op->id].join_fn = (int(*)(int, int*, int*, void*, void*, void*))dlsym(handle, fname.c_str());
+		fade_data[op->id].join_fn = (int(*)(int, int*, int*, void*, void*, void*, std::set<int>&, std::set<int>&, std::set<int>&))dlsym(handle, fname.c_str());
 		//}
 	} else if (op->type == PhysicalOperatorType::HASH_GROUP_BY) {
 		string fname = "agg_"+ to_string(op->id) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
 		if (config.use_duckdb) {
-			fade_data[op->id].agg_duckdb_fn = (int(*)(int, int*, void*, std::unordered_map<std::string, vector<void*>>&, ChunkCollection&))dlsym(handle, fname.c_str());
+			fade_data[op->id].agg_duckdb_fn = (int(*)(int, int*, void*, std::unordered_map<std::string, vector<void*>>&,
+			                                           ChunkCollection&, std::set<int>&))dlsym(handle, fname.c_str());
 		} else {
-			fade_data[op->id].agg_fn = (int(*)(int, int*, void*, std::unordered_map<std::string, vector<void*>>&,  std::unordered_map<int, void*>&))dlsym(handle, fname.c_str());
+			fade_data[op->id].agg_fn = (int(*)(int, int*, void*, std::unordered_map<std::string, vector<void*>>&,
+			    std::unordered_map<int, void*>&, std::set<int>&))dlsym(handle, fname.c_str());
 		}
 	}
 }

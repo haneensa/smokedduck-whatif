@@ -216,6 +216,8 @@ string PragmaUserAgent(ClientContext &context, const FunctionParameters &paramet
 
 #ifdef LINEAGE
 string PragmaWhatif(ClientContext &context, const FunctionParameters &parameters) {
+	// # qid:INT, Itype:STR, spec:STR, n_interventions:INT, batch:INT, is_scalar:BOOL, use_duckdb:BOOL, threads:INT, debug:BOOL, prune:BOOL, incremental:BOOL, prob:float
+
 	int qid = parameters.values[0].GetValue<int>();
 	string intervention_type_str = parameters.values[1].ToString();
 	InterventionType intervention_type =  DENSE_DELETE_ALL;
