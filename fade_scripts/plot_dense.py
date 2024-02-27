@@ -515,6 +515,21 @@ if dense:
         p += legend_side
         p += facet_grid(".~sf~prune", scales=esc("free_y"))
         ggsave("figures/fade_batching_speedup_sf1.png", p, postfix=postfix, width=8, height=3, scale=0.8)
+        
+        fig2_data_noprune = con.execute("select * from fig2_data where prune='False'").df()
+        p = ggplot(fig2_data_noprune, aes(x='query',  y="speedup", color=cat, fill=cat, group=cat))
+        p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.6), width=0.5)
+        p += axis_labels('Query', "Speedup", "discrete")
+        p += legend_side
+        p += facet_grid(".~sf~prune", scales=esc("free_y"))
+        ggsave("figures/fade_batching_speedup_sf1_noprune.png", p, postfix=postfix, width=8, height=3, scale=0.8)
+        
+        p = ggplot(fig2_data_noprune, aes(x='query',  y="eval_time_ms", color=cat, fill=cat, group=cat))
+        p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.6), width=0.5)
+        p += axis_labels('Query', "Latency (ms, log)", "discrete", "log10")
+        p += legend_side
+        p += facet_grid(".~sf~prune", scales=esc("free_y"))
+        ggsave("figures/fade_batching_latency_sf1_noprune.png", p, postfix=postfix, width=8, height=3, scale=0.8)
 
     print("======== DENSE Pruning =============")
     prune_data = con.execute(f"""select sf, n, t1.query, t1.cat, qid, t1.n, t1.num_threads, t1.distinct,
@@ -710,7 +725,7 @@ if include_search:
         p += axis_labels('Query', "Run time (ms, log)", "discrete", "log10")
         p += legend_bottom
         p += facet_grid(".~prune", scales=esc("free_y"))
-        ggsave("figures/fade_search_fade25_sf1.png", p, postfix=postfix, width=4, height=3, scale=0.8)
+        ggsave("figures/fade_search_fade25_sf1.png", p, postfix=postfix, width=6, height=2.5, scale=0.8)
 
     if include_dbt:
         # fig 2:
