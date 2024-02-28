@@ -37,18 +37,23 @@ plot = True
 print_summary = True
 include_dbt = True
 dense = True
-single = False
+single = True
 plot_scale = False
+include_incremental_random = True
 
-if plot_scale:
-    scale_data = pd.read_csv('fade_data/dense_scale_all.csv')
-    scale_data["eval_time_ms"] = 1000 * scale_data["eval_time"]
-    scale_data["query"] = "Q"+scale_data["qid"].astype(str)
-    scale_data["cat"] = scale_data.apply(lambda row: str(row["num_threads"]) + " Threads", axis=1)
-    scale_data["cat"] = scale_data.apply(lambda row: row["cat"] + "+SIMD" if row["is_scalar"] == False else row["cat"] , axis=1)
-    scale_data["n"] = scale_data["distinct"]
-    scale_data["sf_label"] = "SF="+scale_data["sf"].astype(str)
+def get_data(fname, scale):
+    local_data = pd.read_csv(fname)
+    local_data["eval_time_ms"] = scale * local_data["eval_time"]
+    local_data["query"] = "Q"+ local_data["qid"].astype(str)
+    local_data["cat"] = local_data.apply(lambda row: str(row["num_threads"]) + " Threads", axis=1)
+    local_data["cat"] = local_data.apply(lambda row: row["cat"] + "+SIMD" if row["is_scalar"] == False else row["cat"] , axis=1)
+    local_data["n"] = local_data["distinct"]
+    local_data["sf_label"] = "SF="+ local_data["sf"].astype(str)
+    local_data["prune_label"] = local_data.apply(lambda row:"P" if row["prune"] else "NP" , axis=1)
+    return local_data
     
+if plot_scale:
+    scale_data = get_data('fade_data/dense_scale_all.csv', 1000)
     scale_fig_data = con.execute("""select *, query, sf, n, is_scalar,
         n / eval_time as throughput 
         from scale_data where n=2560 and is_scalar='False'""").df()
@@ -64,15 +69,14 @@ if plot_scale:
     p += legend_side
     ggsave("figures/fade_throughput.png", p, postfix=postfix, width=4, height=2.5, scale=0.8)
 
+if include_incremental_random:
+    incremental_data = get_data("single_incremental_random_sparse.csv", 1000)
 
 # for each query,
 if include_dbt:
-    dbt_data = pd.read_csv("fade_data/dbtoast.csv")
-    dbt_data["eval_time_ms"]=dbt_data["eval_time"]
-    dbt_data["query"] = "Q"+dbt_data["qid"].astype(str)
+    dbt_data = get_data("fade_data/dbtoast.csv", 1)
     dbt_data["cat"] = dbt_data.apply(lambda row: "DBT_prune" if row["prune"] else "DBT", axis=1)
-    dbt_data["n"] = dbt_data["distinct"]
-    dbt_data["sf_label"] = "SF="+dbt_data["sf"].astype(str)
+    
     cat = "prob"
     if plot:
         p = ggplot(dbt_data, aes(x='query',  y="eval_time_ms", color=cat, fill=cat, group=cat))
@@ -119,15 +123,10 @@ lineage_data["query"] = "Q"+lineage_data["qid"].astype(str)
 lineage_data["sf_label"] = "SF="+lineage_data["sf"].astype(str)
 
 #data = pd.read_csv('dense_delete_all_sf1.csv')
-dense_data = pd.read_csv('fade_data/dense_all_sf1_v2.csv')
-dense_data["eval_time_ms"]=1000*dense_data["eval_time"]
-dense_data["query"] = "Q"+dense_data["qid"].astype(str)
+dense_data = get_data('fade_data/dense_all_sf1_v2.csv', 1000)
 dense_data["cat"] = dense_data.apply(lambda row: str(row["num_threads"]) + " Threads", axis=1)
 dense_data["cat"] = dense_data.apply(lambda row: row["cat"] + "+SIMD" if row["is_scalar"] == False else row["cat"] , axis=1)
 dense_data["cat"] = dense_data.apply(lambda row: row["itype"]+" ^"+row["cat"] if row["incremental"] and row["itype"] == "S" else row["itype"] + row["cat"], axis=1)
-dense_data["n"] = dense_data["distinct"]
-dense_data["prune_label"] = dense_data.apply(lambda row:"Fade-P" if row["prune"] else "Fade" , axis=1)
-dense_data["sf_label"] = "SF="+dense_data["sf"].astype(str)
 
 if print_summary:
     print("======== Lineage Overheaad Summary =============")
@@ -434,21 +433,29 @@ if single:
         # fig 1:
         # x-axis prob, y-axis dbt normalized latency against fade
         dbt_fade_data = con.execute("""
-        select sf, query, prob, fade.incremental, fade.prune_label, dbt.prune dbt_prune, fade.prune, fade.num_threads,
+        select 'FaDe' as system, sf, query, prob, fade.incremental, fade.prune_label, dbt.prune dbt_prune, fade.prune, fade.num_threads,
         (dbt.eval_time_ms / fade.eval_time_ms) as nor,
         dbt.eval_time_ms, fade.eval_time_ms
         from (select * from dbt_data where prune='True') as dbt JOIN
         (select * from  dense_data where n=1 and num_threads=1) as fade
         USING (query, sf, prob)
+        UNION ALL
+        select 'IFaDe' as system, sf, query, prob, fade.incremental, fade.prune_label, dbt.prune dbt_prune, fade.prune, fade.num_threads,
+        (dbt.eval_time_ms / fade.eval_time_ms) as nor,
+        dbt.eval_time_ms, fade.eval_time_ms
+        from (select * from dbt_data where prune='True') as dbt JOIN
+        (select * from  incremental_data where n=1 and num_threads=1 and sf=1) as fade
+        USING (query, sf, prob)
         """).df()
         postfix = """
         data$query = factor(data$query, levels=c('Q1', 'Q3', 'Q5', 'Q7', 'Q9', 'Q10', 'Q12'))
             """
+        dbt_fade_data = con.execute("select * from dbt_fade_data where system='IFaDe'").df()
         if plot:
             p = ggplot(dbt_fade_data, aes(x='prob',  y="nor", color="query", fill="query",  group="query"))
             p += geom_line(stat=esc('identity')) 
             p += geom_hline(aes(yintercept=1, linetype=esc("Fade")))
-            p += axis_labels('Deletion Probability (log)', "Nor. Latency  (log)", "log10", "log10",
+            p += axis_labels('Deletion Probability (log)', "Normalized Latency (log)", "log10", "log10",
                 ykwargs=dict(breaks=[0.1,10,100,1000,10000],  labels=list(map(esc,['0.1','10','100','1000','10000']))),
                 xkwargs=dict(breaks=[0.001, 0.01, 0.1,],  labels=list(map(esc,['0.001','0.01','0.1']))),
                 )
@@ -456,11 +463,11 @@ if single:
             p += facet_grid(".~prune_label~incremental", scales=esc("free_x"), space=esc("free_x"))
             ggsave(f"figures/fade_dbt_vs_fade.png", p, postfix=postfix, width=5, height=3, scale=0.8)
             
-            dbt_fade_data_prune = con.execute("""select * from dbt_fade_data where prune_label='Fade-P' and incremental='False'""").df()
+            dbt_fade_data_prune = con.execute("""select * from dbt_fade_data where prune_label='P'""").df()
             p = ggplot(dbt_fade_data_prune, aes(x='prob',  y="nor", color="query", fill="query",  group="query"))
             p += geom_line(stat=esc('identity')) 
             p += geom_hline(aes(yintercept=1, linetype=esc("Fade")))
-            p += axis_labels('Deletion Probability (log)', "Nor. Latency  (log)", "log10", "log10",
+            p += axis_labels('Deletion Probability (log)', "Normalized Latency  (log)", "log10", "log10",
                 ykwargs=dict(breaks=[0.1,10,100,1000,10000],  labels=list(map(esc,['0.1','10','100','1000','10000']))),
                 xkwargs=dict(breaks=[0.001, 0.01, 0.1,],  labels=list(map(esc,['0.001','0.01','0.1']))),
                 )
@@ -468,15 +475,8 @@ if single:
             ggsave(f"figures/fade_dbt_vs_fade_prune.png", p, postfix=postfix,  width=3, height=2, scale=0.8)
 
 if dense:
-    dense_data_v2 = pd.read_csv(f"fade_data/dense_all_sf1_0.1.csv")
-    dense_data_v2["eval_time_ms"]=1000*dense_data_v2["eval_time"]
-    dense_data_v2["query"] = "Q"+dense_data_v2["qid"].astype(str)
-    dense_data_v2["cat"] = dense_data_v2.apply(lambda row: str(row["num_threads"]) + " Threads", axis=1)
-    dense_data_v2["cat"] = dense_data_v2.apply(lambda row: row["cat"] + "+SIMD" if row["is_scalar"] == False else row["cat"] , axis=1)
+    dense_data_v2 = get_data(f"fade_data/dense_all_sf1_0.1.csv", 1000)
     #dense_data_v2["cat"] = dense_data_v2.apply(lambda row: row["itype"]+" ^"+row["cat"] if row["incremental"] and row["itype"] == "S" else row["itype"] + row["cat"], axis=1)
-    dense_data_v2["n"] = dense_data_v2["distinct"]
-    dense_data_v2["prune_label"] = dense_data_v2.apply(lambda row:"Fade-P" if row["prune"] else "Fade" , axis=1)
-    dense_data_v2["sf_label"] = "SF="+dense_data_v2["sf"].astype(str)
 
     #data$cat = factor(data$cat, levels=c('1 Threads', '2 Threads', '4 Threads', '8 Threads', '1 Threads+SIMD', '2 Threads+SIMD', '4 Threads+SIMD', '8 Threads+SIMD'))
     postfix = """
@@ -614,7 +614,8 @@ if dense:
 
 
     data_distinct = con.execute("""select sf, t1.prune_label, t1.query, t1.cat,qid, n, t1.num_threads, t1.is_scalar,
-                        t1.eval_time_ms, base.eval_time_ms / t1.eval_time_ms as speedup
+                        t1.eval_time_ms, base.eval_time_ms / t1.eval_time_ms as speedup,
+                        n / (t1.eval_time_ms/1000.0) as throughput
     from ( select * from dense_data_v2 where n=2560 ) as t1 JOIN
          ( select * from dense_data_v2 where n=2560 and num_threads=1 and is_scalar='true' and prune='False') as base 
          USING (sf, qid, n) """).df()
@@ -637,6 +638,28 @@ if dense:
         p += facet_grid(".~sf~prune_label", scales=esc("free_y"))
         ggsave("figures/fade_2560_sf1_latency.png", p, postfix=postfix, width=8, height=3, scale=0.8)
         
+        cat = "query"
+        scalar_data = con.execute("select * from data_distinct where is_scalar='True' and prune_label='NP'").df()
+        p = ggplot(scalar_data, aes(x='num_threads',  y="throughput", color=cat, fill=cat, group=cat))
+        p += geom_point(stat=esc('identity'))
+        p += geom_line()
+        p += axis_labels('# Threads', "Interventions / Sec (log)", "discrete", "log10")
+        p += legend_side
+        p += facet_grid(".~sf", scales=esc("free_y"))
+        ggsave("figures/fade_2560_sf1_throughput_scalar_np.png", p, postfix=postfix, width=8, height=3, scale=0.8)
+        
+        data_distinct["cat"] = data_distinct.apply(lambda row: row["cat"]+"+P" if row["prune_label"]=='P' else  row["cat"], axis=1)
+        # speedup of vectorization. x-axis: queries, y-axis: speedup
+        cat = "cat"
+        scalar_data = con.execute("""select * from data_distinct where num_threads=1 and 
+        ( (prune_label='NP' and is_scalar='False') or (prune_label='P' and is_scalar='True') or (prune_label='P' and is_scalar='False') ) """).df()
+        p = ggplot(scalar_data, aes(x='query',  y="speedup", color=cat, fill=cat, group=cat))
+        p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.9), width=0.88)
+        p += axis_labels('Query', "Speedup (log)", "discrete", "log10")
+        p += legend_side
+        p += facet_grid(".~sf", scales=esc("free_y"))
+        ggsave("figures/fade_2560_sf1_opt_speedup.png", p, postfix=postfix, width=8, height=3, scale=0.8)
+        
 
         # dbt vs fade
         data_dbt_distinct = con.execute(f"""select sf, t1.prune_label, t1.query, t1.cat,qid, t1.n, t1.distinct, t1.num_threads, t1.is_scalar,
@@ -648,7 +671,8 @@ if dense:
         # fade vs fade
         data_distinct = con.execute(f"""select sf, t1.prune_label, t1.query, t1.cat,qid, t1.n, t1.distinct, t1.num_threads, t1.is_scalar,
                             t1.eval_time_ms, base.eval_time_ms, base.eval_time_ms*t1.n,
-                            (t1.n*base.eval_time_ms) / t1.eval_time_ms as speedup
+                            (t1.n*base.eval_time_ms) / t1.eval_time_ms as speedup,
+                            t1.n / (t1.eval_time_ms/1000.0) as throughput
         from ( select * from dense_data_v2 where num_threads=8 and is_scalar='False' and prune='True') as t1 JOIN
              ( select * from dense_data_v2 where incremental='False' and n=1 and num_threads=1 and is_scalar='True' and sf=1 and prob=0.1 and prune='False') as base
              USING (sf, qid) """).df()
@@ -670,6 +694,15 @@ if dense:
         p += facet_grid(".~sf", scales=esc("free_y"))
         ggsave("figures/fade_best_distinct_speedup_sf1.png", p, postfix=postfix, width=4, height=2.5, scale=0.8)
 
+        # x-axis: batch size, y-axis: throughput
+        cat = "query"
+        p = ggplot(data_distinct, aes(x='n',  y="throughput", color=cat, fill=cat, group=cat))
+        p += geom_point(stat=esc('identity'))
+        p += geom_line()
+        p += axis_labels('Batch Size', "Interventions / Sec (log)", "discrete", "log10")
+        p += legend_side
+        p += facet_grid(".~sf", scales=esc("free_y"))
+        ggsave("figures/fade_best_distinct_throughput_sf1.png", p, postfix=postfix, width=4, height=2.5, scale=0.8)
 
 
 
