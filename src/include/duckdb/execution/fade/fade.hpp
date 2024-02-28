@@ -31,7 +31,7 @@ struct FadeDataPerNode {
 	// this should be per attribute
 	// unordered_map<string, vector<idx_t>>
 	// vector<idx_t> single_scale_intervention;
-
+  int opid;
 	std::unordered_map<string, vector<void*>> alloc_vars;
 	std::unordered_map<string, string> alloc_vars_types;
 	std::unordered_map<string, int> alloc_vars_index;

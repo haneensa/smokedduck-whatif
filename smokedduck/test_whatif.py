@@ -56,11 +56,13 @@ print(f"############# Testing Whatif on {qid} ###########")
 query_file = f"queries/tpch/tpch_{qid}.sql"
 with open(query_file, "r") as f:
     sql = " ".join(f.read().split())
+print(sql)
 # Printing lineage that was captured from base query
 # 2. run the query with lineage capture
 start = time.time()
 out = con.execute(sql, capture_lineage='ksemimodule').df()
 end = time.time()
+print(out)
 ksemimodule_timing = end - start
 #print(query_timing, lineage_timing, ksemimodule_timing)
 
