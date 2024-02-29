@@ -20,11 +20,7 @@ string fill_random_code(EvalConfig& config) {
 extern "C" int fill_random(int row_count, float prob, int n_masks, void* del_interventions_ptr, std::set<int>& del_set, std::set<int>& out_del_set) {
 	std::cout << "fill_random: " << row_count  << " " << prob << " " <<  n_masks << std::endl;
 	// Initialize a random number generator
-	const unsigned int seed = 42;
-	std::random_device rd;
-	std::mt19937 gen(seed);
-	std::uniform_real_distribution<double> dis(0.0, 1.0);
-	std::uniform_int_distribution<int> dist_255(0, 255);
+  int64_t count = 0;
 )";
 
 	if (config.n_intervention == 1) {
@@ -34,6 +30,26 @@ extern "C" int fill_random(int row_count, float prob, int n_masks, void* del_int
 		oss << "\t __mmask16* __restrict__ del_interventions = (__mmask16* __restrict__)del_interventions_ptr;\n";
 	}
 
+  // HACK: generate one intervention randomly, then reuse it
+	if (config.n_intervention > 1) {
+		oss << R"(
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    // Create a uniform distribution over the range [0, row_count]
+    std::uniform_int_distribution<int> dist(0, row_count);
+
+    std::vector<__mmask16> base(row_count);
+    for (int i = 0; i < row_count; ++i) {
+      base[i] = 0xFFFF;
+      for (int k = 0; k < 16; ++k) {
+		    if ((((double)rand() / RAND_MAX) < prob)) {
+			      base[i] &= ~(1 << k);
+            count++;
+        }
+      }
+    }
+)";
+  }
 	oss << "\nfor (int i = 0; i < row_count; ++i) {\n";
 	if (config.n_intervention == 1 && config.incremental == true) {
 		oss << "\n if ((((double)rand() / RAND_MAX) < prob))";
@@ -43,8 +59,8 @@ extern "C" int fill_random(int row_count, float prob, int n_masks, void* del_int
 	} else {
 		oss << R"(
 		for (int j = 0; j < n_masks; ++j) {
-		//	__mmask16 randomValue = static_cast<int16_t>(dist_255(gen));
-			del_interventions[i*n_masks+j] = _cvtu32_mask16(0xFFFF);
+      int r = dist(gen);
+			del_interventions[i*n_masks+j] = base[r];
 		}
 )";
 	}
@@ -53,7 +69,7 @@ extern "C" int fill_random(int row_count, float prob, int n_masks, void* del_int
 	oss << R"(
 	}
 
-  	std::cout << "random done " << del_set.size() << std::endl;
+  	std::cout << " random done " << del_set.size() << " " << count << " " << count /( 16) <<std::endl;
 	return 0;
 }
 )";
@@ -569,20 +585,24 @@ string FilterCodeAndAlloc(EvalConfig& config, PhysicalOperator *op, shared_ptr<O
 		out[i] = var[lineage[i]];
 	}
 )";
-	} else if (true /*config.is_scalar*/) {
+	} else if (config.is_scalar) {
 		oss << R"(
 	for (int i=start; i < end; ++i) {
+    int col_out = i*n_masks;
+    int col_oid = lineage[i]*n_masks;
 		for (int j=0; j < n_masks; ++j) {
-			out[i*n_masks+j] = var[lineage[i]*n_masks+j];
+			out[col_out+j] = var[col_oid+j];
 		}
 	}
 )";
 	} else {
 		oss << R"(
 	for (int i=start; i < end; ++i) {
+    int col_out = i*n_masks;
+    int col_oid = lineage[i]*n_masks;
 		for (int j=0; j < n_masks; j+=32) {
-			__m512i b = _mm512_loadu_si512((__m512i*)&var[lineage[i]*n_masks+j]);
-			_mm512_storeu_si512((__m512i*)&out[i*n_masks+j], b);
+			__m512i b = _mm512_stream_load_si512((__m512i*)&var[col_oid+j]);
+			_mm512_store_si512((__m512i*)&out[col_out+j], b);
 		}
 	}
 )";
