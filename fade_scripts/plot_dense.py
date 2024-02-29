@@ -123,7 +123,8 @@ lineage_data["query"] = "Q"+lineage_data["qid"].astype(str)
 lineage_data["sf_label"] = "SF="+lineage_data["sf"].astype(str)
 
 #data = pd.read_csv('dense_delete_all_sf1.csv')
-dense_data = get_data('fade_data/dense_all_sf1_v2.csv', 1000)
+#dense_data = get_data('fade_data/dense_all_sf1_v2.csv', 1000)
+dense_data = get_data('dense_sf1_v2.csv', 1000)
 dense_data["cat"] = dense_data.apply(lambda row: str(row["num_threads"]) + " Threads", axis=1)
 dense_data["cat"] = dense_data.apply(lambda row: row["cat"] + "+SIMD" if row["is_scalar"] == False else row["cat"] , axis=1)
 dense_data["cat"] = dense_data.apply(lambda row: row["itype"]+" ^"+row["cat"] if row["incremental"] and row["itype"] == "S" else row["itype"] + row["cat"], axis=1)
@@ -475,7 +476,8 @@ if single:
             ggsave(f"figures/fade_dbt_vs_fade_prune.png", p, postfix=postfix,  width=3, height=2, scale=0.8)
 
 if dense:
-    dense_data_v2 = get_data(f"fade_data/dense_all_sf1_0.1.csv", 1000)
+    #dense_data_v2 = get_data(f"fade_data/dense_all_sf1_0.1.csv", 1000)
+    dense_data_v2 = get_data(f"dense_sf1_v3.csv", 1000)
     #dense_data_v2["cat"] = dense_data_v2.apply(lambda row: row["itype"]+" ^"+row["cat"] if row["incremental"] and row["itype"] == "S" else row["itype"] + row["cat"], axis=1)
 
     #data$cat = factor(data$cat, levels=c('1 Threads', '2 Threads', '4 Threads', '8 Threads', '1 Threads+SIMD', '2 Threads+SIMD', '4 Threads+SIMD', '8 Threads+SIMD'))

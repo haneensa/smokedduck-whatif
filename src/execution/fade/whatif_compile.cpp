@@ -393,8 +393,8 @@ string get_batch_join_template(EvalConfig &config, PhysicalOperator *op,
 )";
 		if ( fade_data[op->children[0]->id].n_masks > 0 && fade_data[op->children[1]->id].n_masks > 0) {
 			oss << R"(
-		__m512i a = _mm512_load_si512((__m512i*)&lhs_var[lhs_col+j]);
-		__m512i b = _mm512_load_si512((__m512i*)&rhs_var[rhs_col+j]);
+		__m512i a = _mm512_stream_load_si512((__m512i*)&lhs_var[lhs_col+j]);
+		__m512i b = _mm512_stream_load_si512((__m512i*)&rhs_var[rhs_col+j]);
 		_mm512_store_si512((__m512i*)&out[col+j], _mm512_and_si512(a, b));
 )";
 		} else if (fade_data[op->children[0]->id].n_masks > 0) {

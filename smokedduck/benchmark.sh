@@ -2,14 +2,14 @@
 
 export DUCKDB_LIB_PATH=/ProvEnhance/third_party/smokedduck-whatif/build/release/src
 
-query_nums=("1" "3" "5" "7"  "10" "12")
+query_nums=("1") # "3" "5" "7" "9"  "10" "12")
 sf_values=("1") # "5" "10")  # "0.2" "0.4") # "5.0" "10.0") # (# "3.0" "4.0")
-distinct=("512" "2560" "2048" "2560")
-threads_num=("1" "2" "4" "8")
-is_scalar_binary=("true" "false") 
+distinct=("512") #"512" "1024" "2048" "2560")
+threads_num=("8") # "2" "4" "8")
+is_scalar_binary=("false") # "false") 
 #duckdb_binary=("false" "true")
 prune_binary=("false" "true")
-csv="dense_sf1_v2.csv"
+csv="test.csv"
 debug="false" #"true"
 #itype_list=("SEARCH" "DENSE_DELETE_ALL" "DENSE_DELETE_SPEC")
 itype_list=("DENSE_DELETE_ALL")
@@ -17,7 +17,7 @@ itype_list=("DENSE_DELETE_ALL")
 # if search then include incremental or not
 prob_list=("0.1") # "0.001" "0.002" "0.005" "0.01" "0.02" "0.05" "0.1") # "0.2" "0.3" "0.4" "0.5")
 batch="4"
-use_duckdb="false"
+use_duckdb="true"
 touch ${csv}
 # add prob, itype, incremental
 echo sf,qid,itype,prob,incremental,use_duckdb,is_scalar,prune,num_threads,distinct,batch,post_time,gen_time,prep_time,compile_time,eval_time,prune_time,lineage_time,ksemimodule_timing > ${csv}
