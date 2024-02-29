@@ -24,7 +24,7 @@ extern "C" int fill_random(int row_count, float prob, int n_masks, void* del_int
 )";
 
 	if (config.n_intervention == 1) {
-		oss << "\t int* __restrict__ del_interventions = (int* __restrict__)del_interventions_ptr;\n";
+		oss << "\t int8_t* __restrict__ del_interventions = (int8_t* __restrict__)del_interventions_ptr;\n";
 	} else if (config.n_intervention == 1 && config.incremental == false) {
 	} else {
 		oss << "\t __mmask16* __restrict__ del_interventions = (__mmask16* __restrict__)del_interventions_ptr;\n";
@@ -52,10 +52,10 @@ extern "C" int fill_random(int row_count, float prob, int n_masks, void* del_int
   }
 	oss << "\nfor (int i = 0; i < row_count; ++i) {\n";
 	if (config.n_intervention == 1 && config.incremental == true) {
-		oss << "\n if ((((double)rand() / RAND_MAX) < prob))";
-		oss << "\n 	del_set.insert(i);";
+		oss << "\n\tif ((((double)rand() / RAND_MAX) < prob))";
+		oss << "\n\t\tdel_set.insert(i);";
 	} else if (config.n_intervention == 1 && config.incremental == false) {
-		oss << "\n del_interventions[i] = !(((double)rand() / RAND_MAX) < prob);"; // TODO: use random
+		oss << "\n\tdel_interventions[i] = !(((double)rand() / RAND_MAX) < prob);"; // TODO: use random
 	} else {
 		oss << R"(
 		for (int j = 0; j < n_masks; ++j) {
@@ -69,6 +69,7 @@ extern "C" int fill_random(int row_count, float prob, int n_masks, void* del_int
 	oss << R"(
 	}
 
+  std::cout << "done"<< std::endl;
   	std::cout << " random done " << del_set.size() << " " << count << " " << count /( 16) <<std::endl;
 	return 0;
 }
