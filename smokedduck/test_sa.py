@@ -35,7 +35,7 @@ print(out)
 ksemimodule_timing = end - start
 query_id = con.query_id
 k = 3
-q = f"pragma SA({query_id}, {k}, 'lineitem.l_tax', false);"
+q = f"pragma SA({query_id}, {k}, 'lineitem.l_tax|lineitem.l_linestatus', false);"
 res = con.execute(q).fetchdf()
 print(res)
 clear(con)

@@ -671,6 +671,7 @@ pair<int*, int> local_factorize(shared_ptr<OperatorLineage> lop, idx_t col_idx) 
 			codes[count++] = dict[v];
 		}
 	}
+
 	return make_pair(codes, dict.size());
 }
 
@@ -686,35 +687,61 @@ std::pair<int*, int> create_codes(LogicalType& typ, shared_ptr<OperatorLineage> 
 	return {nullptr, 0};
 }
 
+std::pair<int*, int> augment(int row_count, std::pair<int*, int> new_codes, std::pair<int*, int> old_codes) {
+  int factor = old_codes.second;
+  for (int i=0; i < row_count; ++i) {
+    new_codes.first[i] = new_codes.first[i]* factor + old_codes.first[i]; 
+  }
+
+  std::cout << "old " << new_codes.second << " " << old_codes.second << std::endl;
+  new_codes.second *= old_codes.second;
+  std::cout << "new " << new_codes.second << " " << old_codes.second << std::endl;
+  return new_codes;
+}
+
 std::pair<int*, int> Fade::factorize(PhysicalOperator* op, shared_ptr<OperatorLineage> lop,
                                       std::unordered_map<std::string, std::vector<std::string>>& columns_spec) {
-	string col_name = columns_spec[lop->table_name].back();
+  std::vector<std::string> col_name_vec = columns_spec[lop->table_name];
 	PhysicalTableScan * scan = dynamic_cast<PhysicalTableScan *>(op);
-	std::pair<int*, int> fade_data;
+	std::pair<int*, int> fade_data = {nullptr, 0};
 	std::pair<int*, int> res;
+	idx_t row_count = lop->chunk_collection.Count();
+  
 	if (scan->function.projection_pushdown) {
 		if (scan->function.filter_prune) {
 			for (idx_t i = 0; i < scan->projection_ids.size(); i++) {
 				const auto &column_id = scan->column_ids[scan->projection_ids[i]];
-				if (column_id < scan->names.size() && col_name == scan->names[column_id]) {
-					fade_data = create_codes(scan->types[i], lop, i);
-				  break;
+				if (column_id < scan->names.size() && std::find(col_name_vec.begin(), col_name_vec.end(), scan->names[column_id]) != col_name_vec.end()) {
+					res = create_codes(scan->types[i], lop, i);
+          if (fade_data.second > 0) {
+            fade_data = augment(row_count, res, fade_data);
+          } else {
+            fade_data = res;
+          }
 				}
 			}
 		} else {
 			for (idx_t i = 0; i < scan->column_ids.size(); i++) {
 				const auto &column_id = scan->column_ids[i];
-				if (column_id < scan->names.size() && col_name == scan->names[column_id]) {
-					fade_data = create_codes(scan->types[i], lop, i);
-				  break;
+				if (column_id < scan->names.size() && std::find(col_name_vec.begin(), col_name_vec.end(), scan->names[column_id]) != col_name_vec.end()) {
+					res = create_codes(scan->types[i], lop, i);
+          if (fade_data.second > 0) {
+            fade_data = augment(row_count, res, fade_data);
+          } else {
+            fade_data = res;
+          }
 				}
 			}
 		}
 	} else {
 		for (idx_t i=0; i < scan->names.size(); i++) {
-			if (scan->names[i] == col_name) {
-				fade_data = create_codes(scan->types[i], lop, i);
-				break;
+				if (i < scan->names.size() && std::find(col_name_vec.begin(), col_name_vec.end(), scan->names[i]) != col_name_vec.end()) {
+				  res = create_codes(scan->types[i], lop, i);
+          if (fade_data.second > 0) {
+            fade_data = augment(row_count, res, fade_data);
+          } else {
+            fade_data = res;
+          }
 			}
 		}
 	}
