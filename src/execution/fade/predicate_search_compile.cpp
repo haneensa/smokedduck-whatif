@@ -12,6 +12,9 @@
 #include <thread>
 #include <vector>
 
+#include <queue>
+#include <cmath>
+
 namespace duckdb {
 
 
@@ -156,7 +159,9 @@ string get_agg_init_predicate(EvalConfig config, int row_count, int chunk_count,
 		oss << "\tconst int start = 0;\n";
 		oss << "\tconst int end   = row_count;\n";
 	}
-	oss << "std::cout << \"agg \" << chunk_count << \" \" <<  row_count << \" \" << n_interventions << \" \" << start << \" \" << end << std::endl;";
+
+  if (config.debug)
+ 	  oss << "std::cout << \"agg \" << chunk_count << \" \" <<  row_count << \" \" << n_interventions << \" \" << start << \" \" << end << std::endl;";
 
 	oss << alloc_code;
 
@@ -211,9 +216,21 @@ string get_agg_eval_predicate(EvalConfig config, int agg_count, string fn, strin
 			oss << "\n\t\t\t}\n"; // close for (int j=0; j < n_interventions; j++)
 		}
 
+		// 1:
+		// pre:
+		// old = out_var[col+row]
+
+		// post:
+		// out_var[col+row] = old
+
+		// 2: use simd
+		// 	for (int j=0; j < n_interventions; j+8) {
+		// 		oss << "\t__m512i a = _mm512_load_si512((__m512i*)&" + out_var + "[col+row]);\n";
+		// 		oss << "\t __m512i v = _mm512_set1_pd("+in_var+");\n";
+		// 		oss << "\t_mm512_store_si512((__m512i*) &"+out_var+"[col + row], _mm512_add_epi32(a, v));\n";
+		//  }
 		oss << R"(
 			for (int j=0; j < n_interventions; j++) {
-				//if (row == j) continue;
 
 )";
 	}
@@ -340,6 +357,7 @@ void GenCodeAndAllocPredicate(EvalConfig& config, string& code, PhysicalOperator
 		if (config.n_intervention == 0) {
 			// factorize need access to base table
 			std::pair<int*, idx_t> res = Fade::factorize(op, op->lineage_op, columns_spec);
+      std::cout << " annotations: " << res.second << std::endl;
 			fade_data[op->id].annotations = res.first;
 			fade_data[op->id].n_interventions = res.second;
 		} else {
@@ -469,6 +487,65 @@ void BindFunctionsPredicate(EvalConfig config, void* handle, PhysicalOperator* o
 	}
 }
 
+struct Compare {
+	bool operator()(const std::pair<float, int>& a, const std::pair<float, int>& b) {
+		return a.first == b.first ? a.second > b.second : a.first > b.first;
+	}
+};
+
+std::vector<int> rank(PhysicalOperator* op, EvalConfig& config, std::unordered_map<idx_t, FadeDataPerNode>& fade_data) {
+	// get agg index
+	//calculate minimize(sum(abs(output - new_agg_val[i])))
+	std::vector<std::pair<float, int>> sums;
+	FadeDataPerNode& info = fade_data[op->id];
+
+	for (auto &pair : fade_data[op->id].alloc_vars) {
+		if (!pair.second.empty()) {
+			if (fade_data[op->id].alloc_vars_types[pair.first] == "int") {
+				int* data_ptr = (int*)pair.second[0];
+				for (int j=0; j < info.n_interventions; j++) {
+					float sum = 0;
+					for (int i=0; i < info.n_groups; i++) {
+						int index = i * info.n_interventions + j;
+						sum +=  data_ptr[index];
+					}
+					sums.push_back(std::make_pair(sum, j));
+				}
+			} else {
+				float* data_ptr = (float*)pair.second[0];
+				for (int j=0; j < info.n_interventions; j++) {
+					float sum = 0;
+					for (int i=0; i < info.n_groups; i++) {
+						int index = i * info.n_interventions + j;
+						sum += data_ptr[index];
+					}
+					sums.push_back(std::make_pair(sum, j));
+				}
+			}
+			break;
+		}
+	}
+
+
+	std::priority_queue<std::pair<float, int>, std::vector<std::pair<float, int>>, Compare> pq;
+	for (const auto& pair : sums) {
+		pq.push(pair);
+		if (pq.size() > config.topk) {
+			pq.pop();
+		}
+	}
+
+	vector<int> topk_vec;
+	while (!pq.empty()) {
+		int col = pq.top().second;
+		float sum = pq.top().first;
+		topk_vec.push_back(col);
+		pq.pop();
+	}
+
+	return topk_vec;
+}
+
 string Fade::PredicateSearch(PhysicalOperator *op, EvalConfig config) {
 	// timing vars
 	std::chrono::steady_clock::time_point start_time, end_time;
@@ -513,10 +590,10 @@ string Fade::PredicateSearch(PhysicalOperator *op, EvalConfig config) {
 	double prep_time = time_span.count();
 
 	std::ostringstream oss;
-	oss << get_header(config) << "\n" << fill_random_code(config) << "\n"  << code;
+	oss << get_header(config) << "\n" << code;
 	string final_code = oss.str();
 
-	//if (config.debug)
+	if (config.debug)
 		std::cout << final_code << std::endl;
 
 	start_time = std::chrono::steady_clock::now();
@@ -533,8 +610,7 @@ string Fade::PredicateSearch(PhysicalOperator *op, EvalConfig config) {
 
 	start_time = std::chrono::steady_clock::now();
 
-  // if final aggregate count is less than number of interventions, then skip
-	for (int i = 0; i < config.num_worker; ++i) {
+ 	for (int i = 0; i < config.num_worker; ++i) {
 		workers.emplace_back(Intervention2DEvalPredicate, i, std::ref(config), handle,  op, std::ref(fade_data));
 	}
 
@@ -553,16 +629,28 @@ string Fade::PredicateSearch(PhysicalOperator *op, EvalConfig config) {
 
 	system("rm loop.cpp loop.so");
 
-	ReleaseFade(config, handle, op, fade_data);
 
-	return "select " + to_string(post_processing_time) + " as post_processing_time, "
-	       + to_string(0) + " as intervention_gen_time, "
-	       + to_string(prep_time) + " as prep_time, "
-	       + to_string(lineage_time) + " as lineage_time, "
-	       + to_string(prune_time) + " as prune_time, "
-	       + to_string(compile_time) + " as compile_time, "
-	       + to_string(eval_time) + " as eval_time";
+	if (config.topk > 0) {
+		// rank final agg result
+		std::vector<int> topk_vec = rank(op, config, fade_data);
+		std::string result = std::accumulate(topk_vec.begin(), topk_vec.end(), std::string{},
+		                                     [](const std::string& a, int b) {
+			                                     return a.empty() ? std::to_string(b) : a + "," + std::to_string(b);
+		                                     });
+		ReleaseFade(config, handle, op, fade_data);
+		return "select '" + result + "'";
+	} else {
+	  ReleaseFade(config, handle, op, fade_data);
+		return "select " + to_string(post_processing_time) + " as post_processing_time, "
+				   + to_string(0) + " as intervention_gen_time, "
+				   + to_string(prep_time) + " as prep_time, "
+				   + to_string(lineage_time) + " as lineage_time, "
+				   + to_string(prune_time) + " as prune_time, "
+				   + to_string(compile_time) + " as compile_time, "
+				   + to_string(eval_time) + " as eval_time";
+	}
 }
 
 } // namespace duckdb
 #endif
+

@@ -246,7 +246,7 @@ string PragmaWhatif(ClientContext &context, const FunctionParameters &parameters
 	// 1. find the query plan associated with qid
 	PhysicalOperator* op = context.client_data->lineage_manager->queryid_to_plan[qid].get();
 	int mask_size = 16;
-	int topk = 3;
+	int topk = 0;
 	// takes in query id, attributes to intervene on, conjunctive only or conjunctive and disjunction, or random
 
 	if (intervention_type == SEARCH) {
@@ -256,6 +256,28 @@ string PragmaWhatif(ClientContext &context, const FunctionParameters &parameters
 		    return Fade::Whatif(op, { batch, mask_size, is_scalar, use_duckdb, debug, prune, incremental,
 											 spec, intervention_type, n_interventions, qid, num_workers, prob, topk} );
 	}
+}
+
+
+string PragmaSA(ClientContext &context, const FunctionParameters &parameters) {
+	int qid = parameters.values[0].GetValue<int>();
+	int topk = parameters.values[1].GetValue<int>();
+	string spec = parameters.values[2].ToString();
+	bool debug = parameters.values[3].GetValue<bool>();
+	InterventionType intervention_type =  SEARCH;
+	PhysicalOperator* op = context.client_data->lineage_manager->queryid_to_plan[qid].get();
+	int batch = 4;
+	int mask_size = 16;
+	bool is_scalar = true;
+	bool use_duckdb = false;
+	bool prune = true;
+	bool incremental = true;
+	int n_interventions = 0;
+	int num_workers = 8;
+	float prob = 1;
+	return Fade::PredicateSearch(op, { batch, mask_size, is_scalar, use_duckdb, debug, prune, incremental,
+		                                      spec, intervention_type, n_interventions, qid, num_workers, prob, topk} );
+
 }
 #endif
 
@@ -279,7 +301,9 @@ void PragmaQueries::RegisterFunction(BuiltinFunctions &set) {
 	set.AddFunction(PragmaFunction::PragmaStatement("all_profiling_output", PragmaAllProfiling));
 	set.AddFunction(PragmaFunction::PragmaStatement("user_agent", PragmaUserAgent));
 #ifdef LINEAGE
-
+	set.AddFunction(PragmaFunction::PragmaCall("SA", PragmaSA, {LogicalType::INTEGER,
+	                                                                    LogicalType::INTEGER,
+	                                                                    LogicalType::VARCHAR, LogicalType::BOOLEAN}));
 	set.AddFunction(PragmaFunction::PragmaCall("WhatIf", PragmaWhatif, {LogicalType::INTEGER,
 	                                                                    LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::INTEGER,
 	                                                                    LogicalType::INTEGER, LogicalType::BOOLEAN,
@@ -290,3 +314,4 @@ void PragmaQueries::RegisterFunction(BuiltinFunctions &set) {
 }
 
 } // namespace duckdb
+

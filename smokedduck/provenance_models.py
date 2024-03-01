@@ -79,6 +79,41 @@ class Lineage(ProvenanceModel):
     def consider_capture_model(self, capture_model: ProvenanceModel) -> None:
         pass
 
+class LineageAll(ProvenanceModel):
+    def get_name(self) -> str:
+        return "lineageAll"
+
+    def consider_query(self, query: str) -> None:
+        pass
+
+    def pre_capture_pragmas(self) -> list:
+        return ["pragma enable_lineage", "pragma enable_intermediate_tables"]
+
+    def post_capture_pragmas(self) -> list:
+        return ["pragma disable_intermediate_tables", "pragma disable_lineage"]
+
+    def get_froms(self, plan: dict, query_id: int, op: Op) -> list:
+        return [op.get_from_string()]
+
+    def from_prefix(self) -> str:
+        return ""
+
+    def visit_from(self, projections: list, i: int) -> str:
+        assert i < len(projections)
+        if i < len(projections) - 1:
+            return projections[i].in_index + " AS " + projections[i].alias + ", "
+        else:
+            return projections[i].in_index + " AS " + projections[i].alias
+
+    def from_suffix(self) -> str:
+        return ""
+
+    def query_suffix(self, out_index: str) -> str:
+        return ""
+
+    def consider_capture_model(self, capture_model: ProvenanceModel) -> None:
+        pass
+
 
 class WhyProvenance(ProvenanceModel):
     def get_name(self) -> str:
@@ -223,6 +258,8 @@ class KSemimodule(ProvenanceModel):
 def get_prov_model(model_str: str) -> ProvenanceModel:
     if model_str == "lineage":
         return Lineage()
+    elif model_str == "lineageAll":
+        return LineageAll()
     elif model_str == "why":
         return WhyProvenance()
     elif model_str == "polynomial":

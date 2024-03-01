@@ -206,7 +206,6 @@ void* Fade::compile(std::string code, int id) {
 		std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
 		std::string build_command = "g++ -O3 -std=c++2a -mavx512f -march=native -shared -fPIC loop.cpp -o loop.so -L"
 		                            + std::string(duckdb_lib_path) + " -lduckdb";
-		std::cout << duckdb_lib_path << " " << build_command.c_str() << std::endl;
 		system(build_command.c_str());
 		void *handle = dlopen("./loop.so", RTLD_LAZY);
 		if (!handle) {
@@ -216,7 +215,7 @@ void* Fade::compile(std::string code, int id) {
 	}
 }
 
-// table_name:prob|table_name:prob| ... e.g. 't1:0.3'
+// table_name.col_name
 std::unordered_map<std::string, std::vector<std::string>>  Fade::parseSpec(EvalConfig& config) {
 	std::unordered_map<std::string, std::vector<std::string>> result;
 
@@ -675,28 +674,51 @@ pair<int*, int> local_factorize(shared_ptr<OperatorLineage> lop, idx_t col_idx) 
 	return make_pair(codes, dict.size());
 }
 
+std::pair<int*, int> create_codes(LogicalType& typ, shared_ptr<OperatorLineage> lop, int i) {
+	if (typ == LogicalType::INTEGER) {
+		return local_factorize<int>(lop, i);
+	} else if (typ == LogicalType::VARCHAR) {
+		return local_factorize<string>(lop, i);
+	} else {
+		return local_factorize<float>(lop, i);
+	} 
+	
+	return {nullptr, 0};
+}
+
 std::pair<int*, int> Fade::factorize(PhysicalOperator* op, shared_ptr<OperatorLineage> lop,
                                       std::unordered_map<std::string, std::vector<std::string>>& columns_spec) {
 	string col_name = columns_spec[lop->table_name].back();
 	PhysicalTableScan * scan = dynamic_cast<PhysicalTableScan *>(op);
 	std::pair<int*, int> fade_data;
 	std::pair<int*, int> res;
-	for (idx_t i=0; i < scan->names.size(); i++) {
-		if (scan->names[i] == col_name) {
-			vector<idx_t> col_codes;
-			if (scan->types[i] == LogicalType::INTEGER) {
-				res = local_factorize<int>(lop, i);
-			} else if (scan->types[i] == LogicalType::VARCHAR) {
-				res = local_factorize<string>(lop, i);
-			} else if (scan->types[i] == LogicalType::FLOAT) {
-				res = local_factorize<float>(lop, i);
+	if (scan->function.projection_pushdown) {
+		if (scan->function.filter_prune) {
+			for (idx_t i = 0; i < scan->projection_ids.size(); i++) {
+				const auto &column_id = scan->column_ids[scan->projection_ids[i]];
+				if (column_id < scan->names.size() && col_name == scan->names[column_id]) {
+					fade_data = create_codes(scan->types[i], lop, i);
+				  break;
+				}
 			}
-			// TODO: combine independent offsets
-			fade_data.first = res.first;
-			fade_data.second = res.second;
-			break;
+		} else {
+			for (idx_t i = 0; i < scan->column_ids.size(); i++) {
+				const auto &column_id = scan->column_ids[i];
+				if (column_id < scan->names.size() && col_name == scan->names[column_id]) {
+					fade_data = create_codes(scan->types[i], lop, i);
+				  break;
+				}
+			}
+		}
+	} else {
+		for (idx_t i=0; i < scan->names.size(); i++) {
+			if (scan->names[i] == col_name) {
+				fade_data = create_codes(scan->types[i], lop, i);
+				break;
+			}
 		}
 	}
+	
 
 	return fade_data;
 }
@@ -757,4 +779,5 @@ void Fade::BindFunctions(EvalConfig& config, void* handle, PhysicalOperator* op,
 
 } // namespace duckdb
 #endif
+
 
