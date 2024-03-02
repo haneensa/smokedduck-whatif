@@ -24,7 +24,7 @@ string FilterCodeAndAllocPredicate(EvalConfig& config, PhysicalOperator *op,
 	std::ostringstream oss;
 	oss << R"(extern "C" int )"
 	    << fname
-	    << R"((int thread_id, int* lineage,  void* __restrict__ var_ptr, void* __restrict__ out_ptr, std::set<int> del_set) {
+	    << R"((int thread_id, int* lineage,  void* __restrict__ var_ptr, void* __restrict__ out_ptr, std::set<int>& del_set) {
 )";
 
 	oss << "\t int* __restrict__ out = (int* __restrict__)out_ptr;\n";
@@ -33,9 +33,6 @@ string FilterCodeAndAllocPredicate(EvalConfig& config, PhysicalOperator *op,
 	int row_count = fade_data[op->id].lineage[0].size();
 
 	oss << "\tconst int row_count = " + to_string(row_count) + ";\n";
-
-	// if incremental and 1:
-	// 	del_set.insert(forward_lineage(child_del_set[i]))
 
 	if (config.num_worker > 0) {
 		int batch_size = row_count / config.num_worker;
@@ -69,7 +66,7 @@ string JoinCodeAndAllocPredicate(EvalConfig config, PhysicalOperator *op, shared
 	std::ostringstream oss;
 	oss << R"(extern "C" int )"
 	    << fname
-	    << R"((int thread_id, int* lhs_lineage, int* rhs_lineage,  void* __restrict__ lhs_var_ptr,  void* __restrict__ rhs_var_ptr,  void* __restrict__ out_ptr, std::set<int> del_set) {
+	    << R"((int thread_id, int* lhs_lineage, int* rhs_lineage,  void* __restrict__ lhs_var_ptr,  void* __restrict__ rhs_var_ptr,  void* __restrict__ out_ptr, std::set<int>& del_set) {
 )";
 
 	oss << "\t int* __restrict__ out = (int* __restrict__)out_ptr;\n";
@@ -125,10 +122,11 @@ string get_agg_init_predicate(EvalConfig config, int row_count, int chunk_count,
 	} else {
 		oss << R"(extern "C" int )"
 		    << fname
-		    << R"((int thread_id, int* lineage, void* var_0_ptr, std::unordered_map<std::string, std::vector<void*>>& alloc_vars, std::unordered_map<int, void*>& input_data_map) {
+		    << R"((int thread_id, int* lineage, void* __restrict__ var_0_ptr, std::unordered_map<std::string, std::vector<void*>>& alloc_vars, std::unordered_map<int, void*>& input_data_map) {
 )";
   }
 	
+  oss << "\t__mmask16 tmp_mask;\n";
 	oss << "\tconst int num_threads  = " << config.num_worker << ";\n";
   oss << "\tif (thread_id >= num_threads)  return 0;\n";
 	oss << "\t int* __restrict__ var_0 = (int* __restrict__)var_0_ptr;\n";
@@ -167,7 +165,8 @@ string get_agg_init_predicate(EvalConfig config, int row_count, int chunk_count,
 
 	if (config.use_duckdb) {
 		oss << R"(
-	int offset = 0;
+  // TODO: figure out correct offset when we partition chunks
+	int offset = start;
 	for (int chunk_idx=start; chunk_idx < end; ++chunk_idx) {
 		duckdb::DataChunk &collection_chunk = chunk_collection.GetChunk(chunk_idx);
   )";
@@ -223,25 +222,39 @@ string get_agg_eval_predicate(EvalConfig config, int agg_count, string fn, strin
 		// post:
 		// out_var[col+row] = old
 
-		// 2: use simd
-		// 	for (int j=0; j < n_interventions; j+8) {
-		// 		oss << "\t__m512i a = _mm512_load_si512((__m512i*)&" + out_var + "[col+row]);\n";
-		// 		oss << "\t __m512i v = _mm512_set1_pd("+in_var+");\n";
-		// 		oss << "\t_mm512_store_si512((__m512i*) &"+out_var+"[col + row], _mm512_add_epi32(a, v));\n";
-		//  }
-		oss << R"(
-			for (int j=0; j < n_interventions; j++) {
-
+		if (config.is_scalar) {
+			oss << R"(
+			for (int j=0; j < n_interventions; ++j) {
 )";
+		} else {
+			oss << R"(
+      tmp_mask = 0xFFFF;
+      tmp_mask &= ~(1 << row%16);
+			for (int j=0; j < n_interventions; j+=16) {
+)";
+		}
+
 	}
 
-	if (fn == "sum") {
-		oss << "\t\t\t\t";
-		oss << out_var+"[col + j ] +="+ in_var+";\n";
-	} else if (fn == "count") {
-		oss << "\t\t\t\t";
-		oss << "out_count[col + j ] += 1;\n";
+
+	if (config.is_scalar) {
+		oss << "\t\t\t\t" << out_var+"[col + j ] +="+ in_var+";\n";
+	} else {
+		oss << "{";
+    // TODO: set
+		if (data_type == "float") {
+			oss << "\t__m512 a  = _mm512_load_ps((__m512*) &"+out_var+"[col + j]);\n";
+			//oss << "\t __m512 v = _mm512_set1_ps("+in_var+");\n";
+			oss << "\t_mm512_store_ps((__m512*) &"+out_var+"[col + j], _mm512_add_ps(a, "+in_var+"));\n";
+      //oss << "\t_mm512_store_ps((__m512*) &"+out_var+"[col + j], _mm512_mask_add_ps(a, tmp_mask, a, "+in_var+"));\n";
+		} else if (data_type == "int") {
+			oss << "\t__m512i a = _mm512_load_si512((__m512i*)&" + out_var + "[col+j]);\n";
+			//oss << "\t __m512i v = _mm512_set1_epi32("+in_var+");\n";
+			oss << "\t_mm512_store_si512((__m512i*) &"+out_var+"[col + j], _mm512_add_epi32(a, "+in_var+"));\n";
+		}
+		oss << "}";
 	}
+
 
 	return oss.str();
 }
@@ -304,7 +317,15 @@ string HashAggregateCodeAndAllocPredicate(EvalConfig& config, shared_ptr<Operato
 				                 to_string(i) + "]);\n";
 			}
 
-			get_vals_code += "\t\t\t" + output_type +" " + in_val + "= " + in_arr + "[i];\n";
+      if (config.is_scalar) {
+			  get_vals_code += "\t\t\t" + output_type +" " + in_val + "= " + in_arr + "[i];\n";
+      } else {
+        if (output_type == "float") {
+			    get_vals_code += "\t\t\ __m512 "+in_val+"= _mm512_set1_ps(" + in_arr + "[i]);\n";
+        } else {
+			    get_vals_code += "\t\t\ __m512i "+in_val+"= _mm512_set1_epi32(" + in_arr + "[i]);\n";
+        }
+      }
 			// access output arrays
 			alloc_code += Fade::get_agg_alloc(i, "sum", output_type);
 			// core agg operation
@@ -315,7 +336,12 @@ string HashAggregateCodeAndAllocPredicate(EvalConfig& config, shared_ptr<Operato
 	if (include_count == true) {
 		string out_var = "out_count";
 		alloc_code += Fade::get_agg_alloc(0, "count", "int");
-		eval_code += get_agg_eval_predicate(config, agg_count++, "count", out_var, "1", "int");
+    if (config.is_scalar == false) {
+		  get_vals_code += "\t\t\ __m512i one = _mm512_set1_epi32(1);\n";
+		  eval_code += get_agg_eval_predicate(config, agg_count++, "count", out_var, "one", "int");
+    } else {
+		  eval_code += get_agg_eval_predicate(config, agg_count++, "count", out_var, "1", "int");
+    }
 	}
 
 
@@ -414,8 +440,8 @@ void Intervention2DEvalPredicate(int thread_id, EvalConfig& config, void* handle
 	if (op->type == PhysicalOperatorType::FILTER) {
 		if (config.prune) {
 		  fade_data[op->id].annotations = fade_data[op->children[0]->id].annotations;
-      return;
-    }
+		  return;
+    	}
 		if (fade_data[op->id].n_interventions <= 1) return;
 		idx_t row_count = fade_data[op->id].lineage[0].size();
 		int result = fade_data[op->id].filter_fn(thread_id, fade_data[op->id].lineage[0].data(),
@@ -653,4 +679,5 @@ string Fade::PredicateSearch(PhysicalOperator *op, EvalConfig config) {
 
 } // namespace duckdb
 #endif
+
 

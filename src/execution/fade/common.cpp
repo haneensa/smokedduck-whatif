@@ -129,7 +129,9 @@ string Fade::group_partitions(EvalConfig config, FadeDataPerNode& node_data) {
 			} else {
 				oss <<  type_str +"* __restrict__ final_in = (" + type_str + "* __restrict__)alloc_vars[\"out_"+to_string(fid)+"\"][i];\n";
 			}
-			oss << R"(for (int k = 0; k < n_interventions; ++k) {
+
+			oss << R"(
+for (int k = 0; k < n_interventions; ++k) {
 						int index = j * n_interventions + k;
 )";
 			oss << "final_out[index] += final_in[index];\n";
