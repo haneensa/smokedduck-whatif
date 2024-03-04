@@ -159,16 +159,17 @@ string Fade::get_agg_finalize(EvalConfig config, FadeDataPerNode& node_data) {
 
 	if (config.n_intervention == 1) {
 		if (config.use_duckdb) {
-			return R"(
+			oss << R"(
 			}
 			offset +=  collection_chunk.size();
 		}
-	return 0;
-	}
 )";
 		} else {
-			return "\t }\n \treturn 0;\n}\n";
+			oss << "\t }\n";
 		}
+	oss << Fade::group_partitions(config, node_data);
+	oss << "\treturn 0;\n}\n";
+  return oss.str();
 	}
 
 	if (config.is_scalar) oss <<  "\n\t\t\t\t}//c\n"; // close inner loop

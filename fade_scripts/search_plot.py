@@ -60,7 +60,8 @@ lineage_data["sf_label"] = "SF="+lineage_data["sf"].astype(str)
 # TODO: add incremental single evaluation. hold the indices of elements to be deleted. this would be equivalent eval to dbtoast
 include_search = True
 if include_search:
-    data_spec = pd.read_csv('fade_data/dense_delete_spec_sf1.csv')
+    #data_spec = pd.read_csv('fade_data/dense_delete_spec_sf1.csv')
+    data_spec = pd.read_csv('search_dense.csv')
     #data_search = pd.read_csv('fade_data/search_all_feb25.csv')
     data_search = pd.read_csv('search_m2.csv')
     data_cube = pd.read_csv('fade_data/cube_search.csv')
@@ -85,13 +86,12 @@ if include_search:
     # x-axis: n_interventions, y-axis: latency, facet: query, cat: itype+incremental
     # speedup: base x-axis DENSE_DELETE_SPEC
 
-    print(con.execute("select * from data where n>1 and itype='S' and incremental='False' and is_scalar='True'").df())
     if plot:
         postfix = """
         data$query = factor(data$query, levels=c('Q1', 'Q3', 'Q5', 'Q7', 'Q9', 'Q10', 'Q12'))
             """
         plot_data = con.execute("""
-        select query, eval_time_ms, itype, prune, n, sf, cat, num_threads, n/(eval_time_ms/1000.0) as throughput from data where n>1 and itype='S' and incremental='True'
+        select query,eval_time_ms, itype, prune, n, sf, cat, num_threads, n/(eval_time_ms/1000.0) as throughput from data where n>1 and itype='S' and incremental='True'
         UNION ALL
         select query, eval_time_ms, itype, prune, n, sf, cat, num_threads, n/(eval_time_ms/1000.0) as throughput from data where n>1 and itype='S' and incremental='False'
         UNION ALL
@@ -101,7 +101,7 @@ if include_search:
         UNION ALL
         select query, eval_time_ms, itype, False as prune, n, sf, cat, num_threads, n/(eval_time_ms/1000.0) as throughput from data_cube
         UNION ALL
-        select query, eval_time_ms, itype, True as prune, n, sf, cat, num_threads, n/(eval_time_ms/1000.0) as throughput from data_cube
+        select query,  eval_time_ms, itype, True as prune, n, sf, cat, num_threads, n/(eval_time_ms/1000.0) as throughput from data_cube
                 """).df()
         cat = "cat"
         p = ggplot(plot_data, aes(x='query',  y="eval_time_ms", color=cat, fill=cat, group=cat))
@@ -132,10 +132,10 @@ if include_search:
         
         postfix = """
         data$query = factor(data$query, levels=c('Q1', 'Q3', 'Q5', 'Q7', 'Q9', 'Q10', 'Q12'))
-        data$cat = factor(data$cat, levels=c('DD8W', 'DD8W+SIMD', 'S8W', 'S8W+SIMD', 'S ^8W'))
+        data$cat = factor(data$cat, levels=c('DD8W+SIMD', 'S8W+SIMD', 'S ^8W'))
             """
         sf1_plot_data = con.execute("""select *, base.eval_time_ms / t1.eval_time_ms as speedup
-                from (select * from plot_data where itype<>'GB' and sf=1 and num_threads=8 and prune='True') as t1 JOIN
+                from (select * from plot_data where prune='True' and (cat='DD8W' or cat='S8W' or cat='DD8W+SIMD' or cat='S8W+SIMD' or cat='S ^8W')) as t1 JOIN
                 (select * from plot_data where itype='GB') as base using (sf, n, num_threads, prune, query)
                 """).df()
         print("check")
@@ -145,4 +145,17 @@ if include_search:
         p += axis_labels('Query', "Speedup (log)", "discrete", "log10")
         p += legend_bottom
         p += facet_grid(".~n", scales=esc("free_y"))
-        ggsave("figures/fade_search_fade25_sf1_512_speedup.png", p, postfix=postfix, width=8, height=2.5, scale=0.8)
+        ggsave("figures/fade_search_fade25_sf1_512_speedup.png", p,  width=8, height=2.5, scale=0.8)
+        
+        sf1_plot_data = con.execute("""select *, base.eval_time_ms / t1.eval_time_ms as speedup
+                from (select * from plot_data where n=2560 and prune='True' and (cat='DD8W+SIMD' or cat='S8W+SIMD' or cat='S ^8W')) as t1 JOIN
+                (select * from plot_data where itype='GB') as base using (sf, n, num_threads, prune, query)
+                """).df()
+        print("check")
+        print(sf1_plot_data)
+        p = ggplot(sf1_plot_data, aes(x='query',  y="speedup", color=cat, fill=cat, group=cat))
+        p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.9), width=0.88)
+        p += axis_labels('Query', "Speedup (log)", "discrete", "log10")
+        p += legend_bottom
+        p += facet_grid(".~n", scales=esc("free_y"))
+        ggsave("figures/fade_search_fade25_sf1_2560_speedup_vec.png", p, postfix=postfix, width=3, height=2.5, scale=0.8)

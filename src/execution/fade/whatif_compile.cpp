@@ -397,7 +397,7 @@ string get_batch_join_template(EvalConfig &config, PhysicalOperator *op,
 		} else if (fade_data[op->children[0]->id].n_masks > 0) {
 			oss << R"(out[col+j] = lhs_var[lhs_col+j];)";
 		} else {
-			oss << R"(out[col+j] = rhs_var[rhs_cols+j];)";
+			oss << R"(out[col+j] = rhs_var[rhs_col+j];)";
 		}
 
 		oss << "\n\t\t\t}";
@@ -786,7 +786,8 @@ void GenCodeAndAlloc(EvalConfig& config, string& code, PhysicalOperator* op,
 		int lhs_n = fade_data[op->children[0]->id].n_interventions;
 		int rhs_n = fade_data[op->children[1]->id].n_interventions;
 		fade_data[op->id].n_interventions = (lhs_n > 0) ? lhs_n : rhs_n;
-		fade_data[op->id].n_masks = fade_data[op->children[0]->id].n_masks;
+		fade_data[op->id].n_masks = (lhs_n > 0) ? fade_data[op->children[0]->id].n_masks : 
+      fade_data[op->children[1]->id].n_masks;
 		idx_t n_masks = fade_data[op->id].n_masks;
 		if (n_masks > 0 || fade_data[op->id].n_interventions == 1) {
 			idx_t row_count = fade_data[op->id].lineage[0].size();
