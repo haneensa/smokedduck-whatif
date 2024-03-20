@@ -221,10 +221,12 @@ string PragmaWhatif(ClientContext &context, const FunctionParameters &parameters
 	int qid = parameters.values[0].GetValue<int>();
 	string intervention_type_str = parameters.values[1].ToString();
 	InterventionType intervention_type =  DENSE_DELETE_ALL;
-	if (intervention_type_str == "SCALE") {
-		intervention_type = SCALE;
+	if (intervention_type_str == "SCALE_UNIFORM") {
+		intervention_type = SCALE_UNIFORM;
+	} else if (intervention_type_str == "SCALE_RANDOM") {
+		intervention_type = SCALE_RANDOM;
 	} else if (intervention_type_str == "SEARCH") {
-		intervention_type = SEARCH;
+			intervention_type = SEARCH;
 	} else if (intervention_type_str == "DENSE_DELETE_SPEC") {
 		intervention_type = DENSE_DELETE_SPEC;
 	}
@@ -314,4 +316,5 @@ void PragmaQueries::RegisterFunction(BuiltinFunctions &set) {
 }
 
 } // namespace duckdb
+
 

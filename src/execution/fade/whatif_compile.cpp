@@ -77,6 +77,89 @@ extern "C" int fill_random(int row_count, float prob, int n_masks, void* del_int
 	return oss.str();
 }
 
+// ADD get_agg_init for SCALE_UNIFORM which doesn't use any interventions below aggregates
+
+string get_agg_init_no_intervention(EvalConfig& config, int total_agg_count, int row_count, int chunk_count, int opid, int n_interventions, string fn, string alloc_code,
+                    string get_data_code, string get_vals_code) {
+	int n_masks = n_interventions / config.mask_size;
+	string fname = "agg_"+ to_string(opid) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
+	std::ostringstream oss;
+	if (config.use_duckdb) {
+		oss << R"(extern "C" int )"
+		    << fname
+		    << R"((int thread_id, int* lineage, void* __restrict__ var_0_ptr, std::unordered_map<std::string, std::vector<void*>>& alloc_vars,
+duckdb::ChunkCollection &chunk_collection, std::set<int>& del_set) {
+)";
+	} else {
+		oss << R"(extern "C" int )"
+		    << fname
+		    << R"((int thread_id, int* lineage, void* __restrict__ var_0_ptr, std::unordered_map<std::string, std::vector<void*>>& alloc_vars,
+              std::unordered_map<int, void*>& input_data_map, std::set<int>& del_set) {
+)";
+	}
+
+
+	oss << "\tconst int chunk_count = " << chunk_count << ";\n";
+	oss << "\tconst int row_count = " << row_count << ";\n";
+	oss << "\tconst int n_interventions  = " << n_interventions << ";\n";
+
+	if (config.num_worker > 0) {
+		oss << "\tconst int num_threads  = " << config.num_worker << ";\n";
+		if (config.use_duckdb) {
+			int batch_size = chunk_count / config.num_worker;
+			if (chunk_count % config.num_worker > 0)
+				batch_size++;
+			oss << "\tconst int batch_size  = " << batch_size << ";\n";
+			oss << "\tconst int start = thread_id * batch_size;\n";
+			oss << "\tint end   = start + batch_size;\n";
+			oss << "\tif (end >= chunk_count) { end = chunk_count; }\n";
+		} else {
+			int batch_size = row_count / config.num_worker;
+			if (row_count % config.num_worker > 0)
+				batch_size++;
+			oss << "\tconst int batch_size  = " << batch_size << ";\n";
+			oss << "\tconst int start = thread_id * batch_size;\n";
+			oss << "\tint end   = start + batch_size;\n";
+			oss << "\tif (end >= row_count) { end = row_count; }\n";
+		}
+	} else {
+		oss << "\tconst int start = 0;\n";
+		oss << "\tconst int end   = row_count;\n";
+	}
+
+	// oss << "\tstd::cout << \"Specs: \" << row_count << \" \" << mask_size << \" \" << n_interventions << \" \" << n_masks << \" \" << start << \" \" << end << std::endl;";
+
+	oss << alloc_code;
+		if (config.use_duckdb) {
+			oss << R"(
+	int offset = 0;
+	for (int chunk_idx=start; chunk_idx < end; ++chunk_idx) {
+		duckdb::DataChunk &collection_chunk = chunk_collection.GetChunk(chunk_idx);
+  )";
+		}
+
+		oss << get_data_code;
+		if (config.use_duckdb) {
+			oss << R"(
+		for (int i=0; i < collection_chunk.size(); ++i) {
+			int oid = lineage[i+offset];
+			int col = oid*n_interventions;
+)";
+		} else {
+			oss << R"(
+	for (int i=start; i < end; ++i) {
+		int oid = lineage[i];
+		int col = oid*n_interventions;
+)";
+		}
+
+		if (config.n_intervention > 1)
+			oss << get_vals_code;
+
+
+	return oss.str();
+}
+
 string get_agg_init(EvalConfig& config, int total_agg_count, int row_count, int chunk_count, int opid, int n_interventions, string fn, string alloc_code,
                     string get_data_code, string get_vals_code) {
 	int n_masks = n_interventions / config.mask_size;
@@ -95,6 +178,7 @@ duckdb::ChunkCollection &chunk_collection, std::set<int>& del_set) {
               std::unordered_map<int, void*>& input_data_map, std::set<int>& del_set) {
 )";
 	}
+
 
 	if (config.n_intervention == 1) {
 		oss << "\t int8_t* __restrict__ var_0 = (int8_t* __restrict__)var_0_ptr;\n";
@@ -171,7 +255,8 @@ duckdb::ChunkCollection &chunk_collection, std::set<int>& del_set) {
 		for (int i=0; i < collection_chunk.size(); ++i) {
 			int oid = lineage[i+offset];
 )";
-			if (config.n_intervention == 1) {
+			if (config.n_intervention == 1 && ( config.intervention_type != InterventionType::SCALE_UNIFORM
+			                                   &&  config.intervention_type != InterventionType::SCALE_RANDOM)) {
 				if (total_agg_count > 1) {
 					oss << "\t\t\t\t\tif (var_0[i+offset] == 0) continue;\n";
 				}
@@ -183,7 +268,8 @@ duckdb::ChunkCollection &chunk_collection, std::set<int>& del_set) {
 	for (int i=start; i < end; ++i) {
 		int oid = lineage[i];
 )";
-			if (config.n_intervention == 1) {
+			if (config.n_intervention == 1 && ( config.intervention_type != InterventionType::SCALE_UNIFORM
+			                                   &&  config.intervention_type != InterventionType::SCALE_RANDOM)) {
 				if (total_agg_count > 1) {
 					oss << "\t\t\t\t\tif (var_0[i] == 0) continue;\n";
 				}
@@ -209,6 +295,7 @@ string get_agg_simd_eval(string fn, string out_var, string in_var, string data_t
 		oss << "\t_mm512_store_ps((__m512*) &"+out_var+"[col + row], _mm512_mask_add_ps(a, tmp_mask, a, v));\n";
 	} else if (data_type == "int") {
 		oss << "\t__m512i a = _mm512_load_si512((__m512i*)&" + out_var + "[col+row]);\n";
+		// TODO: fix zeros_i is overwritten here
 		oss << "\t __m512i v = _mm512_mask_set1_epi32(zeros_i, tmp_mask, "+in_var+");\n";
 		oss << "\t_mm512_store_si512((__m512i*) &"+out_var+"[col + row], _mm512_add_epi32(a, v));\n";
 	}
@@ -221,11 +308,13 @@ string get_agg_eval_scalar(string fn, string out_var="", string in_var="") {
 	std::ostringstream oss;
 	if (fn == "sum") {
 		oss << "\t\t\t\t\t";
-		oss << out_var+"[col + (row + k) ] +="+ in_var + " * (1 &  tmp_mask >> k);\n";
+		oss << out_var+"[col + (row + k) ] +="+ in_var;
+		oss << " * (1 &  tmp_mask >> k);\n";
 	} else if (fn == "count") {
 		oss << "\t\t\t\t\t";
-		oss << "out_count[col + (row + k) ] += 1 * (1 &  tmp_mask >> k);\n";
+		oss << "out_count[col + (row + k) ] += (1 &  tmp_mask >> k)";
 	}
+
 	return oss.str();
 }
 
@@ -254,7 +343,8 @@ string get_single_agg_template(EvalConfig& config, int total_agg_count, int agg_
 				for (int i=0; i < collection_chunk.size(); ++i) {
 				int oid = lineage[i+offset];
 )";
-			if (total_agg_count > 1) {
+			if (total_agg_count > 1 && ( config.intervention_type != InterventionType::SCALE_UNIFORM
+			                            &&  config.intervention_type != InterventionType::SCALE_RANDOM)) {
 				oss << "\t\t\t\t\tif (var_0[i+offset] == 0) continue;\n";
 			}
 		} else {
@@ -263,7 +353,8 @@ string get_single_agg_template(EvalConfig& config, int total_agg_count, int agg_
 				for (int i=start; i < end; ++i) {
 					int oid = lineage[i];
 )";
-			if (total_agg_count > 1) {
+			if (total_agg_count > 1 && ( config.intervention_type != InterventionType::SCALE_UNIFORM
+			                            &&  config.intervention_type != InterventionType::SCALE_RANDOM)) {
 				oss << "\t\t\t\t\tif (var_0[i] == 0) continue;\n";
 			}
 		}
@@ -279,6 +370,8 @@ string get_single_agg_template(EvalConfig& config, int total_agg_count, int agg_
 			oss << "\t\t\t\t\t";
 			oss << "out_count[oid] += 1;\n";
 		}
+	} else if (fn == "count" && (config.intervention_type == InterventionType::SCALE_RANDOM ||
+	                             config.intervention_type == InterventionType::SCALE_UNIFORM)) {
 	} else {
 		if (fn == "sum") {
 			oss << "\t\t\t\t\t";
@@ -287,8 +380,18 @@ string get_single_agg_template(EvalConfig& config, int total_agg_count, int agg_
 			oss << "\t\t\t\t\t";
 			oss << "out_count[oid] += 1";
 		}
-		if (total_agg_count > 1) {
-			oss << ";\n";
+
+		// if there are more than one multiples, then iterate over multiples[] array
+		if (config.intervention_type == InterventionType::SCALE_RANDOM) {
+			if (config.use_duckdb) {
+				oss << " * (0.8 * var_0[i+offset] + 1);\n";
+			} else {
+				oss << " * (0.8 * var_0[i] + 1);\n";
+			}
+		} else if (config.intervention_type == InterventionType::SCALE_UNIFORM) {
+			oss << "* 1.8;\n";
+		} else if (total_agg_count > 1 || config.intervention_type == InterventionType::SCALE_UNIFORM) {
+				oss << ";\n";
 		} else {
 			if (config.use_duckdb) {
 				oss << " * var_0[i+offset];\n";
@@ -333,19 +436,55 @@ string get_batch_agg_template(EvalConfig& config, int agg_count, string fn, stri
 	}
 
 	if (config.is_scalar) {
-		oss << get_agg_eval_scalar(fn, out_var, in_var);
+		if (config.intervention_type == InterventionType::SCALE_RANDOM) {
+			string var = "(0.8 * (1 &  tmp_mask >> k) + 1)";
+			if (fn == "sum") {
+				oss << "\t\t\t\t\t";
+				oss << out_var+"[col + (row + k) ] +="+ in_var;
+				oss << " * " << var << ";\n";
+			}
+		} else {
+			oss << get_agg_eval_scalar(fn, out_var, in_var);
+		}
 	} else {
-		oss << get_agg_simd_eval(fn, out_var, in_var, data_type);
+		if (config.intervention_type == InterventionType::SCALE_RANDOM) {
+			oss << "{\n";
+			if (data_type == "float") {
+				oss << "\t__m512 a  = _mm512_load_ps((__m512*) &"+out_var+"[col + row]);\n";
+				oss << "\t__m512 X = _mm512_set1_ps("+in_var+" * (0.8+1));\n";
+				oss << "\t__m512 Y = _mm512_set1_ps("+in_var+");\n";
+				oss << "\t__m512 v = _mm512_mask_blend_ps(tmp_mask, X, Y);\n";
+				oss << "\t_mm512_store_ps((__m512*) &"+out_var+"[col + row], _mm512_add_ps(a, v));\n";
+			} else if (data_type == "int") {
+				oss << "\t__m512i a = _mm512_load_si512((__m512i*)&" + out_var + "[col+row]);\n";
+				oss << "\t__m512i X = _mm512_set1_epi32("+in_var+" * (0.8+1));\n";
+				oss << "\t__m512i Y = _mm512_set1_epi32("+in_var+");\n";
+				oss << "\t__m512i v = _mm512_mask_blend_epi32(tmp_mask, X, Y);\n";
+				oss << "\t_mm512_store_si512((__m512i*) &"+out_var+"[col + row], _mm512_add_epi32(a, v));\n";
+			}
+			oss << "}\n";
+		} else {
+			oss << get_agg_simd_eval(fn, out_var, in_var, data_type);
+		}
 	}
 
 	return oss.str();
 }
+
 
 string get_agg_eval(EvalConfig& config, int total_agg_count, int agg_count, string fn, string out_var="", string in_var="", string in_arr="", string data_type="int") {
 	std::ostringstream oss;
 
 	if (config.n_intervention == 1) {
 		oss << get_single_agg_template(config, total_agg_count, agg_count, fn, out_var, in_var, in_arr, data_type);
+	} else if (config.intervention_type == InterventionType::SCALE_UNIFORM) {
+		// TODO: how to include multiple
+		// * muliples[row];
+		// if not uniform: * (multiples[row] * scale_var_0[row] + 1);
+		// delete intervention + scale intervention: // add another inner loop to iterate over scaling intervention
+		// * muliples[row] * var_0[row];
+		// 	if not uniform: * (multiples[row] * scale_var_0[row] + 1) * var_0[row];
+		std::cout << "NOT SUPPORTED YET" << std::endl;
 	} else {
 		oss << get_batch_agg_template(config, agg_count, fn, out_var, in_var, data_type);
 	}
@@ -363,7 +502,8 @@ void GenRandomWhatifIntervention(EvalConfig& config, PhysicalOperator* op,
 	}
 
 	if (op->type == PhysicalOperatorType::TABLE_SCAN) {
-		if (spec.find(op->lineage_op->table_name) == spec.end() && config.intervention_type == InterventionType::DENSE_DELETE_SPEC) {
+		if (spec.find(op->lineage_op->table_name) == spec.end() && config.intervention_type == InterventionType::DENSE_DELETE_SPEC
+		    || config.intervention_type == InterventionType::SCALE_UNIFORM) {
 			return;
 		}
 
@@ -697,7 +837,12 @@ string HashAggregateIntervene2D(EvalConfig& config, shared_ptr<OperatorLineage> 
 		eval_code += get_agg_eval(config, aggregates.size(), agg_count++, "count", out_var, "1", "", "int");
 	}
 
-	string init_code = get_agg_init(config, aggregates.size(), row_count, op->children[0]->lineage_op->chunk_collection.ChunkCount(), op->id,  fade_data[op->id].n_interventions, "agg", alloc_code, get_data_code, get_vals_code);
+	string init_code;
+	if (config.intervention_type == InterventionType::SCALE_UNIFORM) {
+		init_code = get_agg_init_no_intervention(config, aggregates.size(), row_count, op->children[0]->lineage_op->chunk_collection.ChunkCount(), op->id,  fade_data[op->id].n_interventions, "agg", alloc_code, get_data_code, get_vals_code);
+	} else {
+		init_code = get_agg_init(config, aggregates.size(), row_count, op->children[0]->lineage_op->chunk_collection.ChunkCount(), op->id,  fade_data[op->id].n_interventions, "agg", alloc_code, get_data_code, get_vals_code);
+	}
 	string end_code = Fade::get_agg_finalize(config, fade_data[op->id]);
 
 	code = init_code + eval_code + end_code;
@@ -726,8 +871,13 @@ void GenCodeAndAlloc(EvalConfig& config, string& code, PhysicalOperator* op,
 	}
 
 
+	// two cases for scaling intervention: 1) where intervention, 2) uniform intervention (apply scaling equally to all tuples)
+	// SCALE_UNIFORM, SCALE_RANDOM
+	// uniform: only allocate memory for the aggregate results
+	// random: allocate single intervention/selection vector per table with 0s/1s with prob
 	if (op->type == PhysicalOperatorType::TABLE_SCAN) {
-		if (spec.find(op->lineage_op->table_name) == spec.end() && config.intervention_type == InterventionType::DENSE_DELETE_SPEC) {
+		if (spec.find(op->lineage_op->table_name) == spec.end() && config.intervention_type == InterventionType::DENSE_DELETE_SPEC ||
+		    config.intervention_type == InterventionType::SCALE_UNIFORM) {
       		std::cout << "skip this scan " << op->lineage_op->table_name <<std::endl;
 			fade_data[op->id].n_interventions = 0;
 			fade_data[op->id].n_masks = 0;
@@ -804,7 +954,11 @@ void GenCodeAndAlloc(EvalConfig& config, string& code, PhysicalOperator* op,
 	} else if (op->type == PhysicalOperatorType::HASH_GROUP_BY) {
 		fade_data[op->id].del_interventions  = fade_data[op->children[0]->id].del_interventions;
 		fade_data[op->id].single_del_interventions  = fade_data[op->children[0]->id].single_del_interventions;
-		fade_data[op->id].n_interventions = fade_data[op->children[0]->id].n_interventions;
+		if (config.intervention_type == InterventionType::SCALE_UNIFORM) {
+			fade_data[op->id].n_interventions = config.n_intervention;
+		} else {
+			fade_data[op->id].n_interventions = fade_data[op->children[0]->id].n_interventions;
+		}
 		fade_data[op->id].n_masks = fade_data[op->children[0]->id].n_masks;
 		Fade::HashAggregateAllocate(config, op->lineage_op, fade_data, op);
 		code += HashAggregateIntervene2D(config, op->lineage_op, fade_data, op);
@@ -1141,3 +1295,4 @@ string Fade::Whatif(PhysicalOperator *op, EvalConfig config) {
 
 } // namespace duckdb
 #endif
+

@@ -31,6 +31,17 @@ PRAGMA threads=1;
 
 # qid:INT, Itype:STR, spec:STR, n_interventions:INT, batch:INT, is_scalar:BOOL, use_duckdb:BOOL, threads:INT, debug:BOOL, prune:BOOL, incremental:BOOL, prob:float
 
+query IIIII
+pragma WhatIf(2, 'SCALE_RANDOM', 't1.j', 1, 1, true, false, 1, true, true, false, 0.05);
+----
+
+query IIIII
+pragma WhatIf(2, 'SCALE_UNIFORM', 't1.j', 1, 1, true, false, 1, true, true, false, 0.05);
+----
+
+query IIIII
+pragma WhatIf(2, 'DENSE_DELETE_ALL', 't1.i', 1, 1, true, false, 1, true, true, true, 0.05);
+ ----
 
 query IIIII
 pragma WhatIf(2, 'DELETE', 't1.i', 1, 1, true, false, 1, true, true, true, 0.05);

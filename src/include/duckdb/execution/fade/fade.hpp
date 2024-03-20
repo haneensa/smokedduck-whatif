@@ -47,7 +47,8 @@ struct FadeDataPerNode {
 enum InterventionType {
 	DENSE_DELETE_ALL,
 	DENSE_DELETE_SPEC,
-	SCALE,
+	SCALE_UNIFORM,
+	SCALE_RANDOM,
 	SEARCH
 };
 
@@ -123,3 +124,4 @@ public:
 
 } // namespace duckdb
 #endif
+

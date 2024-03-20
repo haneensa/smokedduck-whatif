@@ -171,7 +171,8 @@ string Fade::get_agg_finalize(EvalConfig config, FadeDataPerNode& node_data) {
 	oss << "\treturn 0;\n}\n";
   return oss.str();
 	}
-
+  
+  //if (config.is_scalar && config.intervention_type != InterventionType::SCALE_UNIFORM) oss <<  "\n\t\t\t\t}//c\n"; // close inner loop
 	if (config.is_scalar) oss <<  "\n\t\t\t\t}//c\n"; // close inner loop
 
 	if (config.use_duckdb) {
