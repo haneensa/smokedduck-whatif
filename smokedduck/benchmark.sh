@@ -2,23 +2,24 @@
 
 export DUCKDB_LIB_PATH=/ProvEnhance/third_party/smokedduck-whatif/build/release/src
 
-query_nums=("1" "3" "5" "7" "9"  "10" "12")
-sf_values=("1" "5" "10")  # "0.2" "0.4") # "5.0" "10.0") # (# "3.0" "4.0")
+query_nums=("9") #"1" "3" "5" "7" "9"  "10" "12")
+sf_values=("1") # "5" "10")  # "0.2" "0.4") # "5.0" "10.0") # (# "3.0" "4.0")
 distinct=("1") #"512" "1024" "2048" "2560")
-threads_num=("1" "2" "4" "8")
+threads_num=("1") # "2" "4" "8")
 is_scalar_binary=("true") # "false") 
 #duckdb_binary=("false" "true")
-prune_binary=("true" "false")
-csv="dense_single.csv"
+prune_binary=("false") # "false")
+csv="fade_varyprob_noduckdb_inc_noprune_9.csv"
 debug="false"
 #itype_list=("SEARCH" "DENSE_DELETE_ALL" "DENSE_DELETE_SPEC")
-#itype_list=("DENSE_DELETE_SPEC")
 itype_list=("DENSE_DELETE_ALL")
+#itype_list=("SCALE_UNIFORM") # evaluate scaling all tuples of an attribute 
+#itype_list=("SCALE_RANDOM") # evaluate scaling some tuples of an attribute
 #itype_list=("SEARCH")
 # if search then include incremental or not
-prob_list=("0.1") # "0.001" "0.002" "0.005" "0.01" "0.02" "0.05" "0.1") # "0.2" "0.3" "0.4" "0.5")
+prob_list=("0.001" "0.002" "0.005" "0.01" "0.02" "0.05" "0.1" "0.2") # "0.3" "0.4" "0.5")
 batch="4"
-use_duckdb="true"
+use_duckdb="false"
 touch ${csv}
 # add prob, itype, incremental
 echo sf,qid,itype,prob,incremental,use_duckdb,is_scalar,prune,num_threads,distinct,batch,post_time,gen_time,prep_time,compile_time,eval_time,prune_time,lineage_time,ksemimodule_timing > ${csv}
@@ -69,7 +70,7 @@ do
                   #  continue
                   # fi
                   
-                  python3 smokedduck/test_whatif.py  --batch ${batch} --prune ${prune} --sf ${sf} --csv ${csv} --i ${query_num} --use-duckdb ${use_duckdb} --t ${thread} --is-scalar ${is_scalar} --debug ${debug} --interventions ${n} --itype ${itype} --prob ${prob} --incremental "false"
+                  #python3 smokedduck/test_whatif.py  --batch ${batch} --prune ${prune} --sf ${sf} --csv ${csv} --i ${query_num} --use-duckdb ${use_duckdb} --t ${thread} --is-scalar ${is_scalar} --debug ${debug} --interventions ${n} --itype ${itype} --prob ${prob} --incremental "false"
                   if [ "$itype" = "SEARCH" ] || { [ "$n" -eq 1 ] && [ "$use_duckdb" = "false" ]; } ; then
                     if [ "$itype" = "SEARCH" ] && [ "$is_scalar" = "false" ]; then
                       echo "skip because itype==SEARCH is set and SIMD is set"

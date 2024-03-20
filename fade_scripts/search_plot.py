@@ -158,4 +158,4 @@ if include_search:
         p += axis_labels('Query', "Speedup (log)", "discrete", "log10")
         p += legend_bottom
         p += facet_grid(".~n", scales=esc("free_y"))
-        ggsave("figures/fade_search_fade25_sf1_2560_speedup_vec.png", p, postfix=postfix, width=3, height=2.5, scale=0.8)
+        ggsave("figures/fade_search_fade25_sf1_2560_speedup_vec.png", p, postfix=postfix, width=4, height=2.5, scale=0.8)
