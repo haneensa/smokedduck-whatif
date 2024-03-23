@@ -103,6 +103,10 @@ public:
 
 	static std::vector<int> GetGBLineage(shared_ptr<OperatorLineage> lop, int row_count);
 
+	static int PruneUtilization(EvalConfig& config, PhysicalOperator* op,
+	                     std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
+	                     int M, int side);
+
 	static void PruneLineage(EvalConfig& config, PhysicalOperator* op,
 	                  std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
 	                  vector<int>& out_order);

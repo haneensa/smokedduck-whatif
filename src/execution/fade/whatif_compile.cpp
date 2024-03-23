@@ -1170,6 +1170,7 @@ void GetForwardLineage(EvalConfig& config, PhysicalOperator* op,
     fade_data[op->id].opid = fade_data[op->children[0]->id].opid;
 	}
 }
+
 /*
   1. traverse plan to construct template
   2. compile
@@ -1205,6 +1206,8 @@ string Fade::Whatif(PhysicalOperator *op, EvalConfig config) {
 	// 4.1 Prune
 	double prune_time = 0;
 	if (config.prune) {
+		//int remove = PruneUtilization(config, op, fade_data,0);
+		//std::cout << "total remove " << remove << std::endl;
 		start_time = std::chrono::steady_clock::now();
 		vector<int> out_order;
 		PruneLineage(config, op, fade_data, out_order);
