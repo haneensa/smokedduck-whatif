@@ -55,6 +55,7 @@ def get_data(fname, scale):
     
 if dense:
     dense_data_v2 = get_data(f"fade_data/dense_sf1_v4.csv", 1000)
+    #dense_data_v2 = get_data(f"fade_data/dense_sf1_march21.csv", 1000)
     dense_single = get_data(f"fade_data/dense_single.csv", 1000)
     postfix = """
     data$query = factor(data$query, levels=c('Q1', 'Q3', 'Q5', 'Q7', 'Q9', 'Q10', 'Q12'))
@@ -67,13 +68,13 @@ if dense:
     level1_data = con.execute(f"""select 
         (base.eval_time_ms * t1.n)/ t1.eval_time_ms as speedup, t1.prune_time*1000 as prune_time,
         sf, prune, t1.query, t1.cat, qid, t1.n, t1.num_threads, t1.distinct,
-        t1.num_threads, t1.is_scalar, t1.eval_time_ms, base.eval_time_ms*t1.n as single_eval
+        t1.num_threads, t1.is_scalar, t1.eval_time_ms, t1.gen_time * 1000 as gen_time, base.eval_time_ms*t1.n as single_eval
         from ( select * from dense_data_v2 where incremental='False' and num_threads=1 and is_scalar='True' and sf=1 and prob=0.1) as t1 JOIN
              ( select * from dense_data_v2 where incremental='False' and n=1 and num_threads=1 and is_scalar='True' and sf=1 and prob=0.1) as base
              USING (sf, qid, prune) """).df()
     
     cat = 'distinct'
-    if plot:
+    if False and plot:
         p = ggplot(level1_data, aes(x='query',  y="eval_time_ms", color=cat, fill=cat, group=cat))
         p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.6), width=0.5)
         p += axis_labels('Query', "Latency (ms, log)", "discrete", "log10")
@@ -117,14 +118,68 @@ if dense:
     print("======== DENSE Pruning =============")
     prune_data = con.execute(f"""select sf, n, t1.query, t1.cat, qid, t1.distinct,
         t1.prune_time,
-        (base.eval_time_ms)/ t1.eval_time_ms as speedup_nosetup,
-        (base.eval_time_ms)/ (t1.eval_time_ms+t1.prune_time) as speedup,
+        (base.eval_time_ms+base.gen_time)/ (t1.eval_time_ms+t1.gen_time) as speedup_nosetup,
+        (base.eval_time_ms+base.gen_time)/ (t1.eval_time_ms+t1.prune_time+t1.gen_time) as speedup,
+        (base.eval_time_ms+base.gen_time)/ (t1.gen_time) as gen_speedup_nosetup,
+        (base.eval_time_ms+base.gen_time)/ (t1.prune_time+t1.gen_time) as gen_speedup,
+        (base.eval_time_ms+base.gen_time)/ (t1.eval_time_ms) as eval_speedup_nosetup,
+        (base.eval_time_ms+base.gen_time)/ (t1.eval_time_ms+t1.prune_time) as eval_speedup,
         t1.eval_time_ms, base.eval_time_ms as base_eval
         from ( select * from level1_data where prune='True') as t1 JOIN
              ( select * from level1_data where prune='False') as base
              USING (sf, qid, n) """).df()
+    prune_data_breakdown = con.execute(f"""
+        select sf, n, t1.query, qid, t1.distinct,
+        t1.prune_time,
+        'ALL' as cat,
+        (base.eval_time_ms+base.gen_time)/ (t1.eval_time_ms+t1.gen_time) as speedup_nosetup,
+        (base.eval_time_ms+base.gen_time)/ (t1.eval_time_ms+t1.prune_time+t1.gen_time) as speedup,
+        t1.eval_time_ms, base.eval_time_ms as base_eval
+        from ( select * from level1_data where prune='True') as t1 JOIN
+             ( select * from level1_data where prune='False') as base
+             USING (sf, qid, n) 
+        UNION ALL
+        select sf, n, t1.query, qid, t1.distinct,
+        t1.prune_time,
+        'Gen' as cat,
+        (base.gen_time)/ (t1.gen_time) as speedup_nosetup,
+        (base.gen_time)/ (t1.prune_time+t1.gen_time) as speedup,
+        t1.eval_time_ms, base.eval_time_ms as base_eval
+        from ( select * from level1_data where prune='True') as t1 JOIN
+             ( select * from level1_data where prune='False') as base
+             USING (sf, qid, n) 
+        UNION ALL
+        select sf, n, t1.query, qid, t1.distinct,
+        t1.prune_time,
+        'Eval' as cat,
+        (base.eval_time_ms)/ (t1.eval_time_ms) as speedup_nosetup,
+        (base.eval_time_ms)/ (t1.eval_time_ms+t1.prune_time) as speedup,
+        t1.eval_time_ms, base.eval_time_ms as base_eval
+        from ( select * from level1_data where prune='True') as t1 JOIN
+             ( select * from level1_data where prune='False') as base
+             USING (sf, qid, n) 
+
+             """).df()
+    
+    prune_data_runtime = con.execute(f"""
+        select sf, n, query, qid, eval_time_ms as time, 'Fade' as cat
+        from level1_data where prune='False'
+        UNION ALL
+        select sf, n, query, qid, eval_time_ms as time, 'FaDE-P' as cat
+        from level1_data where prune='True'
+        """).df()
     
     if plot:
+        # plot absolute runtime
+        p = ggplot(prune_data_runtime, aes(x='n',  y="time", color="query", fill="query",  linetype='cat'))
+        p += geom_line(stat=esc('identity')) 
+        p += axis_labels('Batch Size (log)', "Runtime (ms, log)", "discrete", "log10",
+                ykwargs=dict(breaks=[0.01,0.1,0,10,100],  labels=list(map(esc,['0.01','0.1','0','10','100']))),
+                xkwargs=dict(breaks=[1,512,1024,2048,2560],  labels=list(map(esc,['1','512','1024','2048','2560']))),
+            )
+        p += legend_side
+        ggsave(f"figures/fade_pruning_batch_abstime.png", p, postfix=postfix, width=3, height=2, scale=0.8)
+        
         p = ggplot(prune_data, aes(x='n',  y="speedup", color="query", fill="query",  group="query"))
         p += geom_line(stat=esc('identity')) 
         p += axis_labels('Batch Size (log)', "Speedup (log)", "discrete", "log10",
@@ -142,6 +197,17 @@ if dense:
             )
         p += legend_side
         ggsave(f"figures/fade_pruning_batch_setup.png", p, postfix=postfix, width=3, height=2, scale=0.8)
+        
+        p = ggplot(prune_data_breakdown, aes(x='n',  y="speedup", color="query", fill="query",  linetype='cat'))
+        p += geom_line(stat=esc('identity')) 
+        p += axis_labels('Batch Size', "Speedup (log)", "discrete", "log10",
+                xkwargs=dict(breaks=[1,512,1024,2048,2560],  labels=list(map(esc,['1','512','1024','2048','2560']))),
+                ykwargs=dict(breaks=[0.01,0.1,0,10,100],  labels=list(map(esc,['0.01','0.1','0','10','100']))),
+            )
+        p += legend_side
+        ggsave(f"figures/fade_pruning_batch_all.png", p, postfix=postfix, width=3, height=2, scale=0.8)
+        print(con.execute("select * from prune_data_breakdown where query='Q1'").df())
+
     prune_data_detailed = con.execute(f"""select sf, n, t1.query, t1.cat, qid, t1.distinct,
         t1.prune_time*1000,is_scalar, num_threads,
         (base.eval_time_ms)/ t1.eval_time_ms as speedup_nosetup,
