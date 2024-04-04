@@ -1170,6 +1170,47 @@ void GetForwardLineage(EvalConfig& config, PhysicalOperator* op,
     fade_data[op->id].opid = fade_data[op->children[0]->id].opid;
 	}
 }
+
+int PruneUtilization(EvalConfig& config, PhysicalOperator* op,
+                        std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
+                        int M, int side=0) {
+	int removed = 0;
+	int original = 0;
+	if (op->type == PhysicalOperatorType::TABLE_SCAN) {
+		original = fade_data[op->id].lineage[0].size();
+		removed = (fade_data[op->id].lineage[0].size() - M);
+		std::cout << op->id << " scan " << removed << " " << float(removed) / fade_data[op->id].lineage[0].size()  << " " << fade_data[op->id].lineage[0].size() / float(M) << " " << fade_data[op->id].lineage[0].size() << " M " << M << std::endl;
+	} else if (op->type == PhysicalOperatorType::FILTER) {
+		//original = fade_data[op->id].lineage[0].size();
+		if (M == 0 || M > fade_data[op->id].lineage[0].size() ) {
+			M = fade_data[op->id].lineage[0].size();
+		} else {
+			//removed = (fade_data[op->id].lineage[0].size() - M);
+		}
+		std::cout <<  op->id << " filter " << removed << " " << float(removed)/ fade_data[op->id].lineage[0].size()  << " " << fade_data[op->id].lineage[0].size() / float(M) << " " << fade_data[op->id].lineage[0].size() << " M " << M << std::endl;
+	} else if (op->type == PhysicalOperatorType::HASH_JOIN
+	           || op->type == PhysicalOperatorType::NESTED_LOOP_JOIN
+	           || op->type == PhysicalOperatorType::BLOCKWISE_NL_JOIN
+	           || op->type == PhysicalOperatorType::PIECEWISE_MERGE_JOIN
+	           || op->type == PhysicalOperatorType::CROSS_PRODUCT) {
+		//original = fade_data[op->id].lineage[side].size();
+		if (M == 0 || M > fade_data[op->id].lineage[side].size() ) {
+			M = fade_data[op->id].lineage[side].size();
+		} else {
+			//removed = (fade_data[op->id].lineage[side].size() - M);
+		}
+		std::cout <<  op->id << " join  " << removed << " " <<  float(removed)  / fade_data[op->id].lineage[side].size() << " " << fade_data[op->id].lineage[side].size() / float(M) <<  " " << fade_data[op->id].lineage[side].size() << " M: " << M << std::endl;
+	} else if (op->type == PhysicalOperatorType::HASH_GROUP_BY) {
+		//original = fade_data[op->id].lineage[0].size();
+	}
+
+	for (idx_t i = 0; i < op->children.size(); i++) {
+		original += PruneUtilization(config, op->children[i].get(), fade_data,  M, i);
+	}
+
+	return original;
+}
+
 /*
   1. traverse plan to construct template
   2. compile
@@ -1205,6 +1246,8 @@ string Fade::Whatif(PhysicalOperator *op, EvalConfig config) {
 	// 4.1 Prune
 	double prune_time = 0;
 	if (config.prune) {
+		int remove = PruneUtilization(config, op, fade_data,0);
+		std::cout << "total remove " << remove << std::endl;
 		start_time = std::chrono::steady_clock::now();
 		vector<int> out_order;
 		PruneLineage(config, op, fade_data, out_order);

@@ -357,15 +357,17 @@ void Fade::PruneLineage(EvalConfig& config, PhysicalOperator* op,
 	vector<int> new_order[2];
 
 	if (out_order.empty() == false) {
-		// if table scan and no filter push down, then use out_order aslineage
+		// if table scan and no filter push down, then use out_order as lineage
 		// if hash group by: ..
 		if (op->type == PhysicalOperatorType::TABLE_SCAN) {
+			//std::cout <<  op->id << " " << fade_data[op->id].lineage[0].size() / float(out_order.size()) << " scan prune previous output size M= " << fade_data[op->id].lineage[0].size() << " new pruned: " << out_order.size() << std::endl;
 			fade_data[op->id].lineage[0] = out_order;
 		} else if (op->type == PhysicalOperatorType::FILTER) {
 			vector<int> new_lineage(out_order.size());
 			for (int i=0; i < out_order.size(); ++i) {
 				new_lineage[i] = fade_data[op->id].lineage[0][out_order[i]];
 			}
+			//std::cout << op->id << " " << fade_data[op->id].lineage[0].size() / float(out_order.size()) << " filter prune previous output size M= " << fade_data[op->id].lineage[0].size() << " new pruned: " << out_order.size() << std::endl;
 			fade_data[op->id].lineage[0] = std::move(new_lineage);
 		} else if (op->type == PhysicalOperatorType::HASH_JOIN
 		           || op->type == PhysicalOperatorType::NESTED_LOOP_JOIN
@@ -377,6 +379,7 @@ void Fade::PruneLineage(EvalConfig& config, PhysicalOperator* op,
 				for (int i=0; i < out_order.size(); ++i) {
 					new_lineage[i] = fade_data[op->id].lineage[side][out_order[i]];
 				}
+				//std::cout << op->id << " " << fade_data[op->id].lineage[side].size() / float(out_order.size()) << " " << side << " join prune previous output size M= " << fade_data[op->id].lineage[side].size() << " new pruned: " << out_order.size() << std::endl;
 				// update lineage
 				fade_data[op->id].lineage[side] = std::move(new_lineage);
 			}
@@ -387,6 +390,7 @@ void Fade::PruneLineage(EvalConfig& config, PhysicalOperator* op,
 		for (int i=0; i < fade_data[op->id].lineage[0].size(); ++i) {
 			new_order[0].push_back(i);
 		}
+		//std::cout << "filter push down M=" << new_order[0].size() << std::endl;
 	} else if (op->type == PhysicalOperatorType::HASH_JOIN
 	           || op->type == PhysicalOperatorType::NESTED_LOOP_JOIN
 	           || op->type == PhysicalOperatorType::BLOCKWISE_NL_JOIN
@@ -394,25 +398,29 @@ void Fade::PruneLineage(EvalConfig& config, PhysicalOperator* op,
 	           || op->type == PhysicalOperatorType::CROSS_PRODUCT) {
 
 		for (int side=0; side < 2; ++side) {
+			// This creates out_order to pass to the child. e.g. output only references 0 and 3 from child [1, 1, 1, 3]
+			// reindexes this lineage
 			vector<int>& lineage = fade_data[op->id].lineage[side];
-			// 1. find how many unique elements in lhs_lineage, rhs_lineage
-			set<int> lineage_unqiue_set(lineage.begin(), lineage.end());
-			vector<int> lineage_unique(lineage_unqiue_set.begin(), lineage_unqiue_set.end());
-			std::map<int, int> lineage_inverse_map;
-			for (int i = 0; i < lineage_unique.size(); ++i) {
-				lineage_inverse_map[lineage_unique[i]] = i;
-			}
-			vector<int>  lineage_inverse(lineage.size());
+			vector<int>  lineage_inverse(lineage.size()); // [0, 0, 0, 1]
+			vector<int>  lineage_unique; // [1, 3]
+
+			std::map<int, int> new_order_map;
 			for (int i = 0; i < lineage.size(); ++i) {
-				lineage_inverse[i] = lineage_inverse_map[lineage[i]];
+				if (new_order_map.find(lineage[i]) == new_order_map.end()) {
+					new_order_map[lineage[i]] = new_order_map.size();
+					lineage_unique.push_back(lineage[i]);
+				}
+				lineage_inverse[new_order_map[lineage[i]]];
 			}
+
+			//std::cout <<  fade_data[op->id].lineage[side].size()  / float(lineage_inverse.size()) << " " << side << " join push down join output M=" << fade_data[op->id].lineage[side].size() << " unique= " << lineage_unique.size() << " inverse= " << lineage_inverse.size() << std::endl;
 			// update lineage
 			fade_data[op->id].lineage[side] = std::move(lineage_inverse);
 			new_order[side] = lineage_unique;
 		}
 
 	} else if (op->type == PhysicalOperatorType::PROJECTION) {
-    new_order[0] = std::move(out_order);
+    	new_order[0] = std::move(out_order);
   }
 
 	for (idx_t i = 0; i < op->children.size(); i++) {
@@ -667,6 +675,7 @@ pair<int*, int> local_factorize(shared_ptr<OperatorLineage> lop, idx_t col_idx) 
   int count = 0;
 	for (idx_t chunk_idx=0; chunk_idx < chunk_count; ++chunk_idx) {
 		DataChunk &collection_chunk = lop->chunk_collection.GetChunk(chunk_idx);
+   // std::cout << collection_chunk.ToString() << std::endl;
 		for (idx_t i=0; i < collection_chunk.size(); ++i) {
 			T v = collection_chunk.GetValue(col_idx, i).GetValue<T>();
 			if (dict.find(v) == dict.end()) {
@@ -680,13 +689,17 @@ pair<int*, int> local_factorize(shared_ptr<OperatorLineage> lop, idx_t col_idx) 
 }
 
 std::pair<int*, int> create_codes(LogicalType& typ, shared_ptr<OperatorLineage> lop, int i) {
-	if (typ == LogicalType::INTEGER) {
+  std::cout << " create_codes " << typ.ToString()  << std::endl;
+  if (typ == LogicalType::INTEGER) {
 		return local_factorize<int>(lop, i);
+	} else if (typ == LogicalType::BIGINT) {
+		return local_factorize<int64_t>(lop, i);
 	} else if (typ == LogicalType::VARCHAR) {
 		return local_factorize<string>(lop, i);
 	} else {
 		return local_factorize<float>(lop, i);
-	} 
+	}
+
 	
 	return {nullptr, 0};
 }
