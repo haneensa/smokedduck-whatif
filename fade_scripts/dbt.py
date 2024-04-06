@@ -52,9 +52,12 @@ def get_data(fname, scale):
     local_data["prune_label"] = local_data.apply(lambda row:"FaDE-P" if row["prune"] else "FaDE" , axis=1)
     return local_data
     
-if False:
+if True:
     # fade using incremental data processing with sparse intervention representation
-    incremental_data = get_data("fade_data/single_incremental_random_sparse.csv", 1000)
+    #incremental_data = get_data("fade_data/single_incremental_random_sparse.csv", 1000)
+    incremental_data = get_data("sparse_incremental_test_v2.csv", 1000)
+    incremental_data = con.execute("select * from incremental_data where incremental='true'").df()
+    single_data_all = get_data("single_fade_april6.csv", 1000)
     dbt_data = get_data("fade_data/dbtoast.csv", 1)
     dbt_data["cat"] = dbt_data.apply(lambda row: "DBT_prune" if row["prune"] else "DBT", axis=1)
 
@@ -77,9 +80,13 @@ if False:
     dbt_prob=0.1
     single_data = con.execute(f"""
         select 'Fade-p' as system, query, prune, sf, sf_label,  eval_time_ms, incremental
-            from dense_data where n=1 and num_threads=1 and prune='True' and prob={dbt_prob} and incremental='False'
+            from single_data_all where n=1 and num_threads=1 and prune='True' and prob={dbt_prob} and incremental='False'
         UNION ALL select 'Fade' as system, query, prune, sf, sf_label, eval_time_ms, incremental
-            from dense_data where n=1 and num_threads=1  and prune='False' and prob={dbt_prob} and incremental='False'
+            from single_data_all where n=1 and num_threads=1  and prune='False' and prob={dbt_prob} and incremental='False'
+        UNION ALL select 'Fade-p-sparse-incr' as system, query, prune, sf, sf_label,  eval_time_ms, incremental
+            from single_data_all where n=1 and num_threads=1 and prune='True' and prob={dbt_prob} and incremental='True'
+        UNION ALL select 'Fade-sparse-incr' as system, query, prune, sf, sf_label, eval_time_ms, incremental
+            from single_data_all where n=1 and num_threads=1  and prune='False' and prob={dbt_prob} and incremental='True'
         UNION ALL select 'DBT-p' as system, query, prune, sf, sf_label, eval_time_ms as eval_time, 'False' as incremental
             from dbt_data where prob={dbt_prob} and prune='True'
         UNION ALL select 'DBT' as system, query, prune, sf, sf_label, eval_time_ms as eval_time, 'False' as incremental
@@ -107,21 +114,25 @@ if False:
     p += facet_grid(".~sf_label", scales=esc("free_y"))
     ggsave("figures/fade_single_sf1.png", p, postfix=postfix, width=5, height=3, scale=0.8)
 
+    """
+    UNION ALL
+    select 'sparse-inc' as system, sf, query, dbt.prob, fade.incremental, fade.prune_label, dbt.prune, 
+    fade.prune, fade.num_threads,
+    (dbt.eval_time_ms / fade.eval_time_ms) as nor,
+    dbt.eval_time_ms, fade.eval_time_ms
+    from (select * from dbt_data where prune='True') as dbt JOIN
+    (select * from  single_data_all where n=1 and num_threads=1 and incremental='True') as fade
+    USING (query, sf, prob)
+    """
     # fig 1:
     # x-axis prob, y-axis dbt normalized latency against fade
     dbt_fade_data = con.execute("""
-    select 'dense' as system, sf, query, dbt.prob, fade.incremental, fade.prune_label, dbt.prune dbt_prune, fade.prune, fade.num_threads,
+    select 'dense' as system, sf, query, dbt.prob, fade.incremental, fade.prune_label, dbt.prune, 
+    fade.prune, fade.num_threads,
     (dbt.eval_time_ms / fade.eval_time_ms) as nor,
     dbt.eval_time_ms, fade.eval_time_ms
     from (select * from dbt_data where prune='True') as dbt JOIN
-    (select * from  dense_data where n=1 and num_threads=1) as fade
-    USING (query, sf)
-    UNION ALL
-    select 'sparse+inc' as system, sf, query, prob, fade.incremental, fade.prune_label, dbt.prune dbt_prune, fade.prune, fade.num_threads,
-    (dbt.eval_time_ms / fade.eval_time_ms) as nor,
-    dbt.eval_time_ms, fade.eval_time_ms
-    from (select * from dbt_data where prune='True') as dbt JOIN
-    (select * from  incremental_data where n=1 and num_threads=1 and sf=1) as fade
+    (select * from  single_data_all where n=1 and num_threads=1 and incremental='False') as fade
     USING (query, sf, prob)
     """).df()
 
@@ -407,6 +418,8 @@ if False:
 
 
 dbt_data_scale = get_data("fade_data/dbtoast_scale_april4.csv", 1)
+fade_scale = get_data("scale_random_single.csv", 1000)
+fade_scale_lineitem = get_data("scale_single_lineitem.csv", 1000)
 dbt_data_scale["cat"] = dbt_data_scale.apply(lambda row: "DBT_prune" if row["prune"] else "DBT", axis=1)
 cat = "prob"
 p = ggplot(dbt_data_scale, aes(x='query',  y="eval_time_ms", color=cat, fill=cat, group=cat))
@@ -430,6 +443,10 @@ group by sf, qid
 order by qid
 """).df()
 print(speedup_data)
+
+
+
+
 detailed_data = con.execute("""
 select sf, qid, prob, del.eval_time_ms, scale.eval_time_ms
 from (select * from dbt_data_scale where itype='DELETE') as del
@@ -451,3 +468,41 @@ USING (sf, qid, prob)
 where qid<>12
 """).df()
 print(summary_data)
+
+print("Fade Scale: ")
+speedup_data = con.execute("""
+select sf, qid, prune,
+max(scale.eval_time_ms/del.eval_time_ms) as speedup_max,
+avg(scale.eval_time_ms/del.eval_time_ms) as speedup_avg,
+min(scale.eval_time_ms/del.eval_time_ms) as speedup_min,
+max(del.eval_time_ms/scale.eval_time_ms) as speedup_max_del,
+avg(del.eval_time_ms/scale.eval_time_ms) as speedup_avg_del,
+min(del.eval_time_ms/scale.eval_time_ms) as speedup_min_del
+from (select * from single_data_all where incremental='False') as del
+JOIN (select * from fade_scale where incremental='False') as scale
+USING (sf, qid, prob, prune)
+where qid<>12
+group by sf, qid, prune
+order by qid
+""").df()
+print(speedup_data)
+detailed_data = con.execute("""
+select sf, qid, prob, prune, del.eval_time_ms, scale.eval_time_ms
+from (select * from single_data_all where incremental='False') as del
+JOIN (select * from fade_scale where incremental='False') as scale
+USING (sf, qid, prob, prune)
+where qid<>12
+order by qid, prob
+""").df()
+print(detailed_data)
+
+single_summary_all = con.execute("""
+select sf, query, prob,
+avg(dbt.eval_time_ms) as dbt_eval, avg(fade.eval_time_ms) as fade_eval,
+avg(dbt.eval_time_ms / fade.eval_time_ms) as fade_speedup,
+from (select * from fade_scale_lineitem where prune='True') as fade JOIN
+(select * from dbt_data_scale) as dbt using (query, sf, prob) 
+group by sf, query, prob
+order by sf, query, prob
+""").df()
+print(single_summary_all)
