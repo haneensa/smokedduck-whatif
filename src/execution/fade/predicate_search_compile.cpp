@@ -30,7 +30,7 @@ string FilterCodeAndAllocPredicate(EvalConfig& config, PhysicalOperator *op,
 	oss << "\t int* __restrict__ out = (int* __restrict__)out_ptr;\n";
 	oss << "\t int* __restrict__ var = (int* __restrict__)var_ptr;\n";
 
-	int row_count = fade_data[op->id].lineage[0].size();
+	int row_count = lop->backward_lineage[0].size();
 
 	oss << "\tconst int row_count = " + to_string(row_count) + ";\n";
 
@@ -73,7 +73,7 @@ string JoinCodeAndAllocPredicate(EvalConfig config, PhysicalOperator *op, shared
 	oss << "\t int* __restrict__ rhs_var = (int* __restrict__)rhs_var_ptr;\n";
 	oss << "\t int* __restrict__ lhs_var = (int* __restrict__)lhs_var_ptr;\n";
 
-	int row_count = fade_data[op->id].lineage[0].size();
+	int row_count = op->lineage_op->backward_lineage[0].size();
 	oss << "\tconst int row_count = " + to_string(row_count) + ";\n";
 	oss << "\tconst int right_n_interventions = " + to_string(fade_data[op->children[1]->id].n_interventions) + ";\n";
 
@@ -263,16 +263,14 @@ string get_agg_eval_predicate(EvalConfig config, int agg_count, string fn, strin
 
 
 string HashAggregateCodeAndAllocPredicate(EvalConfig& config, shared_ptr<OperatorLineage> lop,
-                                std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
-                                PhysicalOperator* op) {
+                                          std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
+                                          PhysicalOperator* op, vector<unique_ptr<Expression>>& aggregates,
+                                          int keys, int n_groups) {
 	string eval_code;
 	string code;
 	string alloc_code;
 	string get_data_code;
 	string get_vals_code;
-
-	PhysicalHashAggregate * gb = dynamic_cast<PhysicalHashAggregate *>(op);
-	auto &aggregates = gb->grouped_aggregate_data.aggregates;
 
 	idx_t row_count = op->children[0]->lineage_op->chunk_collection.Count();
   // if n_groups * n_interventions > rows then use single thread
@@ -298,7 +296,7 @@ string HashAggregateCodeAndAllocPredicate(EvalConfig& config, shared_ptr<Operato
 		}
 
 		if (name == "sum" || name == "sum_no_overflow" || name == "avg") {
-			int col_idx = i + gb->grouped_aggregate_data.groups.size();
+			int col_idx = i + keys;
 
 			string out_var = "out_" + to_string(i); // new output
 			string in_arr = "col_" + to_string(i);  // input arrays
@@ -397,7 +395,7 @@ void GenCodeAndAllocPredicate(EvalConfig& config, string& code, PhysicalOperator
 			return;
 		}
     // alloc
-		fade_data[op->id].annotations = new int[fade_data[op->id].lineage[0].size()];
+		fade_data[op->id].annotations = new int[op->lineage_op->backward_lineage[0].size()];
 		code += FilterCodeAndAllocPredicate(config, op, op->lineage_op, fade_data);
 	} else if (op->type == PhysicalOperatorType::HASH_JOIN
 	           || op->type == PhysicalOperatorType::NESTED_LOOP_JOIN
@@ -408,21 +406,39 @@ void GenCodeAndAllocPredicate(EvalConfig& config, string& code, PhysicalOperator
 		idx_t right_n_interventions =  fade_data[op->children[1]->id].n_interventions;
 		fade_data[op->id].n_interventions = left_n_interventions * right_n_interventions;
 		if (fade_data[op->id].n_interventions <= 1) return;
-		fade_data[op->id].annotations = new int[fade_data[op->id].lineage[0].size()];
+		fade_data[op->id].annotations = new int[op->lineage_op->backward_lineage[0].size()];
 		code += JoinCodeAndAllocPredicate(config, op, op->lineage_op, fade_data);
 	} else if (op->type == PhysicalOperatorType::HASH_GROUP_BY) {
 		idx_t row_count = op->children[0]->lineage_op->chunk_collection.Count();
 		//fade_data[op->id].annotations = new int[row_count];
 		fade_data[op->id].n_interventions = fade_data[op->children[0]->id].n_interventions;
-    // get n_groups: max(oid)+1
-    fade_data[op->id].n_groups = op->lineage_op->log_index->ha_hash_index.size(); //lop->chunk_collection.Count();
-    // if n_groups * n_interventions > rows then use single thread
-    int n_threads = config.num_worker;
-    if (fade_data[op->id].n_groups * fade_data[op->id].n_interventions  > row_count) {
-      config.num_worker = 1;
-    }
-		Fade::HashAggregateAllocate(config, op->lineage_op, fade_data, op);
-		code += HashAggregateCodeAndAllocPredicate(config, op->lineage_op, fade_data, op);
+		// get n_groups: max(oid)+1
+		fade_data[op->id].n_groups = op->lineage_op->log_index->ha_hash_index.size(); //lop->chunk_collection.Count();
+		// if n_groups * n_interventions > rows then use single thread
+		int n_threads = config.num_worker;
+		if (fade_data[op->id].n_groups * fade_data[op->id].n_interventions  > row_count) {
+		  config.num_worker = 1;
+		}
+
+		if (op->type == PhysicalOperatorType::HASH_GROUP_BY) {
+		  PhysicalHashAggregate * gb = dynamic_cast<PhysicalHashAggregate *>(op);
+		  auto &aggregates = gb->grouped_aggregate_data.aggregates;
+		  int n_groups = op->lineage_op->log_index->ha_hash_index.size();
+		  Fade::GroupByAlloc(config, op->lineage_op, fade_data, op, aggregates, gb->grouped_aggregate_data.groups.size(), n_groups);
+		  code += HashAggregateCodeAndAllocPredicate(config, op->lineage_op, fade_data, op, aggregates, gb->grouped_aggregate_data.groups.size(), n_groups);
+		} else if (op->type == PhysicalOperatorType::PERFECT_HASH_GROUP_BY) {
+		  PhysicalPerfectHashAggregate * gb = dynamic_cast<PhysicalPerfectHashAggregate *>(op);
+		  auto &aggregates = gb->aggregates;
+		  int n_groups = op->lineage_op->log_index->pha_hash_index.size();
+		  Fade::GroupByAlloc(config, op->lineage_op, fade_data, op, aggregates, gb->groups.size(), n_groups);
+		  code += HashAggregateCodeAndAllocPredicate(config, op->lineage_op, fade_data, op, aggregates, gb->groups.size(), n_groups);
+		} else {
+		  PhysicalUngroupedAggregate * gb = dynamic_cast<PhysicalUngroupedAggregate *>(op);
+		  auto &aggregates = gb->aggregates;
+		  int n_groups = 1;
+		  Fade::GroupByAlloc(config, op->lineage_op, fade_data, op, aggregates, 0, n_groups);
+		  code += HashAggregateCodeAndAllocPredicate(config, op->lineage_op, fade_data, op, aggregates, 0, n_groups);
+		}
     config.num_worker = n_threads;
 	} else if (op->type == PhysicalOperatorType::UNGROUPED_AGGREGATE) {
 	  //  UngroupedAggregateIntervene(op->lineage_op, fade_data, op);
@@ -443,8 +459,8 @@ void Intervention2DEvalPredicate(int thread_id, EvalConfig& config, void* handle
 		  return;
     	}
 		if (fade_data[op->id].n_interventions <= 1) return;
-		idx_t row_count = fade_data[op->id].lineage[0].size();
-		int result = fade_data[op->id].filter_fn(thread_id, fade_data[op->id].lineage[0].data(),
+		idx_t row_count = op->lineage_op->backward_lineage[0].size();
+		int result = fade_data[op->id].filter_fn(thread_id, op->lineage_op->backward_lineage[0].data(),
 			                                         fade_data[op->children[0]->id].annotations,
 			                                         fade_data[op->id].annotations,
 		                                         	 fade_data[op->children[0]->id].del_set,
@@ -455,9 +471,9 @@ void Intervention2DEvalPredicate(int thread_id, EvalConfig& config, void* handle
 	           || op->type == PhysicalOperatorType::PIECEWISE_MERGE_JOIN
 	           || op->type == PhysicalOperatorType::CROSS_PRODUCT) {
 		if (fade_data[op->id].n_interventions <= 1) return;
-		idx_t row_count = fade_data[op->id].lineage[0].size();
-		int result = fade_data[op->id].join_fn(thread_id, fade_data[op->id].lineage[0].data(),
-			                                       fade_data[op->id].lineage[1].data(), fade_data[op->children[0]->id].annotations,
+		idx_t row_count = op->lineage_op->backward_lineage[0].size();
+		int result = fade_data[op->id].join_fn(thread_id, op->lineage_op->backward_lineage[0].data(),
+		                                       op->lineage_op->backward_lineage[1].data(), fade_data[op->children[0]->id].annotations,
 			                                       fade_data[op->children[1]->id].annotations, fade_data[op->id].annotations,
 		                                       fade_data[op->children[0]->id].del_set,
 		                                       fade_data[op->children[1]->id].del_set,
@@ -465,11 +481,11 @@ void Intervention2DEvalPredicate(int thread_id, EvalConfig& config, void* handle
 	} else if (op->type == PhysicalOperatorType::HASH_GROUP_BY) {
 		if (fade_data[op->id].n_interventions <= 1) return;
 		if (config.use_duckdb) {
-			int result = fade_data[op->id].agg_duckdb_fn(thread_id, fade_data[op->id].lineage[0].data(),
+			int result = fade_data[op->id].agg_duckdb_fn(thread_id, op->lineage_op->backward_lineage[0].data(),
 			                                             fade_data[op->children[0]->id].annotations, fade_data[op->id].alloc_vars,
 			                                             op->children[0]->lineage_op->chunk_collection, fade_data[op->id].del_set);
 		} else {
-			int result = fade_data[op->id].agg_fn(thread_id, fade_data[op->id].lineage[0].data(),
+			int result = fade_data[op->id].agg_fn(thread_id, op->lineage_op->backward_lineage[0].data(),
 			                                      fade_data[op->children[0]->id].annotations, fade_data[op->id].alloc_vars,
 			                                      fade_data[op->id].input_data_map, fade_data[op->id].del_set);
 		}
@@ -583,30 +599,6 @@ string Fade::PredicateSearch(PhysicalOperator *op, EvalConfig config) {
 	// holds any extra data needed during exec
 	std::unordered_map<idx_t, FadeDataPerNode> fade_data;
 
-	// 2. Post Process
-	start_time = std::chrono::steady_clock::now();
-	LineageManager::PostProcess(op);
-	end_time = std::chrono::steady_clock::now();
-	time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
-	double post_processing_time = time_span.count();
-
-	// 3. retrieve lineage
-	start_time = std::chrono::steady_clock::now();
-	Fade::GetLineage(config, op, fade_data);
-	end_time = std::chrono::steady_clock::now();
-	time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
-	double lineage_time = time_span.count();
-
-	// 4.1 Prune
-	double prune_time = 0;
-	if (config.prune) {
-		start_time = std::chrono::steady_clock::now();
-		vector<int> out_order;
-		Fade::PruneLineage(config, op, fade_data, out_order);
-		end_time = std::chrono::steady_clock::now();
-		time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
-		prune_time = time_span.count();
-	}
 	// 4. Alloc vars, generate eval code
 	string code;
 	start_time = std::chrono::steady_clock::now();
@@ -667,11 +659,8 @@ string Fade::PredicateSearch(PhysicalOperator *op, EvalConfig config) {
 		return "select '" + result + "'";
 	} else {
 	  ReleaseFade(config, handle, op, fade_data);
-		return "select " + to_string(post_processing_time) + " as post_processing_time, "
-				   + to_string(0) + " as intervention_gen_time, "
+		return "select " + to_string(0) + " as intervention_gen_time, "
 				   + to_string(prep_time) + " as prep_time, "
-				   + to_string(lineage_time) + " as lineage_time, "
-				   + to_string(prune_time) + " as prune_time, "
 				   + to_string(compile_time) + " as compile_time, "
 				   + to_string(eval_time) + " as eval_time";
 	}
@@ -679,5 +668,3 @@ string Fade::PredicateSearch(PhysicalOperator *op, EvalConfig config) {
 
 } // namespace duckdb
 #endif
-
-

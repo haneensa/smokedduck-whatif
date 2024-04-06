@@ -3,7 +3,6 @@
 
 #include "duckdb/common/enums/physical_operator_type.hpp"
 #include "duckdb/execution/lineage/lineage_manager.hpp"
-#include "duckdb/execution/operator/aggregate/physical_hash_aggregate.hpp"
 #include "duckdb/execution/operator/aggregate/physical_ungrouped_aggregate.hpp"
 #include "duckdb/execution/operator/scan/physical_table_scan.hpp"
 #include "duckdb/planner/expression/bound_reference_expression.hpp"
@@ -15,6 +14,113 @@
 #include <vector>
 
 namespace duckdb {
+
+string Fade::PrepareLineage(PhysicalOperator *op, bool prune, bool forward_lineage) {
+	// timing vars
+	std::chrono::steady_clock::time_point start_time, end_time;
+	std::chrono::duration<double> time_span;
+
+	// 1. Post Process
+	start_time = std::chrono::steady_clock::now();
+	LineageManager::PostProcess(op);
+	end_time = std::chrono::steady_clock::now();
+	time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
+	double post_processing_time = time_span.count();
+
+	// 2. retrieve lineage
+	start_time = std::chrono::steady_clock::now();
+	Fade::GetLineage(op);
+	end_time = std::chrono::steady_clock::now();
+	time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
+	double lineage_time = time_span.count();
+
+	// 3 Prune
+	double prune_time = 0;
+	if (prune) {
+		//int remove = PruneUtilization(op,0);
+		//std::cout << "total remove " << remove << std::endl;
+		start_time = std::chrono::steady_clock::now();
+		vector<int> out_order;
+		Fade::PruneLineage(op, out_order);
+		end_time = std::chrono::steady_clock::now();
+		time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
+		prune_time = time_span.count();
+	}
+
+	double forward_lineage_time = 0;
+	if (forward_lineage) { //if (config.n_intervention == 1 && config.incremental == true) {
+		start_time = std::chrono::steady_clock::now();
+		Fade::FillForwardLineage(op, prune);
+		end_time = std::chrono::steady_clock::now();
+		time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
+		forward_lineage_time = time_span.count();
+	}
+
+
+
+	return "select " + to_string(post_processing_time) + " as post_processing_time, "
+	       + to_string(lineage_time) + " as lineage_time, "
+	       + to_string(prune_time) + " as prune_time, "
+	       + to_string(forward_lineage_time) + " as forward_lineage_time";
+}
+
+void Fade::FillForwardLineage(PhysicalOperator* op, bool prune) {
+	for (idx_t i = 0; i < op->children.size(); ++i) {
+		FillForwardLineage(op->children[i].get(), prune);
+	}
+
+	if (prune == false && (op->type == PhysicalOperatorType::TABLE_SCAN || op->type == PhysicalOperatorType::FILTER)) {
+		int forward_row_count = 0;
+		if (op->type == PhysicalOperatorType::FILTER) {
+			PhysicalOperator* cur_op = op->children[0].get();
+			while (cur_op && cur_op->lineage_op && cur_op->lineage_op->backward_lineage[0].empty()) {
+				cur_op = cur_op->children[0].get();
+			}
+			if (cur_op && cur_op->lineage_op && !cur_op->lineage_op->backward_lineage[0].empty()) {
+        forward_row_count =  cur_op->lineage_op->backward_lineage[0].size();
+        std::cout << "get lineage using bl for " << cur_op->id << " " << forward_row_count << std::endl;
+      }
+		} else {
+      forward_row_count = op->lineage_op->log_index->table_size;
+    }
+		int row_count = op->lineage_op->backward_lineage[0].size();
+		for (int oid=0; oid < row_count; ++oid) {
+			int iid = op->lineage_op->backward_lineage[0][oid];
+      if (iid >= forward_row_count) forward_row_count = iid+1;
+    }
+
+    //std::cout << forward_row_count << " " << op->lineage_op->log_index->table_size << " " << op->lineage_op->backward_lineage[0].size() << std::endl;
+
+		op->lineage_op->forward_lineage[0].assign(forward_row_count, -1);
+		for (int oid=0; oid < row_count; ++oid) {
+			// key: iid, val: oid
+			op->lineage_op->forward_lineage[0][ op->lineage_op->backward_lineage[0][oid] ] = oid;
+		}
+	} else if (op->type == PhysicalOperatorType::HASH_JOIN
+	           || op->type == PhysicalOperatorType::NESTED_LOOP_JOIN
+	           || op->type == PhysicalOperatorType::BLOCKWISE_NL_JOIN
+	           || op->type == PhysicalOperatorType::PIECEWISE_MERGE_JOIN
+	           || op->type == PhysicalOperatorType::CROSS_PRODUCT) {
+		int row_count = op->lineage_op->backward_lineage[0].size();
+		// many to many mapping
+		for (int side=0; side < 2; side++) {
+			PhysicalOperator* cur_op = op->children[side].get();
+			int forward_row_count =  0;
+      while (cur_op && cur_op->lineage_op && cur_op->lineage_op->backward_lineage[0].empty()) {
+				cur_op = cur_op->children[0].get();
+			}
+			if (cur_op && cur_op->lineage_op && !cur_op->lineage_op->backward_lineage[0].empty()) {
+        forward_row_count =  cur_op->lineage_op->backward_lineage[0].size();
+      }
+
+			// iid -> oid
+			for (int oid=0; oid < row_count; ++oid) {
+				// should be list of oids intead of single value
+				op->lineage_op->forward_lineage_list[side][ op->lineage_op->backward_lineage[side][oid]  ].push_back(oid);
+			}
+		}
+	}
+}
 
 string Fade::get_header(EvalConfig config) {
 	std::ostringstream oss;
@@ -246,8 +352,7 @@ std::unordered_map<std::string, std::vector<std::string>>  Fade::parseSpec(EvalC
 	return result;
 }
 
-void Fade::FillFilterLineage(PhysicalOperator *op, shared_ptr<OperatorLineage> lop, std::unordered_map<idx_t, FadeDataPerNode>& fade_data) {
-	vector<int>& lineage =  fade_data[op->id].lineage[0];
+void Fade::FillFilterBackwardLineage(PhysicalOperator *op, shared_ptr<OperatorLineage> lop) {
 	bool cache_on = false;
 	DataChunk result;
 	idx_t global_count = 0;
@@ -257,7 +362,7 @@ void Fade::FillFilterLineage(PhysicalOperator *op, shared_ptr<OperatorLineage> l
 	idx_t offset = 0;
 
 	idx_t row_count = lop->log_index->table_size;
-	lineage.resize(row_count);
+	lop->backward_lineage[0].resize(row_count);
 
 	do {
 		cache_on = false;
@@ -269,26 +374,19 @@ void Fade::FillFilterLineage(PhysicalOperator *op, shared_ptr<OperatorLineage> l
 		unsigned int * in_index = reinterpret_cast<unsigned int *>(result.data[0].GetData());
 		for (idx_t i=0; i < result.size(); ++i) {
 			idx_t iid = in_index[i];
-			lineage[i+offset] = iid;
+      //std::cout << op->id << " getlineage: " <<i << " " << offset << " " <<  i+offset << " -> " << iid << std::endl;
+			lop->backward_lineage[0][i+offset] = iid;
 		}
-		offset = result.size();
+		offset += result.size();
 	} while (cache_on || result.size() > 0);
 }
 
-void Fade::FillJoinLineage(PhysicalOperator *op, shared_ptr<OperatorLineage> lop, std::unordered_map<idx_t, FadeDataPerNode>& fade_data) {
-	vector<int>& lhs_lineage =  fade_data[op->id].lineage[0];
-	vector<int>& rhs_lineage =  fade_data[op->id].lineage[1];
-	int lhs_masks = fade_data[op->children[0]->id].n_masks;
-	int rhs_masks = fade_data[op->children[1]->id].n_masks;
+void Fade::FillJoinBackwardLineage(PhysicalOperator *op, shared_ptr<OperatorLineage> lop) {
+	vector<int>& lhs_lineage =  lop->backward_lineage[0];
+	vector<int>& rhs_lineage =  lop->backward_lineage[1];
 	idx_t row_count = lop->log_index->table_size;
-	//if (lhs_masks > 0 && rhs_masks > 0) {
-		lhs_lineage.resize(row_count);
-		rhs_lineage.resize(row_count);
-	/*} else if (lhs_masks > 0) {
-		lhs_lineage.resize(row_count);
-	} else {
-		rhs_lineage.resize(row_count);
-	}*/
+	lhs_lineage.resize(row_count);
+	rhs_lineage.resize(row_count);
 	bool cache_on = false;
 	DataChunk result;
 	idx_t global_count = 0;
@@ -305,32 +403,22 @@ void Fade::FillJoinLineage(PhysicalOperator *op, shared_ptr<OperatorLineage> lop
 		if (result.size() == 0) continue;
 		unsigned int * lhs_index = reinterpret_cast<unsigned int *>(result.data[0].GetData());
 		unsigned int * rhs_index = reinterpret_cast<unsigned int *>(result.data[1].GetData());
-	//	if (lhs_masks > 0 && rhs_masks > 0) {
-			for (idx_t i=0; i < result.size(); ++i) {
-				lhs_lineage[i+offset] = lhs_index[i];
-				rhs_lineage[i+offset] = rhs_index[i];
-			}
-	/*	} else if (lhs_masks > 0) {
-			for (idx_t i=0; i < result.size(); ++i) {
-				lhs_lineage[i+offset] = lhs_index[i];
-			}
-		} else {
-			for (idx_t i=0; i < result.size(); ++i) {
-				rhs_lineage[i+offset] = rhs_index[i];
-			}
-		}*/
+		for (idx_t i=0; i < result.size(); ++i) {
+			lhs_lineage[i+offset] = lhs_index[i];
+			rhs_lineage[i+offset] = rhs_index[i];
+		}
 		offset += result.size();
 	} while (cache_on || result.size() > 0);
 }
 
-std::vector<int> Fade::GetGBLineage(shared_ptr<OperatorLineage> lop, int row_count) {
+void Fade::FillGBForwardLineage(shared_ptr<OperatorLineage> lop, int row_count) {
 	DataChunk result;
 	idx_t global_count = 0;
 	idx_t local_count = 0;
 	idx_t current_thread = 0;
 	idx_t log_id = 0;
 	bool cache_on = false;
-	std::vector<int> lineage(row_count);
+	lop->forward_lineage[0].resize(row_count);
 	do {
 		cache_on = false;
 		result.Reset();
@@ -343,32 +431,76 @@ std::vector<int> Fade::GetGBLineage(shared_ptr<OperatorLineage> lop, int row_cou
 		for (idx_t i=0; i < result.size(); ++i) {
 			idx_t iid = in_index[i];
 			idx_t oid = out_index[i];
-			lineage[iid] = oid;
+			lop->forward_lineage[0][iid] = oid;
 		}
 	} while (cache_on || result.size() > 0);
-	return lineage;
 }
 
-void Fade::PruneLineage(EvalConfig& config, PhysicalOperator* op,
-                  std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
-                  vector<int>& out_order) {
-	// top down.
-	// lineage_data = self.prune_lineage(lineage_data, out_order, node_type)
+
+int Fade::PruneUtilization(PhysicalOperator* op, int M, int side=0) {
+	int removed = 0;
+	int original = 0;
+	if (op->type == PhysicalOperatorType::TABLE_SCAN) {
+		original = op->lineage_op->backward_lineage[0].size();
+		removed = (op->lineage_op->backward_lineage[0].size() - M);
+		std::cout << op->id << " scan " << removed << " " << float(removed) / op->lineage_op->backward_lineage[0].size()
+		          << " " << op->lineage_op->backward_lineage[0].size() / float(M) << " " << op->lineage_op->backward_lineage[0].size()
+		          << " M " << M << std::endl;
+	} else if (op->type == PhysicalOperatorType::FILTER) {
+		original = op->lineage_op->backward_lineage[0].size();
+		if (M == 0 || M > op->lineage_op->backward_lineage[0].size() ) {
+			M = op->lineage_op->backward_lineage[0].size();
+		} else {
+			removed = (op->lineage_op->backward_lineage[0].size() - M);
+		}
+		std::cout <<  op->id << " filter " << removed << " " << float(removed)/ op->lineage_op->backward_lineage[0].size()
+		          << " " << op->lineage_op->backward_lineage[0].size() / float(M) << " " << op->lineage_op->backward_lineage[0].size()
+		          << " M " << M << std::endl;
+	} else if (op->type == PhysicalOperatorType::HASH_JOIN
+	           || op->type == PhysicalOperatorType::NESTED_LOOP_JOIN
+	           || op->type == PhysicalOperatorType::BLOCKWISE_NL_JOIN
+	           || op->type == PhysicalOperatorType::PIECEWISE_MERGE_JOIN
+	           || op->type == PhysicalOperatorType::CROSS_PRODUCT) {
+		original = op->lineage_op->backward_lineage[side].size();
+		if (M == 0 || M > op->lineage_op->backward_lineage[side].size() ) {
+			M = op->lineage_op->backward_lineage[side].size();
+		} else {
+			removed = (op->lineage_op->backward_lineage[side].size() - M);
+		}
+		std::cout <<  op->id << " join  " << removed << " " <<  float(removed)  / op->lineage_op->backward_lineage[side].size()
+		          << " " << op->lineage_op->backward_lineage[side].size() / float(M) <<  " "
+		          << op->lineage_op->backward_lineage[side].size() << " M: " << M << std::endl;
+	} else if (op->type == PhysicalOperatorType::HASH_GROUP_BY) {
+		original = op->lineage_op->backward_lineage[0].size();
+	}
+
+	for (idx_t i = 0; i < op->children.size(); i++) {
+		original += PruneUtilization(op->children[i].get(),  M, i);
+	}
+
+	return original;
+}
+
+void Fade::PruneLineage(PhysicalOperator* op, vector<int>& out_order) {
 	vector<int> new_order[2];
 
 	if (out_order.empty() == false) {
 		// if table scan and no filter push down, then use out_order as lineage
 		// if hash group by: ..
 		if (op->type == PhysicalOperatorType::TABLE_SCAN) {
-			//std::cout <<  op->id << " " << fade_data[op->id].lineage[0].size() / float(out_order.size()) << " scan prune previous output size M= " << fade_data[op->id].lineage[0].size() << " new pruned: " << out_order.size() << std::endl;
-			fade_data[op->id].lineage[0] = out_order;
+			// std::cout <<  op->id << " " << op->lineage_op->backward_lineage[0].size() / float(out_order.size())
+			// << " scan prune previous output size M= " << op->lineage_op->backward_lineage[0].size()
+			// << " new pruned: " << out_order.size() << std::endl;
+			op->lineage_op->backward_lineage[0] = out_order;
 		} else if (op->type == PhysicalOperatorType::FILTER) {
 			vector<int> new_lineage(out_order.size());
 			for (int i=0; i < out_order.size(); ++i) {
-				new_lineage[i] = fade_data[op->id].lineage[0][out_order[i]];
+				new_lineage[i] = op->lineage_op->backward_lineage[0][out_order[i]];
 			}
-			//std::cout << op->id << " " << fade_data[op->id].lineage[0].size() / float(out_order.size()) << " filter prune previous output size M= " << fade_data[op->id].lineage[0].size() << " new pruned: " << out_order.size() << std::endl;
-			fade_data[op->id].lineage[0] = std::move(new_lineage);
+			//std::cout << op->id << " " << op->lineage_op->backward_lineage[0].size() / float(out_order.size())
+			// << " filter prune previous output size M= " << op->lineage_op->backward_lineage[0].size()
+			// << " new pruned: " << out_order.size() << std::endl;
+			op->lineage_op->backward_lineage[0] = std::move(new_lineage);
 		} else if (op->type == PhysicalOperatorType::HASH_JOIN
 		           || op->type == PhysicalOperatorType::NESTED_LOOP_JOIN
 		           || op->type == PhysicalOperatorType::BLOCKWISE_NL_JOIN
@@ -377,17 +509,19 @@ void Fade::PruneLineage(EvalConfig& config, PhysicalOperator* op,
 			for (int side=0; side < 2; ++side) {
 				vector<int> new_lineage(out_order.size());
 				for (int i=0; i < out_order.size(); ++i) {
-					new_lineage[i] = fade_data[op->id].lineage[side][out_order[i]];
+					new_lineage[i] = op->lineage_op->backward_lineage[side][out_order[i]];
 				}
-				//std::cout << op->id << " " << fade_data[op->id].lineage[side].size() / float(out_order.size()) << " " << side << " join prune previous output size M= " << fade_data[op->id].lineage[side].size() << " new pruned: " << out_order.size() << std::endl;
+				// std::cout << op->id << " " << op->lineage_op->backward_lineage[side].size() / float(out_order.size())
+				// << " " << side << " join prune previous output size M= " << op->lineage_op->backward_lineage[side].size()
+				// << " new pruned: " << out_order.size() << std::endl;
 				// update lineage
-				fade_data[op->id].lineage[side] = std::move(new_lineage);
+				op->lineage_op->backward_lineage[side] = std::move(new_lineage);
 			}
 		}
 	}
 
 	if (op->type == PhysicalOperatorType::FILTER) {
-		for (int i=0; i < fade_data[op->id].lineage[0].size(); ++i) {
+		for (int i=0; i < op->lineage_op->backward_lineage[0].size(); ++i) {
 			new_order[0].push_back(i);
 		}
 		//std::cout << "filter push down M=" << new_order[0].size() << std::endl;
@@ -400,7 +534,7 @@ void Fade::PruneLineage(EvalConfig& config, PhysicalOperator* op,
 		for (int side=0; side < 2; ++side) {
 			// This creates out_order to pass to the child. e.g. output only references 0 and 3 from child [1, 1, 1, 3]
 			// reindexes this lineage
-			vector<int>& lineage = fade_data[op->id].lineage[side];
+			vector<int>& lineage = op->lineage_op->backward_lineage[side];
 			vector<int>  lineage_inverse(lineage.size()); // [0, 0, 0, 1]
 			vector<int>  lineage_unique; // [1, 3]
 
@@ -413,9 +547,11 @@ void Fade::PruneLineage(EvalConfig& config, PhysicalOperator* op,
 				lineage_inverse[new_order_map[lineage[i]]];
 			}
 
-			//std::cout <<  fade_data[op->id].lineage[side].size()  / float(lineage_inverse.size()) << " " << side << " join push down join output M=" << fade_data[op->id].lineage[side].size() << " unique= " << lineage_unique.size() << " inverse= " << lineage_inverse.size() << std::endl;
+			//std::cout <<  op->lineage_op->backward_lineage[side].size()  / float(lineage_inverse.size())
+			// << " " << side << " join push down join output M=" << op->lineage_op->backward_lineage[side].size()
+			// << " unique= " << lineage_unique.size() << " inverse= " << lineage_inverse.size() << std::endl;
 			// update lineage
-			fade_data[op->id].lineage[side] = std::move(lineage_inverse);
+			op->lineage_op->backward_lineage[side] = std::move(lineage_inverse);
 			new_order[side] = lineage_unique;
 		}
 
@@ -424,29 +560,42 @@ void Fade::PruneLineage(EvalConfig& config, PhysicalOperator* op,
   }
 
 	for (idx_t i = 0; i < op->children.size(); i++) {
-		Fade::PruneLineage(config, op->children[i].get(), fade_data, new_order[i]);
+		Fade::PruneLineage(op->children[i].get(), new_order[i]);
 	}
 }
 
-void Fade::GetLineage(EvalConfig& config, PhysicalOperator* op,
-                     std::unordered_map<idx_t, FadeDataPerNode>& fade_data) {
+void Fade::GetLineage(PhysicalOperator* op) {
 	for (idx_t i = 0; i < op->children.size(); i++) {
-		GetLineage(config, op->children[i].get(), fade_data);
+		GetLineage(op->children[i].get());
 	}
 
 	if (op->type == PhysicalOperatorType::TABLE_SCAN || op->type == PhysicalOperatorType::FILTER) {
-		FillFilterLineage(op, op->lineage_op, fade_data);
+    		// key: oid | val: iid
+		if (op->type == PhysicalOperatorType::TABLE_SCAN && !dynamic_cast<PhysicalTableScan *>(op)->function.filter_pushdown) {
+			idx_t row_count = op->lineage_op->log_index->table_size;
+			op->lineage_op->backward_lineage[0].resize(row_count);
+			for (int i=0; i < row_count; i++) {
+				op->lineage_op->backward_lineage[0][i]=i;
+			}
+		} else {
+			FillFilterBackwardLineage(op, op->lineage_op);
+		}
 	} else if (op->type == PhysicalOperatorType::HASH_JOIN
 	           || op->type == PhysicalOperatorType::NESTED_LOOP_JOIN
 	           || op->type == PhysicalOperatorType::BLOCKWISE_NL_JOIN
 	           || op->type == PhysicalOperatorType::PIECEWISE_MERGE_JOIN
 	           || op->type == PhysicalOperatorType::CROSS_PRODUCT) {
-		FillJoinLineage(op, op->lineage_op, fade_data);
-	} else if (op->type == PhysicalOperatorType::HASH_GROUP_BY) {
-	  idx_t row_count = op->children[0]->lineage_op->chunk_collection.Count();
-	  fade_data[op->id].lineage[0] = std::move(Fade::GetGBLineage(op->lineage_op, row_count));
+		// key: oid | val: rhs,lhs
+		FillJoinBackwardLineage(op, op->lineage_op);
+	} else if (op->type == PhysicalOperatorType::HASH_GROUP_BY || op->type == PhysicalOperatorType::PERFECT_HASH_GROUP_BY) {
+		// key: iid, val: oid
+		idx_t row_count = op->children[0]->lineage_op->chunk_collection.Count();
+		FillGBForwardLineage(op->lineage_op, row_count);
 	} else if (op->type == PhysicalOperatorType::UNGROUPED_AGGREGATE) {
-	} else if (op->type == PhysicalOperatorType::PROJECTION) {
+		// key: iid, val: oid
+		idx_t row_count = op->children[0]->lineage_op->chunk_collection.Count();
+		op->lineage_op->forward_lineage[0].resize(row_count);
+		std::fill(op->lineage_op->forward_lineage[0].begin(), op->lineage_op->forward_lineage[0].end(), 0);
 	}
 }
 
@@ -517,7 +666,9 @@ void Fade::ReleaseFade(EvalConfig& config, void* handle, PhysicalOperator* op,
 	if (op->type != PhysicalOperatorType::PROJECTION &&
 	    !(op->type == PhysicalOperatorType::FILTER && config.prune) &&
 	    !(op->type == PhysicalOperatorType::TABLE_SCAN && config.prune)) {
-		if (op->type == PhysicalOperatorType::HASH_GROUP_BY) {
+		if (op->type == PhysicalOperatorType::HASH_GROUP_BY
+		    || op->type == PhysicalOperatorType::PERFECT_HASH_GROUP_BY
+		    || op->type == PhysicalOperatorType::UNGROUPED_AGGREGATE) {
 			for (auto &pair : fade_data[op->id].alloc_vars) {
 				if (!pair.second.empty()) {
 					if (config.debug) {
@@ -554,20 +705,12 @@ void Fade::ReleaseFade(EvalConfig& config, void* handle, PhysicalOperator* op,
 
 }
 
-void Fade::HashAggregateAllocate(EvalConfig& config, shared_ptr<OperatorLineage> lop,
-                           std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
-                           PhysicalOperator* op) {
+void Fade::GroupByAlloc(EvalConfig& config, shared_ptr<OperatorLineage> lop,
+                        std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
+                        PhysicalOperator* op, vector<unique_ptr<Expression>>& aggregates,
+                        int keys_size, int n_groups) {
 	const int n_interventions = fade_data[op->id].n_interventions;
-	PhysicalHashAggregate * gb = dynamic_cast<PhysicalHashAggregate *>(op);
-	auto &aggregates = gb->grouped_aggregate_data.aggregates;
-	// get n_groups: max(oid)+1
-	idx_t n_groups = 1;
-	if (op->type != PhysicalOperatorType::UNGROUPED_AGGREGATE) {
-		n_groups = lop->log_index->ha_hash_index.size(); //lop->chunk_collection.Count();
-	}
-
 	fade_data[op->id].n_groups = n_groups;
-
 	idx_t row_count = op->children[0]->lineage_op->chunk_collection.Count();
 	bool include_count = false;
 
@@ -590,10 +733,11 @@ void Fade::HashAggregateAllocate(EvalConfig& config, shared_ptr<OperatorLineage>
 		}
 
 		if (name == "sum" || name == "sum_no_overflow" || name == "avg") {
-			int col_idx = i + gb->grouped_aggregate_data.groups.size();
+			int col_idx = aggregate_input_idx[0]; //i + keys_size;
 			string input_type = "float";
 			string output_type = "float";
-			if (op->children[0]->lineage_op->chunk_collection.Types()[col_idx] == LogicalType::INTEGER) {
+			std::cout << keys_size << " " << i << " " << col_idx << " " << op->children[0]->lineage_op->chunk_collection.Types().size() << std::endl;
+			if (op->children[0]->lineage_op->chunk_collection.Types()[col_idx] == LogicalType::INTEGER ) {
 				input_type = "int";
 				output_type = "int";
 			} else if (op->children[0]->lineage_op->chunk_collection.Types()[col_idx] == LogicalType::FLOAT) {
@@ -665,7 +809,6 @@ void Fade::HashAggregateAllocate(EvalConfig& config, shared_ptr<OperatorLineage>
 	}
 }
 
-
 template<class T>
 pair<int*, int> local_factorize(shared_ptr<OperatorLineage> lop, idx_t col_idx) {
 	std::unordered_map<T, int> dict;
@@ -675,7 +818,6 @@ pair<int*, int> local_factorize(shared_ptr<OperatorLineage> lop, idx_t col_idx) 
   int count = 0;
 	for (idx_t chunk_idx=0; chunk_idx < chunk_count; ++chunk_idx) {
 		DataChunk &collection_chunk = lop->chunk_collection.GetChunk(chunk_idx);
-   // std::cout << collection_chunk.ToString() << std::endl;
 		for (idx_t i=0; i < collection_chunk.size(); ++i) {
 			T v = collection_chunk.GetValue(col_idx, i).GetValue<T>();
 			if (dict.find(v) == dict.end()) {
@@ -689,8 +831,7 @@ pair<int*, int> local_factorize(shared_ptr<OperatorLineage> lop, idx_t col_idx) 
 }
 
 std::pair<int*, int> create_codes(LogicalType& typ, shared_ptr<OperatorLineage> lop, int i) {
-  std::cout << " create_codes " << typ.ToString()  << std::endl;
-  if (typ == LogicalType::INTEGER) {
+	if (typ == LogicalType::INTEGER) {
 		return local_factorize<int>(lop, i);
 	} else if (typ == LogicalType::BIGINT) {
 		return local_factorize<int64_t>(lop, i);
@@ -698,8 +839,7 @@ std::pair<int*, int> create_codes(LogicalType& typ, shared_ptr<OperatorLineage> 
 		return local_factorize<string>(lop, i);
 	} else {
 		return local_factorize<float>(lop, i);
-	}
-
+	} 
 	
 	return {nullptr, 0};
 }
@@ -806,9 +946,17 @@ void Fade::BindFunctions(EvalConfig& config, void* handle, PhysicalOperator* op,
 	           || op->type == PhysicalOperatorType::CROSS_PRODUCT) {
 		//if (fade_data[op->id].n_masks > 0) {
 		string fname = "join_"+ to_string(op->id) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
-		fade_data[op->id].join_fn = (int(*)(int, int*, int*, void*, void*, void*, std::set<int>&, std::set<int>&, std::set<int>&))dlsym(handle, fname.c_str());
+    if (config.n_intervention == 1 && config.incremental == true) {
+      fade_data[op->id].join_fn_forward = (int(*)(int, std::unordered_map<int, std::vector<int>>&, 
+              std::unordered_map<int, std::vector<int>>&, void*, void*, void*,
+              std::set<int>&, std::set<int>&, std::set<int>&))dlsym(handle, fname.c_str());
+    } else {
+		  fade_data[op->id].join_fn = (int(*)(int, int*, int*, void*, void*, void*, std::set<int>&, std::set<int>&, std::set<int>&))dlsym(handle, fname.c_str());
+    }
 		//}
-	} else if (op->type == PhysicalOperatorType::HASH_GROUP_BY) {
+	} else if (op->type == PhysicalOperatorType::HASH_GROUP_BY
+	           || op->type == PhysicalOperatorType::PERFECT_HASH_GROUP_BY
+	           || op->type == PhysicalOperatorType::UNGROUPED_AGGREGATE) {
 		string fname = "agg_"+ to_string(op->id) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
 		if (config.use_duckdb) {
 			fade_data[op->id].agg_duckdb_fn = (int(*)(int, int*, void*, std::unordered_map<std::string, vector<void*>>&,
@@ -823,5 +971,3 @@ void Fade::BindFunctions(EvalConfig& config, void* handle, PhysicalOperator* op,
 
 } // namespace duckdb
 #endif
-
-
