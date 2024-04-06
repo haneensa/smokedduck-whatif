@@ -215,20 +215,26 @@ string PragmaUserAgent(ClientContext &context, const FunctionParameters &paramet
 }
 
 #ifdef LINEAGE
+string PragmaPrepareLineage(ClientContext &context, const FunctionParameters &parameters) {
+	int qid = parameters.values[0].GetValue<int>();
+	bool prune = parameters.values[1].GetValue<bool>();
+	bool forward_lineage = parameters.values[2].GetValue<bool>();
+	PhysicalOperator* op = context.client_data->lineage_manager->queryid_to_plan[qid].get();
+	return Fade::PrepareLineage(op, prune, forward_lineage);
+}
+
 string PragmaWhatif(ClientContext &context, const FunctionParameters &parameters) {
 	// # qid:INT, Itype:STR, spec:STR, n_interventions:INT, batch:INT, is_scalar:BOOL, use_duckdb:BOOL, threads:INT, debug:BOOL, prune:BOOL, incremental:BOOL, prob:float
 
 	int qid = parameters.values[0].GetValue<int>();
 	string intervention_type_str = parameters.values[1].ToString();
-	InterventionType intervention_type =  DENSE_DELETE_ALL;
+	InterventionType intervention_type =  DENSE_DELETE;
 	if (intervention_type_str == "SCALE_UNIFORM") {
 		intervention_type = SCALE_UNIFORM;
 	} else if (intervention_type_str == "SCALE_RANDOM") {
 		intervention_type = SCALE_RANDOM;
 	} else if (intervention_type_str == "SEARCH") {
 			intervention_type = SEARCH;
-	} else if (intervention_type_str == "DENSE_DELETE_SPEC") {
-		intervention_type = DENSE_DELETE_SPEC;
 	}
 
 	string spec = parameters.values[2].ToString();
@@ -306,15 +312,16 @@ void PragmaQueries::RegisterFunction(BuiltinFunctions &set) {
 	set.AddFunction(PragmaFunction::PragmaCall("SA", PragmaSA, {LogicalType::INTEGER,
 	                                                                    LogicalType::INTEGER,
 	                                                                    LogicalType::VARCHAR, LogicalType::BOOLEAN}));
+
 	set.AddFunction(PragmaFunction::PragmaCall("WhatIf", PragmaWhatif, {LogicalType::INTEGER,
 	                                                                    LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::INTEGER,
 	                                                                    LogicalType::INTEGER, LogicalType::BOOLEAN,
 	                                                                    LogicalType::BOOLEAN, LogicalType::INTEGER,
 	                                                                    LogicalType::BOOLEAN, LogicalType::BOOLEAN,
-                                                                      LogicalType::BOOLEAN, LogicalType::FLOAT}));
+	                                                                    LogicalType::BOOLEAN, LogicalType::FLOAT}));
+
+	set.AddFunction(PragmaFunction::PragmaCall("PrepareLineage", PragmaPrepareLineage, {LogicalType::INTEGER, LogicalType::BOOLEAN, LogicalType::BOOLEAN}));
 #endif
 }
 
 } // namespace duckdb
-
-

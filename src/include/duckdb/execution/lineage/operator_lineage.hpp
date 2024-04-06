@@ -66,6 +66,10 @@ public:
   string table_name;
   bool processed;
   mutex glock;
+
+  vector<int> backward_lineage[2];
+  vector<int> forward_lineage[2];
+  std::unordered_map<int, std::vector<int>> forward_lineage_list[2];
 };
 
 

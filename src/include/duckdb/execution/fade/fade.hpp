@@ -36,17 +36,16 @@ struct FadeDataPerNode {
 	std::unordered_map<string, string> alloc_vars_types;
 	std::unordered_map<string, int> alloc_vars_index;
 	std::unordered_map<int, void*> input_data_map;
-	vector<int> lineage[2];
-	vector<int> forward_lineage[2];
 	int (*filter_fn)(int, int*, void*, void*, std::set<int>&, std::set<int>&);
 	int (*join_fn)(int, int*, int*, void*, void*, void*, std::set<int>&,  std::set<int>&, std::set<int>&);
+	int (*join_fn_forward)(int, std::unordered_map<int, std::vector<int>>&,
+      std::unordered_map<int, std::vector<int>>&, void*, void*, void*, std::set<int>&,  std::set<int>&, std::set<int>&);
 	int (*agg_duckdb_fn)(int, int*, void*, std::unordered_map<std::string, vector<void*>>&, ChunkCollection&, std::set<int>&);
 	int (*agg_fn)(int, int*, void*, std::unordered_map<std::string, vector<void*>>&,  std::unordered_map<int, void*>&, std::set<int>&);
 };
 
 enum InterventionType {
-	DENSE_DELETE_ALL,
-	DENSE_DELETE_SPEC,
+	DENSE_DELETE,
 	SCALE_UNIFORM,
 	SCALE_RANDOM,
 	SEARCH
@@ -73,6 +72,8 @@ class Fade {
 public:
 	Fade() {};
 
+	static string PrepareLineage(PhysicalOperator *op, bool prune, bool forward_lineage);
+
 	static string Whatif(PhysicalOperator* op, EvalConfig config);
 	static string PredicateSearch(PhysicalOperator* op, EvalConfig config);
 
@@ -92,31 +93,24 @@ public:
 	template <class T>
 	static void PrintOutput(FadeDataPerNode& info, T* data_ptr);
 
-	static void GetLineage(EvalConfig& config, PhysicalOperator* op,
-	                std::unordered_map<idx_t, FadeDataPerNode>& fade_data);
+	static void GetLineage(PhysicalOperator* op);
 
-	static void FillFilterLineage(PhysicalOperator *op, shared_ptr<OperatorLineage> lop,
-	                              std::unordered_map<idx_t, FadeDataPerNode>& fade_data);
+	static void FillFilterBackwardLineage(PhysicalOperator *op, shared_ptr<OperatorLineage> lop);
+	static void FillJoinBackwardLineage(PhysicalOperator *op, shared_ptr<OperatorLineage> lop);
+	static void FillGBForwardLineage(shared_ptr<OperatorLineage> lop, int row_count);
+	static void FillForwardLineage(PhysicalOperator* op, bool prune);
 
-	static void FillJoinLineage(PhysicalOperator *op, shared_ptr<OperatorLineage> lop,
-	                     std::unordered_map<idx_t,FadeDataPerNode>& fade_data);
+	static int PruneUtilization(PhysicalOperator* op, int M, int side);
 
-	static std::vector<int> GetGBLineage(shared_ptr<OperatorLineage> lop, int row_count);
-
-	static int PruneUtilization(EvalConfig& config, PhysicalOperator* op,
-	                     std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
-	                     int M, int side);
-
-	static void PruneLineage(EvalConfig& config, PhysicalOperator* op,
-	                  std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
-	                  vector<int>& out_order);
+	static void PruneLineage(PhysicalOperator* op, vector<int>& out_order);
 
 	static void ReleaseFade(EvalConfig& config, void* handle, PhysicalOperator* op,
 	                 std::unordered_map<idx_t, FadeDataPerNode>& fade_data);
 
-	static void HashAggregateAllocate(EvalConfig& config, shared_ptr<OperatorLineage> lop,
-	                                 std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
-	                                 PhysicalOperator* op);
+	static void GroupByAlloc(EvalConfig& config, shared_ptr<OperatorLineage> lop,
+	                         std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
+	                         PhysicalOperator* op, vector<unique_ptr<Expression>>& aggregates,
+	                         int keys, int n_groups);
 
 	static int* random_unique(shared_ptr<OperatorLineage> lop, idx_t distinct);
 	static std::pair<int*, int> factorize(PhysicalOperator* op, shared_ptr<OperatorLineage> lop,
@@ -128,4 +122,3 @@ public:
 
 } // namespace duckdb
 #endif
-
