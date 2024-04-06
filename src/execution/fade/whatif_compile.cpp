@@ -87,8 +87,7 @@ void GenRandomWhatifIntervention(EvalConfig& config, PhysicalOperator* op,
 	}
 
 	if (op->type == PhysicalOperatorType::TABLE_SCAN) {
-		if (spec.find(op->lineage_op->table_name) == spec.end() && (config.intervention_type == InterventionType::DENSE_DELETE_SPEC
-		    || config.intervention_type == InterventionType::SCALE_UNIFORM || true)) {
+		if (spec.find(op->lineage_op->table_name) == spec.end() && !spec.empty()) {
 			return;
 		}
 
@@ -972,8 +971,7 @@ void GenCodeAndAlloc(EvalConfig& config, string& code, PhysicalOperator* op,
 	// random: allocate single intervention/selection vector per table with 0s/1s with prob
 	if (op->type == PhysicalOperatorType::TABLE_SCAN) {
     fade_data[op->id].opid = op->id;
-		if (spec.find(op->lineage_op->table_name) == spec.end() && (config.intervention_type == InterventionType::DENSE_DELETE_SPEC ||
-		    config.intervention_type == InterventionType::SCALE_UNIFORM || true)) {
+		if (spec.find(op->lineage_op->table_name) == spec.end() && !spec.empty()) {
       		std::cout << "skip this scan " << op->lineage_op->table_name <<std::endl;
 			fade_data[op->id].n_interventions = 0;
 			fade_data[op->id].n_masks = 0;
@@ -1214,9 +1212,9 @@ void Clear(PhysicalOperator *op) {
   2. compile
   2. traverse plan to bind variables and execute code
 */
-// TODO: done (2) single scaling intervention, batched scaling intervention, scaling and deletion interventions combined
-// TODO: (2.2) change values from 0 to 1 to represent target list
 // TODO: (3) nested aggregate
+// TODO: (2.3) scaling and deletion interventions combined
+// TODO: (2.5) change values from 0 to 1 to represent target list
 // TODO: (4) add register dependency (execute query, store lineage, generate&compile template, clear up all other memory)
 // TODO: (5) batch process interventions (given N interventions, process them B interventions at a time. If K is specified, then keep K interventions at a time.
 // TODO: (6) add intervention generation module (1. check if there is any dependency that the current query doesn't satisfy,

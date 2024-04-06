@@ -23,6 +23,7 @@ parser.add_argument("--csv", help="csv", type=str, default="out.csv")
 parser.add_argument("--debug", help="debug", type=str, default="true")
 parser.add_argument("--prune", help="prune", type=str, default="true")
 parser.add_argument("--itype", help="Intervention Type", type=str, default="DENSE_DELETE")
+parser.add_argument("--spec", help="Intervention Spec", type=str, default="")
 parser.add_argument("--incremental", help="true if the agg functions are incremental", type=str, default="true")
 parser.add_argument("--prob", help="Deletion Probability", type=float, default="0.1")
 parser.add_argument("--batch", help="Agg functions batch", type=int, default="4")
@@ -48,6 +49,7 @@ prune = args.prune
 prob = args.prob
 itype = args.itype
 is_incremental = args.incremental
+spec = args.spec
 
 qid = str(i).zfill(2)
 distinct = args.interventions
@@ -68,17 +70,25 @@ ksemimodule_timing = end - start
 
 query_id = con.query_id
 print("=================", query_id, qid, use_duckdb, is_scalar, num_threads)
+forward_lineage = "true"
+if distinct == 1 and is_incremental == "true":
+    forward_lineage = "true"
+
+pp_timings = con.execute(f"pragma PrepareLineage({query_id}, {prune}, {forward_lineage})").df()
+print(pp_timings)
+#clear(con)
 # use_duckdb = false, is_scalr = true/false, batch = 4
-q = f"pragma WhatIf({query_id}, '{itype}', 'lineitem.i', {distinct}, {batch}, {is_scalar}, {use_duckdb}, {num_threads}, {debug}, {prune}, {is_incremental}, {prob});"
+q = f"pragma WhatIf({query_id}, '{itype}', '{spec}', {distinct}, {batch}, {is_scalar}, {use_duckdb}, {num_threads}, {debug}, {prune}, {is_incremental}, {prob});"
 timings = con.execute(q).fetchdf()
 print(timings)
 
 clear(con)
-
+if spec == '""':
+    spec=''
 res = [args.sf, i, itype, prob, is_incremental, use_duckdb, is_scalar, prune, num_threads, distinct, batch,
-        timings["post_processing_time"][0], timings["intervention_gen_time"][0],
+        pp_timings["post_processing_time"][0], timings["intervention_gen_time"][0],
         timings["prep_time"][0], timings["compile_time"][0], timings["eval_time"][0],
-        timings["prune_time"][0], timings["lineage_time"][0], ksemimodule_timing]
+        pp_timings["prune_time"][0], pp_timings["lineage_time"][0], ksemimodule_timing, spec]
 print(res)
 
 filename=args.csv

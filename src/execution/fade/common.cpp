@@ -328,6 +328,7 @@ void* Fade::compile(std::string code, int id) {
 // table_name.col_name
 std::unordered_map<std::string, std::vector<std::string>>  Fade::parseSpec(EvalConfig& config) {
 	std::unordered_map<std::string, std::vector<std::string>> result;
+  if (config.columns_spec_str.empty()) return result;
 
 	std::istringstream iss(config.columns_spec_str);
 	std::string token;
