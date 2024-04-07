@@ -42,6 +42,10 @@ struct FadeDataPerNode {
       std::unordered_map<int, std::vector<int>>&, void*, void*, void*, std::set<int>&,  std::set<int>&, std::set<int>&);
 	int (*agg_duckdb_fn)(int, int*, void*, std::unordered_map<std::string, vector<void*>>&, ChunkCollection&, std::set<int>&);
 	int (*agg_fn)(int, int*, void*, std::unordered_map<std::string, vector<void*>>&,  std::unordered_map<int, void*>&, std::set<int>&);
+	int (*agg_fn_nested)(int, int*, void*, std::unordered_map<std::string, vector<void*>>&,
+	                     std::unordered_map<std::string, vector<void*>>&, std::set<int>&);
+	bool has_agg_child;
+	int child_agg_id;
 };
 
 enum InterventionType {
@@ -72,6 +76,10 @@ class Fade {
 public:
 	Fade() {};
 
+	template<class T>
+	static void allocate_agg_output(string typ, int t, int n_groups, int n_interventions, string out_var, PhysicalOperator* op,
+	                         std::unordered_map<idx_t, FadeDataPerNode>& fade_data);
+
 	static string PrepareLineage(PhysicalOperator *op, bool prune, bool forward_lineage);
 
 	static string Whatif(PhysicalOperator* op, EvalConfig config);
@@ -84,7 +92,6 @@ public:
 	static string get_agg_alloc(int fid, string fn, string out_type);
 	static string get_agg_finalize(EvalConfig config, FadeDataPerNode& node_data);
 	static string group_partitions(EvalConfig config, FadeDataPerNode& node_data);
-	static string group_partitions_by_intervention(EvalConfig config, FadeDataPerNode& node_data);
 
 	static void* compile(std::string code, int id);
 
@@ -122,3 +129,4 @@ public:
 
 } // namespace duckdb
 #endif
+

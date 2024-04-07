@@ -161,53 +161,6 @@ string Fade::get_agg_alloc(int fid, string fn, string out_type) {
 	return oss.str();
 }
 
-string Fade::group_partitions_by_intervention(EvalConfig config, FadeDataPerNode& node_data) {
-	std::ostringstream oss;
-	if (config.num_worker > 1) {
-		//fade_data[op->id].alloc_vars[out_var][t] = aligned_alloc(64, sizeof(int) * n_groups * n_interventions);
-		oss << "\tsync_point.arrive_and_wait();\n";
-		oss << "\tconst int group_count = " << node_data.n_groups << ";\n";
-		oss << "\tconst int tot_count = group_count *  n_interventions ;\n";
-		oss << "\tconst int out_batch_size = tot_count/ num_threads ;\n";
-		oss << "\tconst int out_start = thread_id * out_batch_size;\n";
-		oss << "\tint out_end = out_start + out_batch_size;\n";
-		oss << "\tif (out_end >= tot_count) { out_end = tot_count; }\n";
-		for (auto &pair : node_data.alloc_vars) {
-			oss << "{\n";
-			int fid = node_data.alloc_vars_index[pair.first] ;
-			string type_str = node_data.alloc_vars_types[pair.first];
-			if (fid == -1) { // count
-				oss <<  type_str +"* __restrict__ final_out = (" + type_str + "* __restrict__)alloc_vars[\"out_count\"][0];\n";
-			} else {
-				oss <<  type_str +"* __restrict__ final_out = (" + type_str + "* __restrict__)alloc_vars[\"out_"+to_string(fid)+"\"][0];\n";
-			}
-			oss << R"(
-		    for (int i = 1; i < num_threads; ++i) {
-)";
-			if (fid == -1) { // count
-				oss <<  type_str +"* __restrict__ final_in = (" + type_str + "* __restrict__)alloc_vars[\"out_count\"][i];\n";
-			} else {
-				oss <<  type_str +"* __restrict__ final_in = (" + type_str + "* __restrict__)alloc_vars[\"out_"+to_string(fid)+"\"][i];\n";
-			}
-			oss << R"(
-			  for (int j = out_start; j <out_end; ++j) {
-)";
-			oss << "final_out[j] += final_in[j];\n";
-			oss << R"(
-				}//(int i = 1; i < num_threads; ++i)
-			}//j
-    }
-)";
-		}
-	}
-
-// iterate over annotations
-// 
-  return oss.str();
-
-}
-
-
 string Fade::group_partitions(EvalConfig config, FadeDataPerNode& node_data) {
 	std::ostringstream oss;
 	if (config.num_worker > 1) {
@@ -706,6 +659,20 @@ void Fade::ReleaseFade(EvalConfig& config, void* handle, PhysicalOperator* op,
 
 }
 
+
+template<class T>
+void Fade::allocate_agg_output(string typ, int t, int n_groups, int n_interventions, string out_var, PhysicalOperator* op,
+                         std::unordered_map<idx_t, FadeDataPerNode>& fade_data) {
+	fade_data[op->id].alloc_vars_types[out_var] =typ;
+	fade_data[op->id].alloc_vars[out_var][t] = aligned_alloc(64, sizeof(T) * n_groups * n_interventions);
+	if (fade_data[op->id].alloc_vars[out_var][t] == nullptr) {
+		fade_data[op->id].alloc_vars[out_var][t] = malloc(sizeof(T) * n_groups * n_interventions);
+	}
+	memset(fade_data[op->id].alloc_vars[out_var][t], 0, sizeof(T) * n_groups * n_interventions);
+}
+
+
+// if nested, then take the output of the previous agg as input
 void Fade::GroupByAlloc(EvalConfig& config, shared_ptr<OperatorLineage> lop,
                         std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
                         PhysicalOperator* op, vector<unique_ptr<Expression>>& aggregates,
@@ -768,27 +735,11 @@ void Fade::GroupByAlloc(EvalConfig& config, shared_ptr<OperatorLineage> lop,
 			fade_data[op->id].alloc_vars[out_var].resize(config.num_worker);
 			for (int t=0; t < config.num_worker; ++t) {
 				if (op->children[0]->lineage_op->chunk_collection.Types()[col_idx] == LogicalType::INTEGER) {
-					fade_data[op->id].alloc_vars[out_var][t] = aligned_alloc(64, sizeof(int) * n_groups * n_interventions);
-
-					if (fade_data[op->id].alloc_vars[out_var][t] == nullptr) {
-						fade_data[op->id].alloc_vars[out_var][t] = malloc(sizeof(int) * n_groups * n_interventions);
-					}
-					fade_data[op->id].alloc_vars_types[out_var] = "int";
-					memset(fade_data[op->id].alloc_vars[out_var][t], 0, sizeof(int) * n_groups * n_interventions);
+					allocate_agg_output<int>("int", t, n_groups, n_interventions, out_var, op, fade_data);
 				} else if (op->children[0]->lineage_op->chunk_collection.Types()[col_idx] == LogicalType::FLOAT) {
-					fade_data[op->id].alloc_vars_types[out_var] = "float";
-					fade_data[op->id].alloc_vars[out_var][t] = aligned_alloc(64, sizeof(float) * n_groups * n_interventions);
-					if (fade_data[op->id].alloc_vars[out_var][t] == nullptr) {
-						fade_data[op->id].alloc_vars[out_var][t] = malloc(sizeof(float) * n_groups * n_interventions);
-					}
-					memset(fade_data[op->id].alloc_vars[out_var][t], 0, sizeof(float) * n_groups * n_interventions);
+					allocate_agg_output<float>("float", t, n_groups, n_interventions, out_var, op, fade_data);
 				} else {
-					fade_data[op->id].alloc_vars_types[out_var] = "float";
-					fade_data[op->id].alloc_vars[out_var][t] = aligned_alloc(64, sizeof(float) * n_groups * n_interventions);
-					if (fade_data[op->id].alloc_vars[out_var][t] == nullptr) {
-						fade_data[op->id].alloc_vars[out_var][t] = malloc(sizeof(float) * n_groups * n_interventions);
-					}
-					memset(fade_data[op->id].alloc_vars[out_var][t], 0, sizeof(float) * n_groups * n_interventions);
+					allocate_agg_output<float>("float", t, n_groups, n_interventions, out_var, op, fade_data);
 				}
 			}
 			fade_data[op->id].alloc_vars_index[out_var] = i;
@@ -798,13 +749,8 @@ void Fade::GroupByAlloc(EvalConfig& config, shared_ptr<OperatorLineage> lop,
 	if (include_count == true) {
 		string out_var = "out_count";
 		fade_data[op->id].alloc_vars[out_var].resize(config.num_worker);
-		fade_data[op->id].alloc_vars_types[out_var] = "int";
 		for (int t=0; t < config.num_worker; ++t) {
-			fade_data[op->id].alloc_vars[out_var][t] = aligned_alloc(64, sizeof(int) * n_groups * n_interventions);
-			if (fade_data[op->id].alloc_vars[out_var][t] == nullptr) {
-				fade_data[op->id].alloc_vars[out_var][t] = malloc(sizeof(int) * n_groups * n_interventions);
-			}
-			memset(fade_data[op->id].alloc_vars[out_var][t], 0, sizeof(int) * n_groups * n_interventions);
+			allocate_agg_output<int>("int", t, n_groups, n_interventions, out_var, op, fade_data);
 		}
 		fade_data[op->id].alloc_vars_index[out_var] = -1;
 	}
@@ -959,12 +905,17 @@ void Fade::BindFunctions(EvalConfig& config, void* handle, PhysicalOperator* op,
 	           || op->type == PhysicalOperatorType::PERFECT_HASH_GROUP_BY
 	           || op->type == PhysicalOperatorType::UNGROUPED_AGGREGATE) {
 		string fname = "agg_"+ to_string(op->id) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
-		if (config.use_duckdb) {
+		if (config.use_duckdb && fade_data[op->id].has_agg_child == false) {
 			fade_data[op->id].agg_duckdb_fn = (int(*)(int, int*, void*, std::unordered_map<std::string, vector<void*>>&,
 			                                           ChunkCollection&, std::set<int>&))dlsym(handle, fname.c_str());
 		} else {
-			fade_data[op->id].agg_fn = (int(*)(int, int*, void*, std::unordered_map<std::string, vector<void*>>&,
-			    std::unordered_map<int, void*>&, std::set<int>&))dlsym(handle, fname.c_str());
+			if (fade_data[op->id].has_agg_child) {
+		  		fade_data[op->id].agg_fn_nested = (int(*)(int, int*, void*, std::unordered_map<std::string, vector<void*>>&,
+				                                     std::unordered_map<std::string, vector<void*>>&, std::set<int>&))dlsym(handle, fname.c_str());
+			} else {
+		  		fade_data[op->id].agg_fn = (int(*)(int, int*, void*, std::unordered_map<std::string, vector<void*>>&,
+				                              std::unordered_map<int, void*>&, std::set<int>&))dlsym(handle, fname.c_str());
+			}
 		}
 	}
 }
@@ -972,3 +923,4 @@ void Fade::BindFunctions(EvalConfig& config, void* handle, PhysicalOperator* op,
 
 } // namespace duckdb
 #endif
+
