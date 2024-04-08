@@ -9,19 +9,17 @@ export DUCKDB_LIB_PATH=/ProvEnhance/third_party/smokedduck-whatif/build/release/
 query_nums=("1" "3" "5" "7" "9"  "10" "12")
 sf_values=("1") # "5" "10")  # "0.2" "0.4") # "5.0" "10.0") # (# "3.0" "4.0")
 # ADD 64, 256
-distinct=("1") #"512" "1024" "2048" "2560")
-threads_num=("1") # "2" "4" "8")
-is_scalar_binary=("true") # "false") 
-#duckdb_binary=("false" "true")
-prune_binary=("true") # "false")
-csv="test.csv"
+distinct=("2560") #"64" "256" "512" "1024" "2048" "2560")
+threads_num=("1" "2" "4" "8")
+is_scalar_binary=("true" "false") 
+prune_binary=("true" "false")
+csv="dense_2560_prob_0.05_april7.csv"
 debug="false"
-#itype_list=("SEARCH" "DENSE_DELETE")
-itype_list=("SCALE_RANDOM") # evaluate scaling some tuples of an attribute
+#itype_list=("SCALE_RANDOM") # evaluate scaling some tuples of an attribute
 itype_list=("DENSE_DELETE")
 #itype_list=("SEARCH")
 # if search then include incremental or not
-prob_list=("0.001") # "0.002" "0.005" "0.01" "0.02" "0.05" "0.1" "0.2" "0.3" "0.4" "0.5")
+prob_list=("0.05") #"0.001" "0.002" "0.005" "0.01" "0.02" "0.05" "0.1" "0.2" "0.3" "0.4" "0.5")
 #spec="lineitem.i"
 spec='""'
 batch="4"

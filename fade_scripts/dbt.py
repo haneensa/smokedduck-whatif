@@ -57,7 +57,8 @@ if True:
     #incremental_data = get_data("fade_data/single_incremental_random_sparse.csv", 1000)
     incremental_data = get_data("sparse_incremental_test_v2.csv", 1000)
     incremental_data = con.execute("select * from incremental_data where incremental='true'").df()
-    single_data_all = get_data("single_fade_april6.csv", 1000)
+    #single_data_all = get_data("single_fade_april6.csv", 1000)
+    single_data_all = get_data("fade_data/dense_single_vary_probs_april7.csv", 1000)
     dbt_data = get_data("fade_data/dbtoast.csv", 1)
     dbt_data["cat"] = dbt_data.apply(lambda row: "DBT_prune" if row["prune"] else "DBT", axis=1)
 
@@ -143,7 +144,7 @@ if True:
     p += geom_line(stat=esc('identity')) 
     p += axis_labels('Deletion Probability (log)', "Normalized Latency (log)", "log10", "log10",
         ykwargs=dict(breaks=[0.1,10,100,1000,10000],  labels=list(map(esc,['0.1','10','100','1000','10000']))),
-        xkwargs=dict(breaks=[0.001, 0.01, 0.1,],  labels=list(map(esc,['0.001','0.01','0.1']))),
+        xkwargs=dict(breaks=[0.001, 0.01, 0.1,0.5],  labels=list(map(esc,['0.001','0.01','0.1', '0.5']))),
         )
     p += legend_side
     p += geom_hline(aes(yintercept=1))
@@ -155,7 +156,7 @@ if True:
     p += geom_line(stat=esc('identity')) 
     p += axis_labels('Deletion Probability (log)', "Normalized Latency  (log)", "log10", "log10",
         ykwargs=dict(breaks=[0.1,10,100,1000,10000],  labels=list(map(esc,['0.1','10','100','1000','10000']))),
-        xkwargs=dict(breaks=[0.001, 0.01, 0.1,],  labels=list(map(esc,['0.001','0.01','0.1']))),
+        xkwargs=dict(breaks=[0.001, 0.01, 0.1,0.5],  labels=list(map(esc,['0.001','0.01','0.1', '0.5']))),
         )
     p += legend_side
     p += geom_hline(aes(yintercept=1))
