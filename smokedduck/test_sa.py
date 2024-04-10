@@ -34,6 +34,12 @@ end = time.time()
 print(out)
 ksemimodule_timing = end - start
 query_id = con.query_id
+
+forward_lineage = "false"
+prune = "true"
+debug = "true"
+pp_timings = con.execute(f"pragma PrepareLineage({query_id}, {prune}, {forward_lineage})").df()
+
 k = 3
 q = f"pragma SA({query_id}, {k}, 'lineitem.l_tax|lineitem.l_linestatus', false);"
 res = con.execute(q).fetchdf()

@@ -40,6 +40,7 @@ with open(query_file, "r") as f:
 if distinct > 0:
     sql += ", fade_col_" + str(distinct)
     sql = sql.replace("SELECT", "SELECT fade_col_"+str(distinct)+",")
+print(sql)
 # Printing lineage that was captured from base query
 # 2. run the query with lineage capture
 start = time.time()

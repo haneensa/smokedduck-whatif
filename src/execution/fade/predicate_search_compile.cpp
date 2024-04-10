@@ -117,12 +117,14 @@ string get_agg_init_predicate(EvalConfig config, int row_count, int chunk_count,
 	if (config.use_duckdb) {
 		oss << R"(extern "C" int )"
 		    << fname
-		    << R"((int thread_id, int* lineage, void* __restrict__ var_0_ptr, std::unordered_map<std::string, std::vector<void*>>& alloc_vars, duckdb::ChunkCollection &chunk_collection) {
+		    << R"((int thread_id, int* lineage, void* __restrict__ var_0_ptr, std::unordered_map<std::string, std::vector<void*>>& alloc_vars,
+              duckdb::ChunkCollection &chunk_collection) {
 )";
 	} else {
 		oss << R"(extern "C" int )"
 		    << fname
-		    << R"((int thread_id, int* lineage, void* __restrict__ var_0_ptr, std::unordered_map<std::string, std::vector<void*>>& alloc_vars, std::unordered_map<int, void*>& input_data_map) {
+		    << R"((int thread_id, int* lineage, void* __restrict__ var_0_ptr, std::unordered_map<std::string, std::vector<void*>>& alloc_vars,
+              std::unordered_map<int, void*>& input_data_map) {
 )";
   }
 	
@@ -481,11 +483,11 @@ void Intervention2DEvalPredicate(int thread_id, EvalConfig& config, void* handle
 	} else if (op->type == PhysicalOperatorType::HASH_GROUP_BY) {
 		if (fade_data[op->id].n_interventions <= 1) return;
 		if (config.use_duckdb) {
-			int result = fade_data[op->id].agg_duckdb_fn(thread_id, op->lineage_op->backward_lineage[0].data(),
+			int result = fade_data[op->id].agg_duckdb_fn(thread_id, op->lineage_op->forward_lineage[0].data(),
 			                                             fade_data[op->children[0]->id].annotations, fade_data[op->id].alloc_vars,
 			                                             op->children[0]->lineage_op->chunk_collection, fade_data[op->id].del_set);
 		} else {
-			int result = fade_data[op->id].agg_fn(thread_id, op->lineage_op->backward_lineage[0].data(),
+			int result = fade_data[op->id].agg_fn(thread_id, op->lineage_op->forward_lineage[0].data(),
 			                                      fade_data[op->children[0]->id].annotations, fade_data[op->id].alloc_vars,
 			                                      fade_data[op->id].input_data_map, fade_data[op->id].del_set);
 		}
@@ -624,6 +626,7 @@ string Fade::PredicateSearch(PhysicalOperator *op, EvalConfig config) {
 
 	BindFunctionsPredicate(config, handle,  op, fade_data);
 
+  std::cout << "start intervention:" << std::endl;
 	std::vector<std::thread> workers;
 
 	start_time = std::chrono::steady_clock::now();

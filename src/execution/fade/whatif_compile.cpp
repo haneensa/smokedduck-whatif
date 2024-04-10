@@ -481,19 +481,15 @@ string get_batch_agg_template(EvalConfig& config, int agg_count, string fn, stri
 			oss << get_agg_eval_scalar(fn, out_var, in_var);
 		}
 	} else {
-		if (config.intervention_type == InterventionType::SCALE_RANDOM) {
+		if (fn != "count" && config.intervention_type == InterventionType::SCALE_RANDOM) {
 			oss << "{\n";
 			if (data_type == "float") {
 				oss << "\t__m512 a  = _mm512_load_ps((__m512*) &"+out_var+"[col + row]);\n";
-				oss << "\t__m512 X = _mm512_set1_ps("+in_var+" * (0.8+1));\n";
-				oss << "\t__m512 Y = _mm512_set1_ps("+in_var+");\n";
-				oss << "\t__m512 v = _mm512_mask_blend_ps(tmp_mask, X, Y);\n";
+				oss << "\t__m512 v = _mm512_mask_blend_ps(tmp_mask, x_vec_"+in_var+",vec_"+in_var+ ");\n";
 				oss << "\t_mm512_store_ps((__m512*) &"+out_var+"[col + row], _mm512_add_ps(a, v));\n";
 			} else if (data_type == "int") {
 				oss << "\t__m512i a = _mm512_load_si512((__m512i*)&" + out_var + "[col+row]);\n";
-				oss << "\t__m512i X = _mm512_set1_epi32("+in_var+" * (0.8+1));\n";
-				oss << "\t__m512i Y = _mm512_set1_epi32("+in_var+");\n";
-				oss << "\t__m512i v = _mm512_mask_blend_epi32(tmp_mask, X, Y);\n";
+				oss << "\t__m512i v = _mm512_mask_blend_epi32(tmp_mask, x_vec_"+in_var+", vec_"+ in_var + ");\n";
 				oss << "\t_mm512_store_si512((__m512i*) &"+out_var+"[col + row], _mm512_add_epi32(a, v));\n";
 			}
 			oss << "}\n";
@@ -992,6 +988,15 @@ string HashAggregateIntervene2D(EvalConfig& config, shared_ptr<OperatorLineage> 
 			}
 
 			get_vals_code += "\t\t\t" + output_type +" " + in_val + "= " + in_arr + "[i];\n";
+      if (config.intervention_type == InterventionType::SCALE_RANDOM) {
+        if (output_type == "int") {
+			    get_vals_code += "\t\t\t__m512i vec_"  + in_val + " = _mm512_set1_epi32(" + in_val + ");\n";
+			    get_vals_code += "\t\t\t__m512i x_vec_"  + in_val + " = _mm512_set1_epi32(" + in_val + "*(0.8+1));\n";
+        } else {
+			    get_vals_code += "\t\t\t__m512 x_vec_"  + in_val + " = _mm512_set1_ps(" + in_val + ");\n";
+			    get_vals_code += "\t\t\t__m512 vec_"  + in_val + " = _mm512_set1_ps(" + in_val + "*(0.8+1));\n";
+        }
+      }
 			// access output arrays
 			alloc_code += Fade::get_agg_alloc(i, "sum", output_type);
 			// core agg operation
@@ -1001,6 +1006,10 @@ string HashAggregateIntervene2D(EvalConfig& config, shared_ptr<OperatorLineage> 
 
 	if (include_count == true) {
 		string out_var = "out_count";
+    if (config.intervention_type == InterventionType::SCALE_RANDOM) {
+      get_vals_code += "\t\t\t__m512i vec_1 = _mm512_set1_epi32(1);\n";
+      get_vals_code += "\t\t\t__m512i x_vec_1 = _mm512_set1_epi32(0.8+1);\n";
+    }
 		alloc_code += Fade::get_agg_alloc(0, "count", "int");
 		eval_code += get_agg_eval(config, aggregates.size(), agg_count++, "count", out_var, "1", "", "int");
 	}

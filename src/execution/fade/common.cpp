@@ -604,11 +604,11 @@ T2* Fade::GetInputVals(PhysicalOperator* op, shared_ptr<OperatorLineage> lop, id
 
 template <class T>
 void Fade::PrintOutput(FadeDataPerNode& info, T* data_ptr) {
+  std::cout << "Print Output for " << info.n_interventions << " interventions and " << info.n_groups << " groups." << std::endl;
 	for (int i=0; i < info.n_groups; i++) {
 		for (int j=0; j < info.n_interventions; j++) {
 			int index = i * info.n_interventions + j;
-			std::cout << index << " G: " << i << " I: " << j << " -> " <<  data_ptr[index] << std::endl;
-			break;
+			std::cout << " G: " << i << " I: " << j << " -> " <<  data_ptr[index] << std::endl;
 		}
 	}
 }
@@ -626,6 +626,7 @@ void Fade::ReleaseFade(EvalConfig& config, void* handle, PhysicalOperator* op,
 			for (auto &pair : fade_data[op->id].alloc_vars) {
 				if (!pair.second.empty()) {
 					if (config.debug) {
+            std::cout << "Print out results for " << pair.first << std::endl;
 						if (fade_data[op->id].alloc_vars_types[pair.first] == "int") {
 							Fade::PrintOutput<int>(fade_data[op->id], (int*)pair.second[0]);
 						} else if (fade_data[op->id].alloc_vars_types[pair.first] == "float") {
@@ -704,7 +705,6 @@ void Fade::GroupByAlloc(EvalConfig& config, shared_ptr<OperatorLineage> lop,
 			int col_idx = aggregate_input_idx[0]; //i + keys_size;
 			string input_type = "float";
 			string output_type = "float";
-			std::cout << keys_size << " " << i << " " << col_idx << " " << op->children[0]->lineage_op->chunk_collection.Types().size() << std::endl;
 			if (op->children[0]->lineage_op->chunk_collection.Types()[col_idx] == LogicalType::INTEGER ) {
 				input_type = "int";
 				output_type = "int";
@@ -797,9 +797,7 @@ std::pair<int*, int> augment(int row_count, std::pair<int*, int> new_codes, std:
     new_codes.first[i] = new_codes.first[i]* factor + old_codes.first[i]; 
   }
 
-  std::cout << "old " << new_codes.second << " " << old_codes.second << std::endl;
   new_codes.second *= old_codes.second;
-  std::cout << "new " << new_codes.second << " " << old_codes.second << std::endl;
   return new_codes;
 }
 
