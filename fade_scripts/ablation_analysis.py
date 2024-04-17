@@ -241,14 +241,17 @@ if plot:
     p += legend_side
     ggsave(f"figures/{prefix}_fade_pruning_batch_nosetup.png", p, postfix=postfix, width=4, height=2.5, scale=0.8)
     
-    p = ggplot(prune_data_breakdown, aes(x='n',  y="speedup", color="query", fill="query",  shape='cat', linetype='cat'))
+    prune_data_noall = con.execute("select * from prune_data_breakdown where cat<>'ALL' and n<>1").df()
+    p = ggplot(prune_data_noall, aes(x='n',  y="speedup", color="query", fill="query"))
     p += geom_line(stat=esc('identity'))  + geom_point(stat=esc('identity'))
     p += axis_labels('Batch Size', "Speedup (log)", "log10", "log10",
-            xkwargs=dict(breaks=[1,64, 256, 512,1024,2048],  labels=list(map(esc,['1','64', '256', '512','1K','2K']))),
+            xkwargs=dict(breaks=[64, 512,2048],  labels=list(map(esc,['64', '512','2K']))),
             ykwargs=dict(breaks=[0.01,0.1,0,10,100],  labels=list(map(esc,['0.01','0.1','0','10','100']))),
         )
     p += legend_side
-    ggsave(f"figures/{prefix}_fade_pruning_batch_breakdown.png", p, postfix=postfix, width=4, height=3, scale=0.8)
+    p += facet_grid(".~cat", scales=esc("free_y"))
+    ggsave(f"figures/{prefix}_fade_pruning_batch_breakdown_line.png", p, postfix=postfix, width=4, height=2.5, scale=0.8)
+    
     
     prune_data_all = con.execute("select * from prune_data_breakdown where cat='ALL'").df()
     p = ggplot(prune_data_all, aes(x='n',  y="speedup", color="query", fill="query",  shape='cat', linetype='cat'))
@@ -428,13 +431,21 @@ if plot:
 
 batching = False
 pruning = False
-vec = False
+vec = True
 workers = True
-best = False
+best = True
 if print_summary:
     # batching add X average speedup (min, max)
     if batching:
         print("========== Batching Summary ============")
+        print(con.execute("""select sf, n, qid, prune, max(speedup), avg(speedup), min(speedup), 
+        avg(eval_time_ms), avg(single_eval), max(eval_time_ms), max(single_eval),
+        min(eval_time_ms), min(eval_time_ms) from level1_data group by sf, n,qid,  prune order by n, qid, prune""").df())
+        
+        print(con.execute("""select sf, n, prune, max(speedup), avg(speedup), min(speedup), 
+        avg(eval_time_ms), avg(single_eval), max(eval_time_ms), max(single_eval),
+        min(eval_time_ms), min(eval_time_ms) from level1_data group by sf, n, prune order by n, prune""").df())
+        
         print(con.execute("""select sf, prune, max(speedup), avg(speedup), min(speedup), 
         avg(eval_time_ms), avg(single_eval), max(eval_time_ms), max(single_eval),
         min(eval_time_ms), min(eval_time_ms) from level1_data group by sf, prune""").df())
@@ -442,6 +453,7 @@ if print_summary:
         print(con.execute("""select sf, max(speedup), avg(speedup), min(speedup), 
         avg(eval_time_ms), avg(single_eval), max(eval_time_ms), max(single_eval),
         min(eval_time_ms), min(eval_time_ms) from level1_data group by sf""").df())
+        # batching wins only: xyz
     if pruning:
         print("======== DENSE Pruning =============")
         # pruning speedup for evaluation only, intervention generation, combined
@@ -616,3 +628,6 @@ if print_summary:
         from best_data_all
         group by sf
         order by sf""").df())
+
+
+# TODO: add optimizations one by one, measure speedup individually then combined incrementally. Plot it.
