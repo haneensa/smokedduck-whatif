@@ -12,9 +12,6 @@
 #include <thread>
 #include <vector>
 
-#include <queue>
-#include <cmath>
-
 namespace duckdb {
 
 
@@ -366,6 +363,33 @@ string HashAggregateCodeAndAllocPredicate(EvalConfig& config, shared_ptr<Operato
 	return code;
 }
 
+void GenInterventionPredicate(EvalConfig& config, PhysicalOperator* op,
+                              std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
+                              std::unordered_map<std::string, std::vector<std::string>>& columns_spec) {
+	for (idx_t i = 0; i < op->children.size(); i++) {
+		GenInterventionPredicate(config, op->children[i].get(), fade_data, columns_spec);
+	}
+
+	if (op->type == PhysicalOperatorType::TABLE_SCAN) {
+		if (columns_spec.find(op->lineage_op->table_name) == columns_spec.end()) {
+			return;
+		}
+
+		if (config.n_intervention == 0) {
+			// factorize need access to base table
+			std::pair<int*, idx_t> res = Fade::factorize(op, op->lineage_op, columns_spec);
+      std::cout << " annotations: " << res.second << std::endl;
+			fade_data[op->id].annotations = res.first;
+			fade_data[op->id].n_interventions = res.second;
+		} else {
+			// random need access to  config.n_intervention
+			fade_data[op->id].n_interventions = config.n_intervention;
+			fade_data[op->id].annotations = Fade::random_unique(op->lineage_op, config.n_intervention);
+		}
+	}
+}
+
+
 void GenCodeAndAllocPredicate(EvalConfig& config, string& code, PhysicalOperator* op,
                               std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
                               std::unordered_map<std::string, std::vector<std::string>>& columns_spec) {
@@ -377,19 +401,6 @@ void GenCodeAndAllocPredicate(EvalConfig& config, string& code, PhysicalOperator
 		if (columns_spec.find(op->lineage_op->table_name) == columns_spec.end()) {
 			fade_data[op->id].n_interventions = 1;
 			return;
-		}
-
-		// TODO: compile factorize or randomGen
-		if (config.n_intervention == 0) {
-			// factorize need access to base table
-			std::pair<int*, idx_t> res = Fade::factorize(op, op->lineage_op, columns_spec);
-      std::cout << " annotations: " << res.second << std::endl;
-			fade_data[op->id].annotations = res.first;
-			fade_data[op->id].n_interventions = res.second;
-		} else {
-			// random need access to  config.n_intervention
-			fade_data[op->id].n_interventions = config.n_intervention;
-			fade_data[op->id].annotations = Fade::random_unique(op->lineage_op, config.n_intervention);
 		}
 	} else if (op->type == PhysicalOperatorType::FILTER) {
 		fade_data[op->id].n_interventions = fade_data[op->children[0]->id].n_interventions;
@@ -410,7 +421,10 @@ void GenCodeAndAllocPredicate(EvalConfig& config, string& code, PhysicalOperator
 		if (fade_data[op->id].n_interventions <= 1) return;
 		fade_data[op->id].annotations = new int[op->lineage_op->backward_lineage[0].size()];
 		code += JoinCodeAndAllocPredicate(config, op, op->lineage_op, fade_data);
-	} else if (op->type == PhysicalOperatorType::HASH_GROUP_BY) {
+	} else if (op->type == PhysicalOperatorType::HASH_GROUP_BY ||
+      op->type == PhysicalOperatorType::PERFECT_HASH_GROUP_BY ||
+	    op->type == PhysicalOperatorType::UNGROUPED_AGGREGATE
+      ) {
 		idx_t row_count = op->children[0]->lineage_op->chunk_collection.Count();
 		//fade_data[op->id].annotations = new int[row_count];
 		fade_data[op->id].n_interventions = fade_data[op->children[0]->id].n_interventions;
@@ -442,8 +456,6 @@ void GenCodeAndAllocPredicate(EvalConfig& config, string& code, PhysicalOperator
 		  code += HashAggregateCodeAndAllocPredicate(config, op->lineage_op, fade_data, op, aggregates, 0, n_groups);
 		}
     config.num_worker = n_threads;
-	} else if (op->type == PhysicalOperatorType::UNGROUPED_AGGREGATE) {
-	  //  UngroupedAggregateIntervene(op->lineage_op, fade_data, op);
 	}  else if (op->type == PhysicalOperatorType::PROJECTION) {
 		fade_data[op->id].n_interventions = fade_data[op->children[0]->id].n_interventions;
 	}
@@ -531,66 +543,9 @@ void BindFunctionsPredicate(EvalConfig config, void* handle, PhysicalOperator* o
 	}
 }
 
-struct Compare {
-	bool operator()(const std::pair<float, int>& a, const std::pair<float, int>& b) {
-		return a.first == b.first ? a.second > b.second : a.first > b.first;
-	}
-};
-
-std::vector<int> rank(PhysicalOperator* op, EvalConfig& config, std::unordered_map<idx_t, FadeDataPerNode>& fade_data) {
-	// get agg index
-	//calculate minimize(sum(abs(output - new_agg_val[i])))
-	std::vector<std::pair<float, int>> sums;
-	FadeDataPerNode& info = fade_data[op->id];
-
-	for (auto &pair : fade_data[op->id].alloc_vars) {
-		if (!pair.second.empty()) {
-			if (fade_data[op->id].alloc_vars_types[pair.first] == "int") {
-				int* data_ptr = (int*)pair.second[0];
-				for (int j=0; j < info.n_interventions; j++) {
-					float sum = 0;
-					for (int i=0; i < info.n_groups; i++) {
-						int index = i * info.n_interventions + j;
-						sum +=  data_ptr[index];
-					}
-					sums.push_back(std::make_pair(sum, j));
-				}
-			} else {
-				float* data_ptr = (float*)pair.second[0];
-				for (int j=0; j < info.n_interventions; j++) {
-					float sum = 0;
-					for (int i=0; i < info.n_groups; i++) {
-						int index = i * info.n_interventions + j;
-						sum += data_ptr[index];
-					}
-					sums.push_back(std::make_pair(sum, j));
-				}
-			}
-			break;
-		}
-	}
-
-
-	std::priority_queue<std::pair<float, int>, std::vector<std::pair<float, int>>, Compare> pq;
-	for (const auto& pair : sums) {
-		pq.push(pair);
-		if (pq.size() > config.topk) {
-			pq.pop();
-		}
-	}
-
-	vector<int> topk_vec;
-	while (!pq.empty()) {
-		int col = pq.top().second;
-		float sum = pq.top().first;
-		topk_vec.push_back(col);
-		pq.pop();
-	}
-
-	return topk_vec;
-}
-
 string Fade::PredicateSearch(PhysicalOperator *op, EvalConfig config) {
+  //Fade::get_common_functions();
+  std::cout << "Predicate Search" << std::endl;
 	// timing vars
 	std::chrono::steady_clock::time_point start_time, end_time;
 	std::chrono::duration<double> time_span;
@@ -600,6 +555,13 @@ string Fade::PredicateSearch(PhysicalOperator *op, EvalConfig config) {
 
 	// holds any extra data needed during exec
 	std::unordered_map<idx_t, FadeDataPerNode> fade_data;
+	
+  start_time = std::chrono::steady_clock::now();
+	GenInterventionPredicate(config, op, fade_data, columns_spec);
+	end_time = std::chrono::steady_clock::now();
+	time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
+	double gen_time = time_span.count();
+
 
 	// 4. Alloc vars, generate eval code
 	string code;
@@ -623,7 +585,7 @@ string Fade::PredicateSearch(PhysicalOperator *op, EvalConfig config) {
 	double compile_time = time_span.count();
 
 	if (handle == nullptr) return "select 0";
-
+	
 	BindFunctionsPredicate(config, handle,  op, fade_data);
 
   std::cout << "start intervention:" << std::endl;
@@ -662,7 +624,7 @@ string Fade::PredicateSearch(PhysicalOperator *op, EvalConfig config) {
 		return "select '" + result + "'";
 	} else {
 	  ReleaseFade(config, handle, op, fade_data);
-		return "select " + to_string(0) + " as intervention_gen_time, "
+		return "select " + to_string(gen_time) + " as intervention_gen_time, "
 				   + to_string(prep_time) + " as prep_time, "
 				   + to_string(compile_time) + " as compile_time, "
 				   + to_string(eval_time) + " as eval_time";

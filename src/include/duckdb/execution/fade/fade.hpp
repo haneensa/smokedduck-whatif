@@ -12,6 +12,9 @@
 
 #include <immintrin.h>
 #include <random>
+#include <queue>
+#include <cmath>
+
 
 namespace duckdb {
 class PhysicalOperator;
@@ -81,6 +84,7 @@ public:
 	                         std::unordered_map<idx_t, FadeDataPerNode>& fade_data);
 
 	static string PrepareLineage(PhysicalOperator *op, bool prune, bool forward_lineage);
+  static std::vector<int> rank(PhysicalOperator* op, EvalConfig& config, std::unordered_map<idx_t, FadeDataPerNode>& fade_data);
 
 	static string Whatif(PhysicalOperator* op, EvalConfig config);
 	static string PredicateSearch(PhysicalOperator* op, EvalConfig config);
@@ -120,11 +124,14 @@ public:
 	                         int keys, int n_groups);
 
 	static int* random_unique(shared_ptr<OperatorLineage> lop, idx_t distinct);
-	static std::pair<int*, int> factorize(PhysicalOperator* op, shared_ptr<OperatorLineage> lop,
-	                                      std::unordered_map<std::string, std::vector<std::string>>& columns_spec);
+	//static std::pair<int*, int> factorize(PhysicalOperator* op, shared_ptr<OperatorLineage> lop,
+	//                                      std::unordered_map<std::string, std::vector<std::string>>& columns_spec);
 
 	static void BindFunctions(EvalConfig& config, void* handle, PhysicalOperator* op,
 	                   std::unordered_map<idx_t, FadeDataPerNode>& fade_data);
+  static void* get_common_functions();
+  static std::pair<int*, int> factorize(PhysicalOperator* op, shared_ptr<OperatorLineage> lop,
+                                      std::unordered_map<std::string, std::vector<std::string>>& columns_spec);
 };
 
 } // namespace duckdb

@@ -1411,13 +1411,33 @@ string Fade::Whatif(PhysicalOperator *op, EvalConfig config) {
 	}
 
 	system("rm loop.cpp loop.so");
+  config.topk=10;
+	if (config.topk > 0) {
+	  start_time = std::chrono::steady_clock::now();
+		// rank final agg result
+		std::vector<int> topk_vec = rank(op, config, fade_data);
+		std::string result = std::accumulate(topk_vec.begin(), topk_vec.end(), std::string{},
+		                                     [](const std::string& a, int b) {
+			                                     return a.empty() ? std::to_string(b) : a + "," + std::to_string(b);
+		                                     });
+	end_time = std::chrono::steady_clock::now();
+	time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
+	double rank_time = time_span.count();
+		ReleaseFade(config, handle, op, fade_data);
+    std::cout <<  result  << std::endl;
+    return "select " + to_string(intervention_gen_time) + " as intervention_gen_time, "
+           + to_string(prep_time) + " as prep_time, "
+           + to_string(compile_time) + " as compile_time, "
+           + to_string(eval_time) + " as eval_time, "
+           + to_string(rank_time) + " as rank_time";
+  } else {
+    ReleaseFade(config, handle, op, fade_data);
 
-	ReleaseFade(config, handle, op, fade_data);
-
-	return "select " + to_string(intervention_gen_time) + " as intervention_gen_time, "
-	       + to_string(prep_time) + " as prep_time, "
-	       + to_string(compile_time) + " as compile_time, "
-	       + to_string(eval_time) + " as eval_time";
+    return "select " + to_string(intervention_gen_time) + " as intervention_gen_time, "
+           + to_string(prep_time) + " as prep_time, "
+           + to_string(compile_time) + " as compile_time, "
+           + to_string(eval_time) + " as eval_time";
+  }
 }
 
 } // namespace duckdb

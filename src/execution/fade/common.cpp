@@ -15,7 +15,13 @@
 
 namespace duckdb {
 
+int (*local_factorize)(std::string, duckdb::ChunkCollection&, idx_t, int*);
+int (*PruneLineageCompile)(duckdb::PhysicalOperator*, std::vector<int>&, std::vector<int>&, std::vector<int>&);
+int (*LineageReindex)(std::vector<int>&, std::vector<int>&, std::vector<int>&);
+std::pair<int*, int> (*augment)(int, std::pair<int*, int>, std::pair<int*, int>);
+
 string Fade::PrepareLineage(PhysicalOperator *op, bool prune, bool forward_lineage) {
+  Fade::get_common_functions();
 	// timing vars
 	std::chrono::steady_clock::time_point start_time, end_time;
 	std::chrono::duration<double> time_span;
@@ -448,9 +454,8 @@ void Fade::PruneLineage(PhysicalOperator* op, vector<int>& out_order) {
 			op->lineage_op->backward_lineage[0] = out_order;
 		} else if (op->type == PhysicalOperatorType::FILTER) {
 			vector<int> new_lineage(out_order.size());
-			for (int i=0; i < out_order.size(); ++i) {
-				new_lineage[i] = op->lineage_op->backward_lineage[0][out_order[i]];
-			}
+      vector<int>& old_lineage = op->lineage_op->backward_lineage[0];
+      LineageReindex(out_order, new_lineage, old_lineage);
 			//std::cout << op->id << " " << op->lineage_op->backward_lineage[0].size() / float(out_order.size())
 			// << " filter prune previous output size M= " << op->lineage_op->backward_lineage[0].size()
 			// << " new pruned: " << out_order.size() << std::endl;
@@ -462,9 +467,12 @@ void Fade::PruneLineage(PhysicalOperator* op, vector<int>& out_order) {
 		           || op->type == PhysicalOperatorType::CROSS_PRODUCT) {
 			for (int side=0; side < 2; ++side) {
 				vector<int> new_lineage(out_order.size());
-				for (int i=0; i < out_order.size(); ++i) {
-					new_lineage[i] = op->lineage_op->backward_lineage[side][out_order[i]];
-				}
+        vector<int>& old_lineage = op->lineage_op->backward_lineage[side];
+        LineageReindex(out_order, new_lineage, old_lineage);
+
+				//for (int i=0; i < out_order.size(); ++i) {
+				//	new_lineage[i] = op->lineage_op->backward_lineage[side][out_order[i]];
+				//}
 				// std::cout << op->id << " " << op->lineage_op->backward_lineage[side].size() / float(out_order.size())
 				// << " " << side << " join prune previous output size M= " << op->lineage_op->backward_lineage[side].size()
 				// << " new pruned: " << out_order.size() << std::endl;
@@ -489,24 +497,9 @@ void Fade::PruneLineage(PhysicalOperator* op, vector<int>& out_order) {
 			// This creates out_order to pass to the child. e.g. output only references 0 and 3 from child [1, 1, 1, 3]
 			// reindexes this lineage
 			vector<int>& lineage = op->lineage_op->backward_lineage[side];
-			vector<int>  lineage_inverse(lineage.size()); // [0, 0, 0, 1]
-			vector<int>  lineage_unique; // [1, 3]
-
-			std::map<int, int> new_order_map;
-			for (int i = 0; i < lineage.size(); ++i) {
-				if (new_order_map.find(lineage[i]) == new_order_map.end()) {
-					new_order_map[lineage[i]] = new_order_map.size();
-					lineage_unique.push_back(lineage[i]);
-				}
-				lineage_inverse[new_order_map[lineage[i]]];
-			}
-
-			//std::cout <<  op->lineage_op->backward_lineage[side].size()  / float(lineage_inverse.size())
-			// << " " << side << " join push down join output M=" << op->lineage_op->backward_lineage[side].size()
-			// << " unique= " << lineage_unique.size() << " inverse= " << lineage_inverse.size() << std::endl;
-			// update lineage
+      std::vector<int>  lineage_inverse(lineage.size()); // [0, 0, 0, 1]
+      PruneLineageCompile(op, lineage, lineage_inverse, new_order[side]);
 			op->lineage_op->backward_lineage[side] = std::move(lineage_inverse);
-			new_order[side] = lineage_unique;
 		}
 
 	} else if (op->type == PhysicalOperatorType::PROJECTION) {
@@ -756,49 +749,21 @@ void Fade::GroupByAlloc(EvalConfig& config, shared_ptr<OperatorLineage> lop,
 	}
 }
 
-template<class T>
-pair<int*, int> local_factorize(shared_ptr<OperatorLineage> lop, idx_t col_idx) {
-	std::unordered_map<T, int> dict;
-	idx_t chunk_count = lop->chunk_collection.ChunkCount();
-	idx_t row_count = lop->chunk_collection.Count();
-	int* codes = new int[row_count];
-  int count = 0;
-	for (idx_t chunk_idx=0; chunk_idx < chunk_count; ++chunk_idx) {
-		DataChunk &collection_chunk = lop->chunk_collection.GetChunk(chunk_idx);
-		for (idx_t i=0; i < collection_chunk.size(); ++i) {
-			T v = collection_chunk.GetValue(col_idx, i).GetValue<T>();
-			if (dict.find(v) == dict.end()) {
-				dict[v] = dict.size();
-			}
-			codes[count++] = dict[v];
-		}
-	}
-
-	return make_pair(codes, dict.size());
-}
-
-std::pair<int*, int> create_codes(LogicalType& typ, shared_ptr<OperatorLineage> lop, int i) {
-	if (typ == LogicalType::INTEGER) {
-		return local_factorize<int>(lop, i);
-	} else if (typ == LogicalType::BIGINT) {
-		return local_factorize<int64_t>(lop, i);
-	} else if (typ == LogicalType::VARCHAR) {
-		return local_factorize<string>(lop, i);
-	} else {
-		return local_factorize<float>(lop, i);
-	} 
+std::pair<int*, int> create_codes(duckdb::LogicalType& typ, shared_ptr<OperatorLineage> lop, int i) {
+	  idx_t row_count = lop->chunk_collection.Count();
+    int* codes = new int[row_count];
+    int n = 0;
+  	if (typ == LogicalType::INTEGER) {
+	    n = local_factorize("int", lop->chunk_collection, i, codes);
+    } else if (typ == LogicalType::BIGINT) {
+	    n = local_factorize("int64_t", lop->chunk_collection, i, codes);
+	  } else if (typ == LogicalType::VARCHAR) {
+	    n = local_factorize("string", lop->chunk_collection, i, codes);
+	  } else {
+	    n = local_factorize("float", lop->chunk_collection, i, codes);
+	  }
 	
-	return {nullptr, 0};
-}
-
-std::pair<int*, int> augment(int row_count, std::pair<int*, int> new_codes, std::pair<int*, int> old_codes) {
-  int factor = old_codes.second;
-  for (int i=0; i < row_count; ++i) {
-    new_codes.first[i] = new_codes.first[i]* factor + old_codes.first[i]; 
-  }
-
-  new_codes.second *= old_codes.second;
-  return new_codes;
+    return std::make_pair(codes, n);
 }
 
 std::pair<int*, int> Fade::factorize(PhysicalOperator* op, shared_ptr<OperatorLineage> lop,
@@ -850,6 +815,142 @@ std::pair<int*, int> Fade::factorize(PhysicalOperator* op, shared_ptr<OperatorLi
 	
 
 	return fade_data;
+}
+void* Fade::get_common_functions() {
+  string code =  R"(
+#include <iostream>
+#include <vector>
+#include <unordered_map>
+#include "duckdb.hpp"
+#include "duckdb/common/types/chunk_collection.hpp"
+
+extern "C" int local_factorize(std::string typ, duckdb::ChunkCollection &chunk_collection, idx_t col_idx, int* codes) {
+	idx_t chunk_count = chunk_collection.ChunkCount();
+	idx_t row_count = chunk_collection.Count();
+  int count = 0;
+	
+  if (typ == "int") {
+    std::unordered_map<int, int> dict;
+    for (idx_t chunk_idx=0; chunk_idx < chunk_count; ++chunk_idx) {
+      duckdb::DataChunk &collection_chunk = chunk_collection.GetChunk(chunk_idx);
+		  int* col = reinterpret_cast<int *>(collection_chunk.data[col_idx].GetData());
+      for (idx_t i=0; i < collection_chunk.size(); ++i) {
+        int v = col[i];
+        if (dict.find(v) == dict.end()) {
+          dict[v] = dict.size();
+        }
+        codes[count++] = dict[v];
+      }
+    }
+
+    return dict.size();
+  } else if (typ == "int64_t") {
+    std::unordered_map<int64_t, int> dict;
+    for (idx_t chunk_idx=0; chunk_idx < chunk_count; ++chunk_idx) {
+      duckdb::DataChunk &collection_chunk = chunk_collection.GetChunk(chunk_idx);
+		  int64_t* col = reinterpret_cast<int64_t *>(collection_chunk.data[col_idx].GetData());
+      for (idx_t i=0; i < collection_chunk.size(); ++i) {
+        int64_t v = col[i];
+        if (dict.find(v) == dict.end()) {
+          dict[v] = dict.size();
+        }
+        codes[count++] = dict[v];
+      }
+    }
+
+    return dict.size();
+  } else if (typ == "float") {
+    std::unordered_map<float, int> dict;
+    for (idx_t chunk_idx=0; chunk_idx < chunk_count; ++chunk_idx) {
+      duckdb::DataChunk &collection_chunk = chunk_collection.GetChunk(chunk_idx);
+		  float* col = reinterpret_cast<float *>(collection_chunk.data[col_idx].GetData());
+      for (idx_t i=0; i < collection_chunk.size(); ++i) {
+        float v = col[i];
+        if (dict.find(v) == dict.end()) {
+          dict[v] = dict.size();
+        }
+        codes[count++] = dict[v];
+      }
+    }
+
+    return dict.size();
+  } else {//if (typ == "string") {
+    std::unordered_map<std::string, int> dict;
+    for (idx_t chunk_idx=0; chunk_idx < chunk_count; ++chunk_idx) {
+      duckdb::DataChunk &collection_chunk = chunk_collection.GetChunk(chunk_idx);
+      for (idx_t i=0; i < collection_chunk.size(); ++i) {
+        std::string v = collection_chunk.GetValue(col_idx, i).GetValue<std::string>();
+        if (dict.find(v) == dict.end()) {
+          dict[v] = dict.size();
+        }
+        codes[count++] = dict[v];
+      }
+    }
+
+    return dict.size();
+  }
+}
+
+extern "C" std::pair<int*, int> augment(int row_count, std::pair<int*, int> new_codes, std::pair<int*, int> old_codes) {
+  int factor = old_codes.second;
+  for (int i=0; i < row_count; ++i) {
+    new_codes.first[i] = new_codes.first[i]* factor + old_codes.first[i]; 
+  }
+
+  new_codes.second *= old_codes.second;
+  return new_codes;
+}
+
+extern "C" int LineageReindex(std::vector<int>& out_order, std::vector<int>& new_lineage, std::vector<int>& old_lineage) {
+  for (int i=0; i < new_lineage.size(); ++i) {
+    new_lineage[i] = old_lineage[out_order[i]];
+  }
+
+  return 0;
+}
+
+extern "C" int PruneLineageCompile(duckdb::PhysicalOperator* op, std::vector<int>& lineage,
+    std::vector<int>& lineage_inverse, std::vector<int> &lineage_unique) {
+  std::map<int, int> new_order_map;
+  for (int i = 0; i < lineage.size(); ++i) {
+    if (new_order_map.find(lineage[i]) == new_order_map.end()) {
+      new_order_map[lineage[i]] = new_order_map.size();
+      lineage_unique.push_back(lineage[i]);
+    }
+    lineage_inverse[new_order_map[lineage[i]]];
+  }
+  
+  //std::cout <<  lineage.size()  << " " << lineage_unique.size() << " " << lineage_inverse.size() << " " <<  new_order_map.size() << std::endl;
+  return 0;
+}
+
+)";
+
+	// Write the loop code to a temporary file
+	std::ofstream file("common_fade.cpp");
+	file << code;
+	file.close();
+	const char* duckdb_lib_path = std::getenv("DUCKDB_LIB_PATH");
+	if (duckdb_lib_path == nullptr) {
+		// Handle error: environment variable not set
+		std::cout << "DUCKDB_LIB_PATH undefined"<< std::endl;
+		return nullptr;
+	} else {
+		std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
+		std::string build_command = "g++ -O3 -std=c++2a  -shared -fPIC common_fade.cpp -o common_fade.so -L"
+		                            + std::string(duckdb_lib_path) + " -lduckdb";
+		system(build_command.c_str());
+		void *handle = dlopen("./common_fade.so", RTLD_LAZY);
+		if (!handle) {
+			std::cerr << "Cannot Open Library: " << dlerror() << std::endl;
+		}
+  
+    local_factorize = (int(*)(std::string, duckdb::ChunkCollection&, idx_t, int*))dlsym(handle, "local_factorize");
+    PruneLineageCompile = (int(*)(duckdb::PhysicalOperator*, std::vector<int>&, std::vector<int>&, std::vector<int>&))dlsym(handle, "PruneLineageCompile");
+    LineageReindex = (int(*)(std::vector<int>&, std::vector<int>&, std::vector<int>&))dlsym(handle, "LineageReindex");
+    augment = (std::pair<int*, int>(*)(int, std::pair<int*, int>, std::pair<int*, int>))dlsym(handle, "augment");
+		return handle;
+	}
 }
 
 int* Fade::random_unique(shared_ptr<OperatorLineage> lop, idx_t distinct) {
@@ -917,6 +1018,66 @@ void Fade::BindFunctions(EvalConfig& config, void* handle, PhysicalOperator* op,
 		}
 	}
 }
+
+struct Compare {
+	bool operator()(const std::pair<float, int>& a, const std::pair<float, int>& b) {
+		return a.first == b.first ? a.second > b.second : a.first > b.first;
+	}
+};
+
+std::vector<int> Fade::rank(PhysicalOperator* op, EvalConfig& config, std::unordered_map<idx_t, FadeDataPerNode>& fade_data) {
+	// get agg index
+	//calculate minimize(sum(abs(output - new_agg_val[i])))
+	std::vector<std::pair<float, int>> sums;
+	FadeDataPerNode& info = fade_data[op->id];
+
+	for (auto &pair : fade_data[op->id].alloc_vars) {
+		if (!pair.second.empty()) {
+			if (fade_data[op->id].alloc_vars_types[pair.first] == "int") {
+				int* data_ptr = (int*)pair.second[0];
+				for (int j=0; j < info.n_interventions; j++) {
+					float sum = 0;
+					for (int i=0; i < info.n_groups; i++) {
+						int index = i * info.n_interventions + j;
+						sum +=  data_ptr[index];
+					}
+					sums.push_back(std::make_pair(sum, j));
+				}
+			} else {
+				float* data_ptr = (float*)pair.second[0];
+				for (int j=0; j < info.n_interventions; j++) {
+					float sum = 0;
+					for (int i=0; i < info.n_groups; i++) {
+						int index = i * info.n_interventions + j;
+						sum += data_ptr[index];
+					}
+					sums.push_back(std::make_pair(sum, j));
+				}
+			}
+			break;
+		}
+	}
+
+
+	std::priority_queue<std::pair<float, int>, std::vector<std::pair<float, int>>, Compare> pq;
+	for (const auto& pair : sums) {
+		pq.push(pair);
+		if (pq.size() > config.topk) {
+			pq.pop();
+		}
+	}
+
+	vector<int> topk_vec;
+	while (!pq.empty()) {
+		int col = pq.top().second;
+		float sum = pq.top().first;
+		topk_vec.push_back(col);
+		pq.pop();
+	}
+
+	return topk_vec;
+}
+
 
 
 } // namespace duckdb

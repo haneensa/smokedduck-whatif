@@ -68,7 +68,8 @@ print(sql)
 # Printing lineage that was captured from base query
 # 2. run the query with lineage capture
 start = time.time()
-out = con.execute(sql, capture_lineage='ksemimodule').df()
+#out = con.execute(sql, capture_lineage='ksemimodule').df()
+out = con.execute(sql, capture_lineage='lineageAll').df()
 end = time.time()
 print(out)
 ksemimodule_timing = end - start
@@ -76,7 +77,7 @@ ksemimodule_timing = end - start
 
 query_id = con.query_id
 print("=================", query_id, qid, use_duckdb, is_scalar, num_threads)
-forward_lineage = "true"
+forward_lineage = "false"
 if distinct == 1 and is_incremental == "true":
     forward_lineage = "true"
 
