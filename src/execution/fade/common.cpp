@@ -298,9 +298,9 @@ std::unordered_map<std::string, std::vector<std::string>>  Fade::parseSpec(EvalC
 		if (std::getline(tokenStream, table, '.')) {
 			if (std::getline(tokenStream, column)) {
 				// Convert column name to uppercase (optional)
-				for (char& c : column) {
-					c = std::tolower(c);
-				}
+				//for (char& c : column) {
+				//	c = std::tolower(c);
+				//}
 				// Add the table name and column to the dictionary
 				result[table].push_back(column);
 			}
@@ -451,14 +451,25 @@ void Fade::PruneLineage(PhysicalOperator* op, vector<int>& out_order) {
 			// std::cout <<  op->id << " " << op->lineage_op->backward_lineage[0].size() / float(out_order.size())
 			// << " scan prune previous output size M= " << op->lineage_op->backward_lineage[0].size()
 			// << " new pruned: " << out_order.size() << std::endl;
-			op->lineage_op->backward_lineage[0] = out_order;
+			vector<int> new_lineage(out_order.size());
+      vector<int>& old_lineage = op->lineage_op->backward_lineage[0];
+      LineageReindex(out_order, new_lineage, old_lineage);
+      std::cout << op->id << " table scan new lineage: " << std::endl;
+      for (int i=0; i < out_order.size(); i++)
+        std::cout << "\t -> " << i << " " << new_lineage[i];
+      std::cout << std::endl;
+			op->lineage_op->backward_lineage[0] = std::move(new_lineage);
 		} else if (op->type == PhysicalOperatorType::FILTER) {
 			vector<int> new_lineage(out_order.size());
       vector<int>& old_lineage = op->lineage_op->backward_lineage[0];
       LineageReindex(out_order, new_lineage, old_lineage);
-			//std::cout << op->id << " " << op->lineage_op->backward_lineage[0].size() / float(out_order.size())
-			// << " filter prune previous output size M= " << op->lineage_op->backward_lineage[0].size()
-			// << " new pruned: " << out_order.size() << std::endl;
+			std::cout << op->id << " " << op->lineage_op->backward_lineage[0].size() / float(out_order.size())
+			 << " filter prune previous output size M= " << op->lineage_op->backward_lineage[0].size()
+			 << " new pruned: " << out_order.size() << std::endl;
+      std::cout << "filter new lineage: " << std::endl;
+      for (int i=0; i < out_order.size(); i++)
+        std::cout << "\t -> " << i << " " << new_lineage[i];
+      std::cout << std::endl;
 			op->lineage_op->backward_lineage[0] = std::move(new_lineage);
 		} else if (op->type == PhysicalOperatorType::HASH_JOIN
 		           || op->type == PhysicalOperatorType::NESTED_LOOP_JOIN
@@ -469,10 +480,6 @@ void Fade::PruneLineage(PhysicalOperator* op, vector<int>& out_order) {
 				vector<int> new_lineage(out_order.size());
         vector<int>& old_lineage = op->lineage_op->backward_lineage[side];
         LineageReindex(out_order, new_lineage, old_lineage);
-
-				//for (int i=0; i < out_order.size(); ++i) {
-				//	new_lineage[i] = op->lineage_op->backward_lineage[side][out_order[i]];
-				//}
 				// std::cout << op->id << " " << op->lineage_op->backward_lineage[side].size() / float(out_order.size())
 				// << " " << side << " join prune previous output size M= " << op->lineage_op->backward_lineage[side].size()
 				// << " new pruned: " << out_order.size() << std::endl;
@@ -483,10 +490,14 @@ void Fade::PruneLineage(PhysicalOperator* op, vector<int>& out_order) {
 	}
 
 	if (op->type == PhysicalOperatorType::FILTER) {
-		for (int i=0; i < op->lineage_op->backward_lineage[0].size(); ++i) {
-			new_order[0].push_back(i);
+		int lineage_size =  op->lineage_op->backward_lineage[0].size();
+    vector<int> new_lineage(lineage_size);
+		for (int i=0; i < lineage_size; ++i) {
+			new_lineage[i] = i; // create 1:1 mapping
 		}
-		//std::cout << "filter push down M=" << new_order[0].size() << std::endl;
+    new_order[0] = std::move(op->lineage_op->backward_lineage[0]);
+    op->lineage_op->backward_lineage[0] = std::move(new_lineage);
+		std::cout << op->id << " filter push down new_order=" << new_order[0].size() << " old lineage: " << op->lineage_op->backward_lineage[0].size() << std::endl;
 	} else if (op->type == PhysicalOperatorType::HASH_JOIN
 	           || op->type == PhysicalOperatorType::NESTED_LOOP_JOIN
 	           || op->type == PhysicalOperatorType::BLOCKWISE_NL_JOIN
@@ -499,6 +510,9 @@ void Fade::PruneLineage(PhysicalOperator* op, vector<int>& out_order) {
 			vector<int>& lineage = op->lineage_op->backward_lineage[side];
       std::vector<int>  lineage_inverse(lineage.size()); // [0, 0, 0, 1]
       PruneLineageCompile(op, lineage, lineage_inverse, new_order[side]);
+		  //std::cout << op->id << " " << side << " join push down new_order=" << new_order[side].size() <<
+      //  " old lineage: " << op->lineage_op->backward_lineage[side].size() <<
+      // " inverse: " << lineage_inverse.size() <<  std::endl;
 			op->lineage_op->backward_lineage[side] = std::move(lineage_inverse);
 		}
 
@@ -716,6 +730,8 @@ void Fade::GroupByAlloc(EvalConfig& config, shared_ptr<OperatorLineage> lop,
 			if (config.use_duckdb == false) {
 				if (op->children[0]->lineage_op->chunk_collection.Types()[col_idx] == LogicalType::INTEGER) {
 					fade_data[op->id].input_data_map[i] = Fade::GetInputVals<int, int>(op, op->lineage_op, col_idx);
+        } else if (op->children[0]->lineage_op->chunk_collection.Types()[col_idx] == LogicalType::BIGINT) {
+					fade_data[op->id].input_data_map[i] = Fade::GetInputVals<int64_t, int>(op, op->lineage_op, col_idx);
 				} else if (op->children[0]->lineage_op->chunk_collection.Types()[col_idx] == LogicalType::FLOAT) {
 					fade_data[op->id].input_data_map[i] = Fade::GetInputVals<float, float>(op, op->lineage_op, col_idx);
 				} else if (op->children[0]->lineage_op->chunk_collection.Types()[col_idx] == LogicalType::DOUBLE) {
@@ -727,7 +743,9 @@ void Fade::GroupByAlloc(EvalConfig& config, shared_ptr<OperatorLineage> lop,
 
 			fade_data[op->id].alloc_vars[out_var].resize(config.num_worker);
 			for (int t=0; t < config.num_worker; ++t) {
-				if (op->children[0]->lineage_op->chunk_collection.Types()[col_idx] == LogicalType::INTEGER) {
+				if (op->children[0]->lineage_op->chunk_collection.Types()[col_idx] == LogicalType::INTEGER ||
+				    op->children[0]->lineage_op->chunk_collection.Types()[col_idx] == LogicalType::BIGINT
+            ) {
 					allocate_agg_output<int>("int", t, n_groups, n_interventions, out_var, op, fade_data);
 				} else if (op->children[0]->lineage_op->chunk_collection.Types()[col_idx] == LogicalType::FLOAT) {
 					allocate_agg_output<float>("float", t, n_groups, n_interventions, out_var, op, fade_data);
@@ -916,8 +934,9 @@ extern "C" int PruneLineageCompile(duckdb::PhysicalOperator* op, std::vector<int
     if (new_order_map.find(lineage[i]) == new_order_map.end()) {
       new_order_map[lineage[i]] = new_order_map.size();
       lineage_unique.push_back(lineage[i]);
+      //std::cout << "add new lineage: " << new_order_map[lineage[i]] << " " << lineage[i] << std::endl;
     }
-    lineage_inverse[new_order_map[lineage[i]]];
+    lineage_inverse[i] = new_order_map[lineage[i]];
   }
   
   //std::cout <<  lineage.size()  << " " << lineage_unique.size() << " " << lineage_inverse.size() << " " <<  new_order_map.size() << std::endl;
@@ -979,7 +998,12 @@ void Fade::BindFunctions(EvalConfig& config, void* handle, PhysicalOperator* op,
 		BindFunctions(config, handle, op->children[i].get(), fade_data);
 	}
 
-	if (op->type == PhysicalOperatorType::FILTER) {
+	if (op->type == PhysicalOperatorType::TABLE_SCAN) {
+		int row_count = op->lineage_op->backward_lineage[0].size();
+    if (fade_data[op->id].base_rows == row_count) return;
+		string fname = "filter_"+ to_string(op->id) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
+		fade_data[op->id].filter_fn = (int(*)(int, int*, void*, void*, std::set<int>&, std::set<int>&))dlsym(handle, fname.c_str());
+  } else if (op->type == PhysicalOperatorType::FILTER) {
 		if (config.prune) return;
 		//if (fade_data[op->id].n_masks > 0) {
 		string fname = "filter_"+ to_string(op->id) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);

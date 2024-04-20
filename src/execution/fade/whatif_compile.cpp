@@ -18,6 +18,8 @@ namespace duckdb {
 
 int (*random_fn)(int, int, float, int, void*, std::set<int>&, int, std::vector<__mmask16>&);
 int rand_count = 65535;
+bool use_preprep_tm = false;
+
 std::vector<__mmask16> base(rand_count);
 
 string fill_random_code(EvalConfig& config) {
@@ -98,9 +100,14 @@ void GenRandomWhatifIntervention(int thread_id, EvalConfig& config, PhysicalOper
 	if (op->type == PhysicalOperatorType::TABLE_SCAN) {
 		if (spec.find(op->lineage_op->table_name) == spec.end() && !spec.empty()) {
 			return;
-		}
+		} else if (!spec.empty()) {
+     // std::cout << "generate interventions " << op->lineage_op->table_name <<  " "
+      //  << spec[op->lineage_op->table_name][0] << std::endl;
+    }
 
 		idx_t row_count = op->lineage_op->log_index->table_size;
+	//	std::cout << "table scan cardinality " << row_count << " "  << op->lineage_op->backward_lineage[0].size() << std::endl;
+
 		if (config.prune)
 			row_count = op->lineage_op->backward_lineage[0].size();
 
@@ -254,11 +261,6 @@ duckdb::ChunkCollection &chunk_collection, std::set<int>& del_set) {
  // oss << "\tstd::cout << \"Specs: \" << row_count << \" \" << mask_size << \" \" << n_interventions << \" \" << n_masks << \" \" << start << \" \" << end << std::endl;";
 
 	oss << alloc_code;
-
-	if (!config.is_scalar) {
-		oss << "\t__m512i zeros_i = _mm512_setzero_si512();\n";
-		oss << "\t__m512 zeros = _mm512_setzero_ps();\n";
-	}
 
 	if (config.incremental && config.n_intervention == 1 && config.use_duckdb == false) {
 		// convert intervention array to annotation array where var[i]==1
@@ -460,6 +462,11 @@ string get_batch_agg_template(EvalConfig& config, int agg_count, string fn, stri
 		} else {
 			oss << "\t\t\t\t__mmask16 tmp_mask = ~var_0[i*n_masks+j];\n";
 		}
+    if (!config.is_scalar) {
+      oss << "\t__m512i zeros_i = _mm512_setzero_si512();\n";
+      oss << "\t__m512 zeros = _mm512_setzero_ps();\n";
+    }
+
 
 		if (config.is_scalar) {
 			oss << R"(
@@ -533,7 +540,7 @@ string get_batch_join_template(EvalConfig &config, PhysicalOperator *op,
       for (int j=0; j < n_masks; ++j) {
 )";
 		if ( fade_data[op->children[0]->id].n_masks > 0 && fade_data[op->children[1]->id].n_masks > 0) {
-			oss << R"(out[col+j] = lhs_var[lhs_col+j] & rhs_var[rhs_col+j];)";
+			oss << R"(out[col+j] = lhs_var[lhs_col+j] | rhs_var[rhs_col+j];)";
 		} else if (fade_data[op->children[0]->id].n_masks > 0) {
 			oss << R"(out[col+j] = lhs_var[lhs_col+j];)";
 		} else {
@@ -552,7 +559,7 @@ string get_batch_join_template(EvalConfig &config, PhysicalOperator *op,
 			oss << R"(
 		__m512i a = _mm512_stream_load_si512((__m512i*)&lhs_var[lhs_col+j]);
 		__m512i b = _mm512_stream_load_si512((__m512i*)&rhs_var[rhs_col+j]);
-		_mm512_store_si512((__m512i*)&out[col+j], _mm512_and_si512(a, b));
+		_mm512_store_si512((__m512i*)&out[col+j], _mm512_or_si512(a, b));
 )";
 		} else if (fade_data[op->children[0]->id].n_masks > 0) {
 			oss << R"(
@@ -1061,21 +1068,90 @@ void GenCodeAndAlloc(EvalConfig& config, string& code, PhysicalOperator* op,
 	// uniform: only allocate memory for the aggregate results
 	// random: allocate single intervention/selection vector per table with 0s/1s with prob
 	if (op->type == PhysicalOperatorType::TABLE_SCAN) {
+    string table_name  = op->lineage_op->table_name;
     fade_data[op->id].opid = op->id;
-		if (spec.find(op->lineage_op->table_name) == spec.end() && !spec.empty()) {
-      		std::cout << "skip this scan " << op->lineage_op->table_name <<std::endl;
+		if (spec.find(table_name) == spec.end() && !spec.empty()) {
+      if (config.debug)
+      		std::cout << "skip this scan " << table_name <<std::endl;
 			fade_data[op->id].n_interventions = 0;
 			fade_data[op->id].n_masks = 0;
 			return;
-		}
+		} else if (!spec.empty()) {
+      string col_spec = spec[table_name][0];
+      if (col_spec.substr(0, 3) == "npy") {
+        use_preprep_tm = true;
+        if (config.debug) std::cout << "Use Pre generated interventions" << std::endl;
+        // load interventions
+        FILE * fname = fopen((table_name + ".npy").c_str(), "r");
+        if (fname == nullptr) {
+          std::cerr << "Error: Unable to open file." << std::endl;
+          return;
+        }
+
+        std::stringstream ss(col_spec);
+        string prefix, rows_str, cols_str;
+        getline(ss, prefix, '_');
+        getline(ss, rows_str, '_');
+        getline(ss, cols_str, '_');
+
+        int rows = std::stoi(rows_str);
+        int cols = std::stoi(cols_str);
+        if (config.debug)
+          std::cout << table_name << " " << col_spec << " " << rows << " " << cols << std::endl;
+			  uint8_t* temp  = (uint8_t*)aligned_alloc(64, sizeof(uint8_t) * rows * cols);
+        size_t fbytes = fread(temp, sizeof(uint8_t), sizeof(uint8_t) * rows * cols,  fname);
+        if ( fbytes != sizeof(uint8_t) * rows * cols) {
+          fprintf(stderr, "read failed");
+           exit(EXIT_FAILURE);
+        }
+        int n_masks =  cols / 2;
+        int n_interventions = cols * 8;
+
+        fade_data[op->id].base_target_matrix = (__mmask16*)temp;
+		    fade_data[op->id].n_masks = n_masks;;
+		    fade_data[op->id].n_interventions = n_interventions;;
+			  int output_count = op->lineage_op->backward_lineage[0].size();
+        fade_data[op->id].base_rows = rows;
+        // 1. iterate over base_target matrix and check that there are bits set
+        if (config.debug) {
+          vector<int> nonzero_count(n_interventions);
+          std::cout << "n_masks: " << n_masks << " n_interventions: " << n_interventions << " rows: " << rows << std::endl;
+          for (int r=0; r < rows; r++) {
+            for (int c=0; c < n_masks; c++)
+            for (int k=0; k < 16; ++k) {
+              if (fade_data[op->id].base_target_matrix[r * n_masks + c] & (1 << k) )
+                nonzero_count[c*16+k]++;
+            }
+          }
+
+          for (int c=0; c < nonzero_count.size(); c++)
+            std::cout << c << " " << nonzero_count[c] << std::endl;
+        }
+        if (rows != output_count) {
+          fade_data[op->id].del_interventions = (__mmask16*)aligned_alloc(64, sizeof(__mmask16) * output_count * fade_data[op->id].n_masks);
+          if (config.debug)
+            std::cout << rows << " alloc del_interventions " << output_count << " " << fade_data[op->id].n_masks
+              << " " << fade_data[op->id].del_interventions << std::endl;
+				  code += FilterCodeAndAlloc(config, op, op->lineage_op, fade_data);
+        } else {
+          fade_data[op->id].del_interventions = fade_data[op->id].base_target_matrix;
+        }
+        // record number of rows, cols
+        fclose(fname);
+        return;
+      }
+    }
     
-    
-		std::cout << "check this scan " << op->lineage_op->table_name << std::endl;
+    if (config.debug)
+		  std::cout << "check this scan " << op->lineage_op->table_name << std::endl;
 		idx_t row_count = op->lineage_op->log_index->table_size;
 
 		if (config.prune) {
 			row_count = op->lineage_op->backward_lineage[0].size();
+      // todo: add a filter
 		}
+    
+    fade_data[op->id].base_rows = row_count;
 
 		idx_t n_masks = std::ceil(config.n_intervention / config.mask_size);
 		fade_data[op->id].n_interventions = config.n_intervention;
@@ -1086,12 +1162,16 @@ void GenCodeAndAlloc(EvalConfig& config, string& code, PhysicalOperator* op,
 		  }
 		} else {	// 2D
 			fade_data[op->id].del_interventions = (__mmask16*)aligned_alloc(64, sizeof(__mmask16) * row_count * n_masks);
-			std::cout << "alloc del_interventions " << row_count << " " << n_masks
-				<< " " << fade_data[op->id].del_interventions << std::endl;
+      if (config.debug)
+        std::cout << "alloc del_interventions " << row_count << " " << n_masks
+          << " " << fade_data[op->id].del_interventions << std::endl;
 		}
 		fade_data[op->id].n_masks = n_masks;
 	} else if (op->type == PhysicalOperatorType::FILTER) {
-    fade_data[op->id].opid = op->id;
+    if (config.prune)
+      fade_data[op->id].opid = fade_data[op->children[0]->id].opid;
+    else
+      fade_data[op->id].opid = op->id;
 
 		fade_data[op->id].n_masks = fade_data[op->children[0]->id].n_masks;
 		fade_data[op->id].n_interventions = fade_data[op->children[0]->id].n_interventions;
@@ -1219,7 +1299,15 @@ void Intervention2DEval(int thread_id, EvalConfig& config, void* handle, Physica
 		Intervention2DEval(thread_id, config, handle, op->children[i].get(), fade_data);
 	}
     
-	if (op->type == PhysicalOperatorType::FILTER) {
+	if (op->type == PhysicalOperatorType::TABLE_SCAN) {
+		int row_count = op->lineage_op->backward_lineage[0].size();
+    if (fade_data[op->id].base_rows == row_count || !fade_data[op->id].filter_fn) return;
+    int result = fade_data[op->id].filter_fn(thread_id, op->lineage_op->backward_lineage[0].data(),
+                                             fade_data[op->id].base_target_matrix,
+                                             fade_data[op->id].del_interventions,
+                                             fade_data[op->id].del_set,
+                                             fade_data[op->id].del_set);
+  } else if (op->type == PhysicalOperatorType::FILTER) {
 		if (config.prune) return;
 		if (fade_data[op->id].n_masks > 0 || fade_data[op->id].n_interventions == 1) {
 			idx_t row_count = op->lineage_op->backward_lineage[0].size();
@@ -1259,8 +1347,8 @@ void Intervention2DEval(int thread_id, EvalConfig& config, void* handle, Physica
        //   << fade_data[op->id].forward_lineage[1].size() << std::endl;
 				int result = fade_data[op->id].join_fn_forward(thread_id, op->lineage_op->forward_lineage_list[0],
 				                                       op->lineage_op->forward_lineage_list[1],
-				                                       fade_data[op->children[0]->id].single_del_interventions,
-				                                       fade_data[op->children[1]->id].single_del_interventions,
+				                                       fade_data[lhs_opid].single_del_interventions,
+				                                       fade_data[rhs_opid].single_del_interventions,
 				                                       fade_data[op->id].single_del_interventions,
 				                                       fade_data[lhs_opid].del_set,
 				                                       fade_data[rhs_opid].del_set,
@@ -1269,29 +1357,84 @@ void Intervention2DEval(int thread_id, EvalConfig& config, void* handle, Physica
 			} else if (config.n_intervention == 1 && config.incremental == false) {
 				int result = fade_data[op->id].join_fn(thread_id, op->lineage_op->backward_lineage[0].data(),
 				                                       op->lineage_op->backward_lineage[1].data(),
-				                                       fade_data[op->children[0]->id].single_del_interventions,
-				                                       fade_data[op->children[1]->id].single_del_interventions,
+				                                       fade_data[lhs_opid].single_del_interventions,
+				                                       fade_data[rhs_opid].single_del_interventions,
 				                                       fade_data[op->id].single_del_interventions,
-					                                   fade_data[op->children[0]->id].del_set,
-					                                   fade_data[op->children[1]->id].del_set,
+					                                   fade_data[lhs_opid].del_set,
+					                                   fade_data[rhs_opid].del_set,
 					                                   fade_data[op->id].del_set);
 			} else {
+        if (config.debug) {
+          int rows = op->children[0]->lineage_op->backward_lineage[0].size();
+          int n_masks = fade_data[op->id].n_masks;
+            vector<int> nonzero_count(n_masks * 16);
+            std::cout << op->id << " join summary " << rows << std::endl;
+            for (int r=0; r < rows; r++) {
+              for (int c=0; c < n_masks; c++)
+              for (int k=0; k < 16; ++k) {
+                if (fade_data[op->children[0]->id].del_interventions[r * n_masks + c] & (1 << k) )
+                  nonzero_count[c*16+k]++;
+              }
+            }
+
+            std::cout << op->id << " before join : " << std::endl;
+            for (int c=0; c < nonzero_count.size(); c++)
+              std::cout << "\t " << c << "  -> " << nonzero_count[c] << " ; ";
+            std::cout << std::endl;
+        }
 				int result = fade_data[op->id].join_fn(thread_id, op->lineage_op->backward_lineage[0].data(),
-				                                       op->lineage_op->backward_lineage[1].data(), fade_data[op->children[0]->id].del_interventions,
-				                                       fade_data[op->children[1]->id].del_interventions, fade_data[op->id].del_interventions,
-				                                       fade_data[op->children[0]->id].del_set,
-				                                       fade_data[op->children[1]->id].del_set,
+				                                       op->lineage_op->backward_lineage[1].data(),
+                                               fade_data[lhs_opid].del_interventions,
+				                                       fade_data[rhs_opid].del_interventions, fade_data[op->id].del_interventions,
+				                                       fade_data[lhs_opid].del_set,
+				                                       fade_data[rhs_opid].del_set,
 				                                       fade_data[op->id].del_set);
-			}
+        if (config.debug) {
+          int rows = op->lineage_op->backward_lineage[0].size();
+          int n_masks = fade_data[op->id].n_masks;
+            vector<int> nonzero_count(n_masks * 16);
+            for (int r=0; r < rows; r++) {
+              for (int c=0; c < n_masks; c++)
+              for (int k=0; k < 16; ++k) {
+                if (fade_data[op->id].del_interventions[r * n_masks + c] & (1 << k) )
+                  nonzero_count[c*16+k]++;
+              }
+            }
+
+            std::cout << op->id << " after join : " << std::endl;
+            for (int c=0; c < nonzero_count.size(); c++)
+              std::cout << "\t " << c << "  -> " << nonzero_count[c] << " ; ";
+            std::cout << std::endl;
+        }
+      }
 		}
 	} else if (op->type == PhysicalOperatorType::HASH_GROUP_BY
 	           || op->type == PhysicalOperatorType::PERFECT_HASH_GROUP_BY
 	           || op->type == PhysicalOperatorType::UNGROUPED_AGGREGATE) {
+    int opid = fade_data[op->children[0]->id].opid;
 		if (config.n_intervention == 1) {
 			HashAggregateIntervene2DEval(thread_id, config, op->lineage_op, fade_data, op, handle,
-			                             fade_data[op->id].single_del_interventions);
+			                             fade_data[opid].single_del_interventions);
 		} else {
-			HashAggregateIntervene2DEval(thread_id, config, op->lineage_op, fade_data, op, handle,  fade_data[op->id].del_interventions);
+      if (config.debug) {
+          std::cout << op->id << " agg " << op->lineage_op->forward_lineage[0].size() << " " << opid << std::endl;
+          int rows = op->lineage_op->forward_lineage[0].size();
+          int n_masks = fade_data[opid].n_masks;
+            vector<int> nonzero_count(n_masks * 16);
+            for (int r=0; r < rows; r++) {
+              for (int c=0; c < n_masks; c++)
+              for (int k=0; k < 16; ++k) {
+                if (fade_data[opid].del_interventions[r * n_masks + c] & (1 << k) )
+                  nonzero_count[c*16+k]++;
+              }
+            }
+
+            std::cout << op->id << " agg : " << std::endl;
+            for (int c=0; c < nonzero_count.size(); c++)
+              std::cout << "\t " << c << "  -> " << nonzero_count[c] << " ; ";
+            std::cout << std::endl;
+      }
+			HashAggregateIntervene2DEval(thread_id, config, op->lineage_op, fade_data, op, handle,  fade_data[opid].del_interventions);
 		}
 	} else if (op->type == PhysicalOperatorType::PROJECTION) {
 //		fade_data[op->id].del_set = fade_data[op->children[0]->id].del_set;
@@ -1365,26 +1508,29 @@ string Fade::Whatif(PhysicalOperator *op, EvalConfig config) {
 	if (handle == nullptr) return "select 0";
 
 
-	string fname = "fill_random";
-  random_fn = (int(*)(int, int, float, int, void*, std::set<int>&, int, std::vector<__mmask16>&))dlsym(handle, fname.c_str());
-	// 3. Prepare base interventions; should be one time cost per DB
-	std::vector<std::thread> workers_random;
-	start_time = std::chrono::steady_clock::now();
-	// using leaf lineage can reduce this to only the tuples used by the final output
-  if (config.num_worker > 1) {
-		for (int i = 0; i < config.num_worker; ++i) {
-			workers_random.emplace_back(GenRandomWhatifIntervention, i, std::ref(config), op, std::ref(fade_data), handle, std::ref(columns_spec));
-		}
-		// Wait for all tasks to complete
-		for (std::thread& worker : workers_random) {
-			worker.join();
-		}
-	} else {
-		GenRandomWhatifIntervention(0, config, op, fade_data, handle, columns_spec);
-	}
-	end_time = std::chrono::steady_clock::now();
-	time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
-	double intervention_gen_time = time_span.count();
+  double intervention_gen_time = 0;
+  if (!use_preprep_tm) {
+    string fname = "fill_random";
+    random_fn = (int(*)(int, int, float, int, void*, std::set<int>&, int, std::vector<__mmask16>&))dlsym(handle, fname.c_str());
+    // 3. Prepare base interventions; should be one time cost per DB
+    std::vector<std::thread> workers_random;
+    start_time = std::chrono::steady_clock::now();
+    // using leaf lineage can reduce this to only the tuples used by the final output
+    if (config.num_worker > 1) {
+      for (int i = 0; i < config.num_worker; ++i) {
+        workers_random.emplace_back(GenRandomWhatifIntervention, i, std::ref(config), op, std::ref(fade_data), handle, std::ref(columns_spec));
+      }
+      // Wait for all tasks to complete
+      for (std::thread& worker : workers_random) {
+        worker.join();
+      }
+    } else {
+      GenRandomWhatifIntervention(0, config, op, fade_data, handle, columns_spec);
+    }
+    end_time = std::chrono::steady_clock::now();
+    time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
+    intervention_gen_time = time_span.count();
+  }
 
 	BindFunctions(config, handle,  op, fade_data);
 

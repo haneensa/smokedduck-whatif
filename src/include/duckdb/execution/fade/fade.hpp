@@ -30,6 +30,8 @@ struct FadeDataPerNode {
 	// single_del_intervention.size() == input table size
 	// bits: del or not
 	__mmask16* del_interventions;
+	__mmask16* base_target_matrix;
+  int base_rows;
 	int8_t* single_del_interventions;
 	// this should be per attribute
 	// unordered_map<string, vector<idx_t>>

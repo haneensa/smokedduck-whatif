@@ -2,7 +2,7 @@ import time
 import pandas as pd
 import smokedduck
 
-con = smokedduck.connect()
+con = smokedduck.connect('nested2.db')
 con.execute(f'CALL dbgen(sf=20);')
 con.execute('pragma threads=1')
 tables = con.execute(f'pragma show_tables').df()
@@ -38,7 +38,7 @@ use_duckdb = 'true'
 num_threads = '8'
 is_scalar = 'false'
 batch = '1'
-debug = 'true'
+debug = 'false'
 prune = 'true'
 prob = '0.1'
 itype = 'DENSE_DELETE'
@@ -49,3 +49,13 @@ distinct = '64'
 q = f"pragma WhatIf({query_id}, '{itype}', '{spec}', {distinct}, {batch}, {is_scalar}, {use_duckdb}, {num_threads}, {debug}, {prune}, {is_incremental}, {prob});"
 timings = con.execute(q).fetchdf()
 print(timings)
+
+def clear(c):
+    tables = c.execute("PRAGMA show_tables").fetchdf()
+    for index, row in tables.iterrows():
+        if row["name"][:7] == "LINEAGE":
+            print("drop", row["name"])
+            c.execute("DROP TABLE "+row["name"])
+    c.execute("PRAGMA clear_lineage")
+
+clear(con)

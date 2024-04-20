@@ -75,9 +75,10 @@ best_data_all = con.execute(f"""select sf, prob, t1.prune_label, t1.query, t1.ca
 from ( select * from dense_fade where num_threads=8 and is_scalar='False' and prune='True') as t1 JOIN
      ( select * from dense_fade where incremental='False' and n=1 and num_threads=1 and is_scalar='True' and sf=1 and prune='True') as base
      USING (sf, qid, prob) """).df()
-print("======== DENSE best =============")
+print("--->======== DENSE best =============")
 cat = 'n'
 best_data  = con.execute(f"select * from best_data_all where prob={prob}").df()
+print(con.execute("select * from best_data order by n, query").df())
 p = ggplot(best_data, aes(x='query',  y="eval_time_ms", color=cat, fill=cat, group=cat))
 p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.6), width=0.5)
 p += axis_labels('Query', "Latency (ms, log)", "discrete", "log10")

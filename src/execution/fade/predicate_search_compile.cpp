@@ -371,12 +371,42 @@ void GenInterventionPredicate(EvalConfig& config, PhysicalOperator* op,
 	}
 
 	if (op->type == PhysicalOperatorType::TABLE_SCAN) {
-		if (columns_spec.find(op->lineage_op->table_name) == columns_spec.end()) {
+    string table_name = op->lineage_op->table_name;
+		if (columns_spec.find(table_name) == columns_spec.end()) {
 			return;
 		}
 
-		if (config.n_intervention == 0) {
+    string col_spec = columns_spec[table_name][0];
+    if (col_spec.substr(0, 3) == "npy") {
+        if (config.debug) std::cout << "Use Pre generated interventions" << std::endl;
+        FILE * fname = fopen((table_name + ".npy").c_str(), "r");
+        if (fname == nullptr) {
+          std::cerr << "Error: Unable to open file." << std::endl;
+          return;
+        }
+        
+        std::stringstream ss(col_spec);
+        string prefix, rows_str, cols_str;
+        getline(ss, prefix, '_');
+        getline(ss, rows_str, '_');
+        getline(ss, cols_str, '_');
+
+        int rows = std::stoi(rows_str);
+        int cols = std::stoi(cols_str);
+        if (config.debug)
+          std::cout << table_name << " " << col_spec << " " << rows << " " << cols << std::endl;
+		    int* temp = new int[rows];
+        size_t fbytes = fread(temp, sizeof(int), rows ,  fname);
+        if ( fbytes != rows) {
+          fprintf(stderr, "read failed");
+          exit(EXIT_FAILURE);
+        }
+			  fade_data[op->id].annotations = temp;
+
+			  fade_data[op->id].n_interventions = cols;
+    } else if (config.n_intervention == 0) {
 			// factorize need access to base table
+      // TODO: check if we need to load from file
 			std::pair<int*, idx_t> res = Fade::factorize(op, op->lineage_op, columns_spec);
       std::cout << " annotations: " << res.second << std::endl;
 			fade_data[op->id].annotations = res.first;
@@ -544,7 +574,6 @@ void BindFunctionsPredicate(EvalConfig config, void* handle, PhysicalOperator* o
 }
 
 string Fade::PredicateSearch(PhysicalOperator *op, EvalConfig config) {
-  //Fade::get_common_functions();
   std::cout << "Predicate Search" << std::endl;
 	// timing vars
 	std::chrono::steady_clock::time_point start_time, end_time;
@@ -588,7 +617,6 @@ string Fade::PredicateSearch(PhysicalOperator *op, EvalConfig config) {
 	
 	BindFunctionsPredicate(config, handle,  op, fade_data);
 
-  std::cout << "start intervention:" << std::endl;
 	std::vector<std::thread> workers;
 
 	start_time = std::chrono::steady_clock::now();
@@ -613,6 +641,7 @@ string Fade::PredicateSearch(PhysicalOperator *op, EvalConfig config) {
 	system("rm loop.cpp loop.so");
 
 
+  config.topk=10;
 	if (config.topk > 0) {
 		// rank final agg result
 		std::vector<int> topk_vec = rank(op, config, fade_data);
@@ -621,7 +650,12 @@ string Fade::PredicateSearch(PhysicalOperator *op, EvalConfig config) {
 			                                     return a.empty() ? std::to_string(b) : a + "," + std::to_string(b);
 		                                     });
 		ReleaseFade(config, handle, op, fade_data);
-		return "select '" + result + "'";
+    std::cout << result << std::endl;
+		// return "select '" + result + "'";
+		return "select " + to_string(gen_time) + " as intervention_gen_time, "
+				   + to_string(prep_time) + " as prep_time, "
+				   + to_string(compile_time) + " as compile_time, "
+				   + to_string(eval_time) + " as eval_time";
 	} else {
 	  ReleaseFade(config, handle, op, fade_data);
 		return "select " + to_string(gen_time) + " as intervention_gen_time, "
