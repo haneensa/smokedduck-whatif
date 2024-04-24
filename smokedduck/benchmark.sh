@@ -11,15 +11,15 @@ sf_values=("1") # "5" "10") # "10")  # "0.2" "0.4") # "5.0" "10.0") # (# "3.0" "
 # ADD 64, 256
 distinct=("1") # "64" "256" "512" "1024" "2048")
 threads_num=("1") # "2" "4" "8")
-prune_binary=("true" "false") #"true" "false")
-is_scalar_binary=("false") #"true" "false")
-csv="scale_random_vary_probs_april22.csv"  #"dense_delete_q1_till_512__april11.csv"
+prune_binary=("true") #"false" "true") # "false") #"true" "false")
+is_scalar_binary=("true") #"true" "false")
+csv="lineage_size.csv" #"scale_random_vary_probs_april22.csv"  #"dense_delete_q1_till_512__april11.csv"
 debug="false"
-itype_list=("SCALE_RANDOM") # evaluate scaling some tuples of an attribute
-#itype_list=("DENSE_DELETE")
+#itype_list=("SCALE_RANDOM") # evaluate scaling some tuples of an attribute
+itype_list=("DENSE_DELETE")
 #itype_list=("SEARCH")
 # if search then include incremental or not
-prob_list=("0.001"  "0.002" "0.005" "0.01" "0.02" "0.05" "0.1" "0.2" "0.3" "0.4" "0.5")
+prob_list=("0.001") #  "0.002" "0.005" "0.01" "0.02" "0.05" "0.1" "0.2" "0.3" "0.4" "0.5")
 spec='""'
 #spec='lineitem.i'
 #gen='--gen_distinct True'
@@ -27,7 +27,7 @@ batch="4"
 use_duckdb="true"
 touch ${csv}
 # add prob, itype, incremental
-echo sf,qid,itype,prob,incremental,use_duckdb,is_scalar,prune,num_threads,distinct,batch,post_time,gen_time,prep_time,compile_time,eval_time,prune_time,lineage_time,ksemimodule_timing,spec > ${csv}
+echo sf,qid,itype,prob,incremental,use_duckdb,is_scalar,prune,num_threads,distinct,batch,post_time,gen_time,prep_time,compile_time,eval_time,prune_time,lineage_time,ksemimodule_timing,spec,lineage_count,lineage_count_prune,lineage_size_mb,lineage_size_mb_prune > ${csv}
 
 capture_lineage_overhead="false"
 if [ "$capture_lineage_overhead" = "true" ]; then

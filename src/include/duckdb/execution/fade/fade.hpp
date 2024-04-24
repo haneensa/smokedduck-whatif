@@ -86,6 +86,7 @@ public:
 	static void allocate_agg_output(string typ, int t, int n_groups, int n_interventions, string out_var, PhysicalOperator* op,
 	                         std::unordered_map<idx_t, FadeDataPerNode>& fade_data);
 
+  static int LineageMemory(PhysicalOperator* op);
 	static string PrepareLineage(PhysicalOperator *op, bool prune, bool forward_lineage);
   static std::vector<int> rank(PhysicalOperator* op, EvalConfig& config, std::unordered_map<idx_t, FadeDataPerNode>& fade_data);
 

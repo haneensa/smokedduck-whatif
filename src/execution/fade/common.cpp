@@ -40,6 +40,8 @@ string Fade::PrepareLineage(PhysicalOperator *op, bool prune, bool forward_linea
 	time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
 	double lineage_time = time_span.count();
 
+  int lineage_count = LineageMemory(op);
+  float lineage_size_mb = sizeof(int) * (lineage_count / (1024.0*1024.0));
 	// 3 Prune
 	double prune_time = 0;
 	if (prune) {
@@ -62,12 +64,19 @@ string Fade::PrepareLineage(PhysicalOperator *op, bool prune, bool forward_linea
 		forward_lineage_time = time_span.count();
 	}
 
+  std::cout << "after prune:" << std::endl;
+  int lineage_count_prune = LineageMemory(op);
+  float lineage_size_mb_prune = sizeof(int) * (lineage_count_prune / (1024.0*1024.0));
 
 
 	return "select " + to_string(post_processing_time) + " as post_processing_time, "
 	       + to_string(lineage_time) + " as lineage_time, "
 	       + to_string(prune_time) + " as prune_time, "
-	       + to_string(forward_lineage_time) + " as forward_lineage_time";
+	       + to_string(forward_lineage_time) + " as forward_lineage_time, "
+         + to_string(lineage_count) + " as lineage_count, "
+         + to_string(lineage_count_prune) + " as lineage_count_prune, "
+         + to_string(lineage_size_mb) + " as lineage_size_mb, "
+         + to_string(lineage_size_mb_prune) + " as lineage_size_mb_prune";
 }
 
 void Fade::FillForwardLineage(PhysicalOperator* op, bool prune) {
@@ -621,9 +630,26 @@ void Fade::PrintOutput(FadeDataPerNode& info, T* data_ptr) {
 }
 
 
+int Fade::LineageMemory(PhysicalOperator* op) {
+
+  int total_size = 0;
+  if (op->lineage_op) {
+    int backward_size = op->lineage_op->backward_lineage[0].size();
+    int forward_size = op->lineage_op->forward_lineage[0].size();
+
+    std::cout << op->id << " LineageMemory: " << backward_size << " " << forward_size << std::endl;
+    total_size = backward_size + forward_size;
+  }
+
+  for (idx_t i = 0; i < op->children.size(); i++) {
+		int desc_size = LineageMemory(op->children[i].get());
+    total_size += desc_size;
+	}
+  return total_size;
+}
+
 void Fade::ReleaseFade(EvalConfig& config, void* handle, PhysicalOperator* op,
                  std::unordered_map<idx_t, FadeDataPerNode>& fade_data) {
-
 	if (op->type != PhysicalOperatorType::PROJECTION &&
 	    !(op->type == PhysicalOperatorType::FILTER && config.prune) &&
 	    !(op->type == PhysicalOperatorType::TABLE_SCAN && config.prune)) {

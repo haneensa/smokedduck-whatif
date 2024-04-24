@@ -95,7 +95,10 @@ if spec == '""':
 res = [args.sf, i, itype, prob, is_incremental, use_duckdb, is_scalar, prune, num_threads, distinct, batch,
         pp_timings["post_processing_time"][0], timings["intervention_gen_time"][0],
         timings["prep_time"][0], timings["compile_time"][0], timings["eval_time"][0],
-        pp_timings["prune_time"][0], pp_timings["lineage_time"][0], ksemimodule_timing, spec]
+        pp_timings["prune_time"][0], pp_timings["lineage_time"][0], ksemimodule_timing, spec,
+        pp_timings["lineage_count"][0], pp_timings["lineage_count_prune"][0],
+        pp_timings["lineage_size_mb"][0], pp_timings["lineage_size_mb_prune"][0]
+        ]
 print(res)
 
 filename=args.csv
