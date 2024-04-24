@@ -30,7 +30,7 @@ con.execute(f'CALL dbgen(sf={args.sf});')
 if (args.gen_distinct):
     # TODO: FOR ALL TABLES
     table='lineitem'
-    for distinct in [2, 512]: # , 1024, 2048, 2560]:
+    for distinct in [64]: # , 1024, 2048, 2560]:
         print("gen ", distinct)
         augment_intervention_attr(con, table, distinct)
 

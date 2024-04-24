@@ -1,35 +1,10 @@
 import duckdb
 import pandas as pd
 from pygg import *
+from utils import get_data
+from utils import legend, legend_bottom, legend_side
 
 pd.set_option('display.max_rows', None)
-
-legend = theme_bw() + theme(**{
-    "legend.background": element_blank(), #element_rect(fill=esc("#f7f7f7")),
-    "legend.justification":"c(1,0)",
-    "legend.position":"c(1,0)",
-    "legend.key" : element_blank(),
-    "legend.title":element_blank(),
-    "text": element_text(colour = "'#333333'", size=8, family = "'Arial'"),
-    "axis.text": element_text(colour = "'#333333'", size=8),
-    "plot.background": element_blank(),
-    "panel.border": element_rect(color=esc("#e0e0e0")),
-    "strip.background": element_rect(fill=esc("#efefef"), color=esc("#e0e0e0")),
-    "strip.text": element_text(color=esc("#333333")),
-    "legend.position": esc('none'),
-    "legend.margin": margin(t = 0, r = 0, b = 0, l = 0, unit = esc("pt")),
-    "legend.text": element_text(colour = "'#333333'", size=9, family = "'Arial'"),
-    "legend.key.size": unit(8, esc('pt')),
-})
-
-legend_bottom = legend + theme(**{
-  "legend.position":esc("bottom"),
-  "legend.spacing": "unit(-.5, 'cm')"
-})
-
-legend_side = legend + theme(**{
-  "legend.position":esc("right"),
-})
 
 dbt_prob = 0.1
 con = duckdb.connect(':default:')
@@ -40,43 +15,41 @@ dense = True
 single = True
 plot_scale = False
 include_incremental_random = True
-
-def get_data(fname, scale):
-    local_data = pd.read_csv(fname)
-    local_data["eval_time_ms"] = scale * local_data["eval_time"]
-    local_data["query"] = "Q"+ local_data["qid"].astype(str)
-    local_data["cat"] = local_data.apply(lambda row: str(row["num_threads"]) + "W", axis=1)
-    local_data["cat"] = local_data.apply(lambda row: row["cat"] + "+SIMD" if row["is_scalar"] == False else row["cat"] , axis=1)
-    local_data["n"] = local_data["distinct"]
-    local_data["sf_label"] = "SF="+ local_data["sf"].astype(str)
-    local_data["prune_label"] = local_data.apply(lambda row:"FaDE-Prune" if row["prune"] else "FaDE" , axis=1)
-    return local_data
+postfix = """
+data$query = factor(data$query, levels=c('Q1', 'Q3', 'Q5', 'Q7', 'Q9', 'Q10', 'Q12'))
+"""
     
 if True:
     # fade using incremental data processing with sparse intervention representation
-    incremental_data = get_data("fade_data/single_incremental_random_sparse.csv", 1000)
-    #incremental_data = get_data("sparse_incremental_test_v2.csv", 1000)
-    incremental_data = con.execute("select * from incremental_data where incremental='true'").df()
     #single_data_all = get_data("single_fade_april6.csv", 1000)
-    single_data_all = get_data("fade_data/dense_single_vary_probs_april7.csv", 1000)
+    #single_data_all = get_data("fade_data/dense_single_vary_probs_april7.csv", 1000)
+    single_data_all = get_data(f"fade_data/single_dense_vary_probs_nofilterOnprune.csv", 1000)
+    #dbt_data = get_data("fade_data/dbtoast_delete_april21.csv", 1)
     dbt_data = get_data("fade_data/dbtoast.csv", 1)
     dbt_data["cat"] = dbt_data.apply(lambda row: "DBT_prune" if row["prune"] else "DBT", axis=1)
 
-    cat = "prob"
-    p = ggplot(dbt_data, aes(x='query',  y="eval_time_ms", color=cat, fill=cat, group=cat))
-    p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.9), width=0.88)
-    p += axis_labels('Query', "Run time (ms)", "discrete", "log10")
+    cat = "query"
+    p = ggplot(dbt_data, aes(x='prob',  y="eval_time_ms", color=cat, fill=cat, group=cat))
+    p += geom_line(stat=esc('identity')) + geom_point(stat=esc('identity'))
+    p += axis_labels('Prob', "Run time (ms)", "continuous", "log10")
     p += legend_bottom
-    p += facet_grid(".~prune", scales=esc("free_y"))
-    ggsave("figures/dbt.png", p,width=10, height=8, scale=0.8)
+    p += facet_grid(".~prune~num_threads~itype", scales=esc("free_y"))
+    ggsave("figures/dbt.png", p, postfix=postfix,width=10, height=8, scale=0.8)
 
     # TODO: run fade dense again for all probs
     #data = pd.read_csv('dense_delete_all_sf1.csv')
     #dense_data = get_data('fade_data/dense_all_sf1_v2.csv', 1000)
-    dense_data = get_data('fade_data/dense_sf1_v4.csv', 1000)
+    #dense_data = get_data('fade_data/dense_sf1_v4.csv', 1000)
+    dense_data = get_data(f"fade_data/batch_dense_0.1_nofilterOnprune.csv", 1000)
     dense_data["cat"] = dense_data.apply(lambda row: str(row["num_threads"]) + "W", axis=1)
     dense_data["cat"] = dense_data.apply(lambda row: row["cat"] + "+SIMD" if row["is_scalar"] == False else row["cat"] , axis=1)
     dense_data["cat"] = dense_data.apply(lambda row: row["itype"]+" ^"+row["cat"] if row["incremental"] and row["itype"] == "S" else row["itype"] + row["cat"], axis=1)
+    
+    provsql_data = [{'qid': 1, 'with_prov': False, 'expid': 0, 'time_ms': 3927.064}, {'qid': 3, 'with_prov': False, 'expid': 1, 'time_ms': 476.422}, {'qid': 5, 'with_prov': False, 'expid': 2, 'time_ms': 1234.733}, {'qid': 7, 'with_prov': False, 'expid': 3, 'time_ms': 892.848}, {'qid': 9, 'with_prov': False, 'expid': 4, 'time_ms': 1315.129}, {'qid': 10, 'with_prov': False, 'expid': 5, 'time_ms': 1389.753}, {'qid': 12, 'with_prov': False, 'expid': 6, 'time_ms': 501.138}, {'qid': 3, 'with_prov': True, 'expid': 8, 'time_ms': 5544.203}, {'qid': 5, 'with_prov': True, 'expid': 9, 'time_ms': 1624.657}, {'qid': 7, 'with_prov': True, 'expid': 10, 'time_ms': 1334.478}, {'qid': 9, 'with_prov': True, 'expid': 11, 'time_ms': 68457.627}, {'qid': 10, 'with_prov': True, 'expid': 12, 'time_ms': 23379.272}, {'qid': 12, 'with_prov': True, 'expid': 13, 'time_ms': 3617.771}]
+    df_provsql = pd.DataFrame(provsql_data)
+    df_provsql["query"] = "Q"+df_provsql["qid"].astype(str)
+    df_provsql["sf_label"] = "SF=1.0"
+
     # figure 1: single intervention latency
     dbt_prob=0.1
     single_data = con.execute(f"""
@@ -90,14 +63,16 @@ if True:
             from single_data_all where n=1 and num_threads=1  and prune='False' and prob={dbt_prob} and incremental='True'
         UNION ALL select 'DBT-Prune' as system, query, prune, sf, sf_label, eval_time_ms as eval_time, 'False' as incremental
             from dbt_data where prob={dbt_prob} and prune='True'
+            and itype='DELETE'
         UNION ALL select 'DBT' as system, query, prune, sf, sf_label, eval_time_ms as eval_time, 'False' as incremental
             from dbt_data where prob={dbt_prob} and prune='False'
+            and itype='DELETE'
+        UNION ALL select 'ProvSQL' as system, query, 'False' as prune, 1 as sf, sf_label, time_ms as eval_time, 'False' as incremental
+            from df_provsql where with_prov='True'
+        UNION ALL select 'Postgres' as system, query,  'False' as prune, 1 as sf, sf_label, time_ms as eval_time, 'False' as incremental
+            from df_provsql where with_prov='False'
             """).df()
 
-    postfix = """
-    data$query = factor(data$query, levels=c('Q1', 'Q3', 'Q5', 'Q7', 'Q9', 'Q10', 'Q12'))
-    data$sf_label = factor(data$sf_label, levels=c('SF=1.0', 'SF=5.0', 'SF=10.0'))
-        """
     cat = "system"
 
     p = ggplot(single_data, aes(x='query', y='eval_time_ms', color=cat, fill=cat, group=cat))
@@ -115,21 +90,11 @@ if True:
     p += facet_grid(".~sf_label", scales=esc("free_y"))
     ggsave("figures/fade_single_sf1.png", p, postfix=postfix, width=5, height=3, scale=0.8)
 
-    """
-    UNION ALL
-    select 'sparse-inc' as system, sf, query, dbt.prob, fade.incremental, fade.prune_label, dbt.prune, 
-    fade.prune, fade.num_threads,
-    (dbt.eval_time_ms / fade.eval_time_ms) as nor,
-    dbt.eval_time_ms, fade.eval_time_ms
-    from (select * from dbt_data where prune='True') as dbt JOIN
-    (select * from  single_data_all where n=1 and num_threads=1 and incremental='True') as fade
-    USING (query, sf, prob)
-    """
     # fig 1:
     # x-axis prob, y-axis dbt normalized latency against fade
     dbt_fade_data = con.execute("""
-    select 'dense' as system, sf, query, dbt.prob, fade.incremental, fade.prune_label, dbt.prune, 
-    fade.prune, fade.num_threads,
+    select 'DBT-Prune / ' || fade.prune_label as system, sf, query, dbt.prob, fade.incremental, fade.prune_label, dbt.prune, 
+    fade.prune as fprune, fade.num_threads,
     (dbt.eval_time_ms / fade.eval_time_ms) as nor,
     dbt.eval_time_ms, fade.eval_time_ms
     from (select * from dbt_data where prune='True') as dbt JOIN
@@ -137,9 +102,6 @@ if True:
     USING (query, sf, prob)
     """).df()
 
-    postfix = """
-    data$query = factor(data$query, levels=c('Q1', 'Q3', 'Q5', 'Q7', 'Q9', 'Q10', 'Q12'))
-        """
     p = ggplot(dbt_fade_data, aes(x='prob',  y="nor", color="query", fill="query"))
     p += geom_line(stat=esc('identity')) 
     p += axis_labels('Deletion Probability (log)', "Speedup (log)", "log10", "log10",
@@ -148,18 +110,19 @@ if True:
         )
     p += legend_bottom
     p += geom_hline(aes(yintercept=1))
-    p += facet_grid(".~prune_label", scales=esc("free_y"))
+    p += facet_grid(".~system", scales=esc("free_y"))
     ggsave(f"figures/fade_dbt_vs_fade.png", p, postfix=postfix, width=7, height=3, scale=0.8)
 
-    dbt_fade_data_prune = con.execute("""select * from dbt_fade_data where prune_label='FaDE-Prune'""").df()
-    p = ggplot(dbt_fade_data_prune, aes(x='prob',  y="nor", color="query", fill="query", linetype='system'))
+    dbt_fade_data_prune = con.execute("""select * from dbt_fade_data where fprune='True'""").df()
+    p = ggplot(dbt_fade_data_prune, aes(x='prob',  y="nor", color="query", fill="query"))
     p += geom_line(stat=esc('identity')) 
-    p += axis_labels('Deletion Probability (log)', "Normalized Latency  (log)", "log10", "log10",
+    p += axis_labels('Deletion Probability (log)', "Speedup  (log)", "log10", "log10",
         ykwargs=dict(breaks=[0.1,10,100,1000,10000],  labels=list(map(esc,['0.1','10','100','1000','10000']))),
         xkwargs=dict(breaks=[0.001, 0.01, 0.1,0.5],  labels=list(map(esc,['0.001','0.01','0.1', '0.5']))),
         )
     p += legend_side
     p += geom_hline(aes(yintercept=1))
+    p += facet_grid(".~system", scales=esc("free_y"))
     ggsave(f"figures/fade_dbt_vs_fade_prune.png", p, postfix=postfix,  width=5, height=3, scale=0.8)
 
 
@@ -213,97 +176,33 @@ if True:
     if print_summary:
         print("======== DBT vs FaDe Summary =============")
         # fade_data, dbt_prune, fade_prune, is_incremental, group
-        summary_data = get_summary_hack("dense_data", "False", "False", "False", "qid,")
+        summary_data = get_summary_hack("single_data_all", "False", "False", "False", "qid,")
         print("***", summary_data)
-        summary_data = get_summary_hack("dense_data", "False", "False", "False", "")
-        print("***", summary_data)
-        
-        
-        
-        print("======== DBT vs FaDe-I Summary =============")
-        # fade_data, dbt_prune, fade_prune, is_incremental, group
-        summary_data = get_summary("dense_data", "False", "False", "True", "qid,")
-        print("***", summary_data)
-        summary_data = get_summary("dense_data", "False", "False", "True", "prob,")
+        summary_data = get_summary_hack("single_data_all", "False", "False", "False", "")
         print("***", summary_data)
         
         
         print("======== DBT-P vs FaDe Summary =============")
         # fade_data, dbt_prune, fade_prune, is_incremental, group
-        summary_data = get_summary("dense_data", "True", "False", "False", "qid,")
-        summary_data = get_summary_hack("dense_data", "True", "False", "False", "qid,")
+        summary_data = get_summary("single_data_all", "True", "False", "False", "qid,")
+        summary_data = get_summary_hack("single_data_all", "True", "False", "False", "qid,")
         print("***", summary_data)
         
-        summary_data = get_summary("dense_data", "True", "False", "False", "prob,")
-        summary_data = get_summary_hack("dense_data", "True", "False", "False", "")
+        summary_data = get_summary("single_data_all", "True", "False", "False", "prob,")
+        summary_data = get_summary_hack("single_data_all", "True", "False", "False", "")
         print("***", summary_data)
         print(f"{round(summary_data['avg_speedup'][0])}X (min: {summary_data['min_speedup'][0]:.4f}, max: {round(summary_data['max_speedup'][0])})")
         
         print("======== DBT-P vs FaDe-P Summary =============")
         # fade_data, dbt_prune, fade_prune, is_incremental, group
-        summary_data = get_summary("dense_data", "True", "True", "False", "qid,")
+        summary_data = get_summary("single_data_all", "True", "True", "False", "qid,")
         print("***", summary_data)
         
-        summary_data = get_summary("dense_data", "True", "True", "False", "prob,")
-        print("***", summary_data)
-        print(f"{round(summary_data['avg_speedup'][0])}X (min: {summary_data['min_speedup'][0]:.4f}, max: {round(summary_data['max_speedup'][0])})")
-        
-        
-        """
-        print("======== DBT-P vs FaDe-P-I Summary =============")
-        # fade_data, dbt_prune, fade_prune, is_incremental, group
-        summary_data = get_summary("dense_data", "True", "True", "True", "qid,")
-        print("***", summary_data)
-        
-        summary_data = get_summary("dense_data", "True", "True", "True", "prob,")
-        print("***", summary_data)
-        
-        # TODO: check if incremental evaluation converges to DBT
-        print("======== DBT vs FaDe-I-Sparse Summary =============")
-        # fade_data, dbt_prune, fade_prune, is_incremental, group
-        summary_data = get_summary("incremental_data", "False", "False", "True", "qid,")
-        
-        print("***", summary_data)
-        summary_data = get_summary("incremental_data", "False", "False", "True", "prob,")
-        print("***", summary_data)
-        
-        summary_data = get_summary("incremental_data", "False", "False", "True", "")
+        summary_data = get_summary("single_data_all", "True", "True", "False", "prob,")
         print("***", summary_data)
         print(f"{round(summary_data['avg_speedup'][0])}X (min: {summary_data['min_speedup'][0]:.4f}, max: {round(summary_data['max_speedup'][0])})")
         
-        print("======== DBT-P vs FaDe-I-Sparse Summary =============")
-
-        # fade_data, dbt_prune, fade_prune, is_incremental, group
-        summary_data = get_summary("incremental_data", "True", "False", "True", "qid,")
-        print("***", summary_data)
         
-        summary_data = get_summary("incremental_data", "True", "False", "True", "prob,")
-        print("***", summary_data)
-        
-        summary_data = get_summary("incremental_data", "True", "False", "True", "")
-        print("***", summary_data)
-        print(f"{round(summary_data['avg_speedup'][0])}X (min: {summary_data['min_speedup'][0]:.4f}, max: {round(summary_data['max_speedup'][0])})")
-        
-        print("======== DBT-P vs FaDe-P-I-Sparse Summary =============")
-        # fade_data, dbt_prune, fade_prune, is_incremental, group
-        summary_data = get_summary("incremental_data", "True", "True", "True", "qid,")
-        print("***", summary_data)
-        
-        summary_data = get_summary("incremental_data", "True", "True", "True", "prob,")
-        print("***", summary_data)
-        
-        summary_data = get_summary("incremental_data", "True", "True", "True", "")
-        print("***", summary_data)
-        print(f"{round(summary_data['avg_speedup'][0])}X (min: {summary_data['min_speedup'][0]:.4f}, max: {round(summary_data['max_speedup'][0])})")
-        if False:
-            print("======== DBT-P vs FaDe-P Summary Per Prob =============")
-            summary_data = get_per_prob_summary("dense_data", "True", "True", "False")
-            print(summary_data)
-            
-            print("======== DBT-P vs FaDe Summary Per Prob Prune =============")
-            summary_data = get_per_prob_summary("dense_data", "True", "False", "False")
-            print(summary_data)
-        """
     # print summary
     print("======== DBT Eval Summary =============")
     summary_data = con.execute("""
@@ -396,8 +295,10 @@ if True:
     """).df()
     print(single_summary_all)
 
-    dbtfull_latency_avg = single_data_summary["latency_avg"][3]
-    fade_latency_avg = (single_data_summary["latency_avg"][0] + single_data_summary["latency_avg"][2])/2.0
+    dbtfull_latency_avg = con.execute("select latency_avg from single_data_summary where system='DBT'").df()["latency_avg"][0]
+    fade_avg_latency = con.execute("select latency_avg from single_data_summary where system='Fade'").df()
+    fadep_avg_latency = con.execute("select latency_avg from single_data_summary where system='Fade-Prune'").df()
+    fade_latency_avg = (fade_avg_latency["latency_avg"][0] + fadep_avg_latency["latency_avg"][0])/2.0
     fadep_speedup = single_summary_all["fp_dp_speedup"][0]
     fade_slowdown = single_per_q_summary["f_dp_speedup"][5]
     single_text = f"""The figure shows that \sys and \sys-P outperforms \dbtfull for all queries with an average latency of {fade_latency_avg:.1f} compared to {dbtfull_latency_avg:.1f}.
