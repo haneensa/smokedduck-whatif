@@ -33,6 +33,7 @@ struct FadeDataPerNode {
 	__mmask16* base_target_matrix;
   int base_rows;
 	int8_t* single_del_interventions;
+	int8_t* base_single_del_interventions;
 	// this should be per attribute
 	// unordered_map<string, vector<idx_t>>
 	// vector<idx_t> single_scale_intervention;

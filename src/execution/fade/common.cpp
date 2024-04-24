@@ -454,22 +454,22 @@ void Fade::PruneLineage(PhysicalOperator* op, vector<int>& out_order) {
 			vector<int> new_lineage(out_order.size());
       vector<int>& old_lineage = op->lineage_op->backward_lineage[0];
       LineageReindex(out_order, new_lineage, old_lineage);
-      std::cout << op->id << " table scan new lineage: " << std::endl;
-      for (int i=0; i < out_order.size(); i++)
-        std::cout << "\t -> " << i << " " << new_lineage[i];
-      std::cout << std::endl;
+      //std::cout << op->id << " table scan new lineage: " << std::endl;
+      //for (int i=0; i < out_order.size(); i++)
+      //  std::cout << "\t -> " << i << " " << new_lineage[i];
+      //std::cout << std::endl;
 			op->lineage_op->backward_lineage[0] = std::move(new_lineage);
 		} else if (op->type == PhysicalOperatorType::FILTER) {
 			vector<int> new_lineage(out_order.size());
       vector<int>& old_lineage = op->lineage_op->backward_lineage[0];
       LineageReindex(out_order, new_lineage, old_lineage);
-			std::cout << op->id << " " << op->lineage_op->backward_lineage[0].size() / float(out_order.size())
+			/*std::cout << op->id << " " << op->lineage_op->backward_lineage[0].size() / float(out_order.size())
 			 << " filter prune previous output size M= " << op->lineage_op->backward_lineage[0].size()
 			 << " new pruned: " << out_order.size() << std::endl;
       std::cout << "filter new lineage: " << std::endl;
       for (int i=0; i < out_order.size(); i++)
         std::cout << "\t -> " << i << " " << new_lineage[i];
-      std::cout << std::endl;
+      std::cout << std::endl;*/
 			op->lineage_op->backward_lineage[0] = std::move(new_lineage);
 		} else if (op->type == PhysicalOperatorType::HASH_JOIN
 		           || op->type == PhysicalOperatorType::NESTED_LOOP_JOIN
@@ -497,7 +497,7 @@ void Fade::PruneLineage(PhysicalOperator* op, vector<int>& out_order) {
 		}
     new_order[0] = std::move(op->lineage_op->backward_lineage[0]);
     op->lineage_op->backward_lineage[0] = std::move(new_lineage);
-		std::cout << op->id << " filter push down new_order=" << new_order[0].size() << " old lineage: " << op->lineage_op->backward_lineage[0].size() << std::endl;
+	//	std::cout << op->id << " filter push down new_order=" << new_order[0].size() << " old lineage: " << op->lineage_op->backward_lineage[0].size() << std::endl;
 	} else if (op->type == PhysicalOperatorType::HASH_JOIN
 	           || op->type == PhysicalOperatorType::NESTED_LOOP_JOIN
 	           || op->type == PhysicalOperatorType::BLOCKWISE_NL_JOIN
@@ -972,6 +972,7 @@ extern "C" int PruneLineageCompile(duckdb::PhysicalOperator* op, std::vector<int
 	}
 }
 
+// TODO: pass size of the annotations as an input argument
 int* Fade::random_unique(shared_ptr<OperatorLineage> lop, idx_t distinct) {
 	// Seed the random number generator
 	std::random_device rd;

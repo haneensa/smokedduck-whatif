@@ -105,17 +105,19 @@ void GenRandomWhatifIntervention(int thread_id, EvalConfig& config, PhysicalOper
       //  << spec[op->lineage_op->table_name][0] << std::endl;
     }
 
-		idx_t row_count = op->lineage_op->log_index->table_size;
-	//	std::cout << "table scan cardinality " << row_count << " "  << op->lineage_op->backward_lineage[0].size() << std::endl;
+    idx_t out_count = op->lineage_op->backward_lineage[0].size();
+    idx_t max_row_count = op->lineage_op->backward_lineage[0][out_count-1];
+    for (int i=0; i < out_count; ++i)
+      if (op->lineage_op->backward_lineage[0][i] > max_row_count)
+        max_row_count = op->lineage_op->backward_lineage[0][i];
+    int input_target_matrix_count = max_row_count;
+    if (config.prune) input_target_matrix_count = out_count;
 
-		if (config.prune)
-			row_count = op->lineage_op->backward_lineage[0].size();
-
-		//std::cout << op->lineage_op->table_name << " " << row_count << std::endl;
+    //std::cout << "random fn: " << out_count << " " << max_row_count << std::endl;
 		if (config.n_intervention == 1) {
-      random_fn(thread_id, row_count, config.probability, fade_data[op->id].n_masks, fade_data[op->id].single_del_interventions, fade_data[op->id].del_set, rand_count, base);
+      random_fn(thread_id, input_target_matrix_count, config.probability, fade_data[op->id].n_masks, fade_data[op->id].base_single_del_interventions, fade_data[op->id].del_set, rand_count, base);
 		} else {
-      random_fn(thread_id, row_count, config.probability, fade_data[op->id].n_masks, fade_data[op->id].del_interventions, fade_data[op->id].del_set, rand_count, base);
+      random_fn(thread_id, input_target_matrix_count, config.probability, fade_data[op->id].n_masks, fade_data[op->id].base_target_matrix, fade_data[op->id].del_set, rand_count, base);
 		}
 	}
 }
@@ -768,6 +770,8 @@ string FilterCodeAndAlloc(EvalConfig& config, PhysicalOperator *op, shared_ptr<O
 )";
 	}
 
+	if (config.debug)
+		oss << "std::cout << \"Filter End: \" << row_count << \" \" <<  n_masks << std::endl;\n";
 
 	if (config.num_worker > 1) {
 		oss << "\tsync_point.arrive_and_wait();\n\t return 0; \n}\n";
@@ -1142,31 +1146,47 @@ void GenCodeAndAlloc(EvalConfig& config, string& code, PhysicalOperator* op,
       }
     }
     
+		idx_t n_masks = std::ceil(config.n_intervention / config.mask_size);
+		fade_data[op->id].n_interventions = config.n_intervention;
+    
     if (config.debug)
 		  std::cout << "check this scan " << op->lineage_op->table_name << std::endl;
 		idx_t row_count = op->lineage_op->log_index->table_size;
-
-		if (config.prune) {
-			row_count = op->lineage_op->backward_lineage[0].size();
-      // todo: add a filter
-		}
+		idx_t out_count = op->lineage_op->backward_lineage[0].size();
+    idx_t max_row_count = op->lineage_op->backward_lineage[0][out_count-1];
+    for (int i=0; i < out_count; ++i)
+      if (op->lineage_op->backward_lineage[0][i] > max_row_count)
+        max_row_count = op->lineage_op->backward_lineage[0][i];
+    std::cout << "table scan -> " << out_count << " " << max_row_count << " " << row_count << std::endl;
     
-    fade_data[op->id].base_rows = row_count;
+    int input_target_matrix_count = max_row_count;
+    if (config.prune) input_target_matrix_count = out_count;
+    fade_data[op->id].base_rows = input_target_matrix_count;
 
-		idx_t n_masks = std::ceil(config.n_intervention / config.mask_size);
-		fade_data[op->id].n_interventions = config.n_intervention;
+		fade_data[op->id].n_masks = n_masks;
 
 		if (config.n_intervention == 1) { // 1D
 		  if (config.incremental == false) { // we don't need to pre allocate memory for incremental eval. It uses  std::set<int>
-				fade_data[op->id].single_del_interventions = new int8_t[row_count];
+				fade_data[op->id].base_single_del_interventions = new int8_t[input_target_matrix_count];
+        if (out_count != max_row_count && !config.prune) {
+				  fade_data[op->id].single_del_interventions = new int8_t[out_count];
+				  code += FilterCodeAndAlloc(config, op, op->lineage_op, fade_data);
+        } else {
+				  fade_data[op->id].single_del_interventions = fade_data[op->id].base_single_del_interventions;
+        }
 		  }
 		} else {	// 2D
-			fade_data[op->id].del_interventions = (__mmask16*)aligned_alloc(64, sizeof(__mmask16) * row_count * n_masks);
-      if (config.debug)
-        std::cout << "alloc del_interventions " << row_count << " " << n_masks
-          << " " << fade_data[op->id].del_interventions << std::endl;
+      fade_data[op->id].base_target_matrix = (__mmask16*)aligned_alloc(64, sizeof(__mmask16) * input_target_matrix_count * n_masks);
+      if (out_count != max_row_count && !config.prune) {
+			  fade_data[op->id].del_interventions = (__mmask16*)aligned_alloc(64, sizeof(__mmask16) * out_count * n_masks);
+				code += FilterCodeAndAlloc(config, op, op->lineage_op, fade_data);
+        if (config.debug)
+          std::cout << "alloc del_interventions " << out_count << " " << n_masks
+            << " " << fade_data[op->id].del_interventions << std::endl;
+      } else {
+          fade_data[op->id].del_interventions = fade_data[op->id].base_target_matrix;
+      }
 		}
-		fade_data[op->id].n_masks = n_masks;
 	} else if (op->type == PhysicalOperatorType::FILTER) {
     if (config.prune)
       fade_data[op->id].opid = fade_data[op->children[0]->id].opid;
@@ -1301,12 +1321,20 @@ void Intervention2DEval(int thread_id, EvalConfig& config, void* handle, Physica
     
 	if (op->type == PhysicalOperatorType::TABLE_SCAN) {
 		int row_count = op->lineage_op->backward_lineage[0].size();
-    if (fade_data[op->id].base_rows == row_count || !fade_data[op->id].filter_fn) return;
-    int result = fade_data[op->id].filter_fn(thread_id, op->lineage_op->backward_lineage[0].data(),
-                                             fade_data[op->id].base_target_matrix,
-                                             fade_data[op->id].del_interventions,
-                                             fade_data[op->id].del_set,
-                                             fade_data[op->id].del_set);
+    if (config.prune || fade_data[op->id].base_rows == row_count || !fade_data[op->id].filter_fn) return;
+		if (config.n_intervention == 1 && config.incremental == false) {
+      int result = fade_data[op->id].filter_fn(thread_id, op->lineage_op->backward_lineage[0].data(),
+                                               fade_data[op->id].base_single_del_interventions,
+                                               fade_data[op->id].single_del_interventions,
+                                               fade_data[op->id].del_set,
+                                               fade_data[op->id].del_set);
+			} else {
+      int result = fade_data[op->id].filter_fn(thread_id, op->lineage_op->backward_lineage[0].data(),
+                                               fade_data[op->id].base_target_matrix,
+                                               fade_data[op->id].del_interventions,
+                                               fade_data[op->id].del_set,
+                                               fade_data[op->id].del_set);
+      }
   } else if (op->type == PhysicalOperatorType::FILTER) {
 		if (config.prune) return;
 		if (fade_data[op->id].n_masks > 0 || fade_data[op->id].n_interventions == 1) {
@@ -1532,8 +1560,10 @@ string Fade::Whatif(PhysicalOperator *op, EvalConfig config) {
     intervention_gen_time = time_span.count();
   }
 
+  std::cout << "bindfunctions" << std::endl;
 	BindFunctions(config, handle,  op, fade_data);
 
+  std::cout << "intervention" << std::endl;
 	std::vector<std::thread> workers;
 	start_time = std::chrono::steady_clock::now();
   	if (config.num_worker > 1) {

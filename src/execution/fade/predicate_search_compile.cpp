@@ -240,7 +240,7 @@ string get_agg_eval_predicate(EvalConfig config, int agg_count, string fn, strin
 		oss << "\t\t\t\t" << out_var+"[col + j ] +="+ in_var+";\n";
 	} else {
 		oss << "{";
-    // TODO: set
+    // TODO: maintain the original value for row and restore it after this
 		if (data_type == "float") {
 			oss << "\t__m512 a  = _mm512_load_ps((__m512*) &"+out_var+"[col + j]);\n";
 			//oss << "\t __m512 v = _mm512_set1_ps("+in_var+");\n";
@@ -373,6 +373,8 @@ void GenInterventionPredicate(EvalConfig& config, PhysicalOperator* op,
 	if (op->type == PhysicalOperatorType::TABLE_SCAN) {
     string table_name = op->lineage_op->table_name;
 		if (columns_spec.find(table_name) == columns_spec.end()) {
+      if (config.debug)
+        std::cout << "skip " << table_name << std::endl;
 			return;
 		}
 
@@ -408,12 +410,16 @@ void GenInterventionPredicate(EvalConfig& config, PhysicalOperator* op,
 			// factorize need access to base table
       // TODO: check if we need to load from file
 			std::pair<int*, idx_t> res = Fade::factorize(op, op->lineage_op, columns_spec);
-      std::cout << " annotations: " << res.second << std::endl;
+      if (config.debug)
+        std::cout << " annotations: " << res.second << std::endl;
 			fade_data[op->id].annotations = res.first;
 			fade_data[op->id].n_interventions = res.second;
 		} else {
 			// random need access to  config.n_intervention
+      if (config.debug)
+        std::cout << "generate random unique: " << config.n_intervention << std::endl;
 			fade_data[op->id].n_interventions = config.n_intervention;
+	    //idx_t row_count = op->lineage_op->log_index->table_size;
 			fade_data[op->id].annotations = Fade::random_unique(op->lineage_op, config.n_intervention);
 		}
 	}
