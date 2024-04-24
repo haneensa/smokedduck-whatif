@@ -1029,12 +1029,12 @@ void Fade::BindFunctions(EvalConfig& config, void* handle, PhysicalOperator* op,
 		int row_count = op->lineage_op->backward_lineage[0].size();
     if (fade_data[op->id].base_rows == row_count) return;
 		string fname = "filter_"+ to_string(op->id) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
-		fade_data[op->id].filter_fn = (int(*)(int, int*, void*, void*, std::set<int>&, std::set<int>&))dlsym(handle, fname.c_str());
+		fade_data[op->id].filter_fn = (int(*)(int, int*, void*, void*, std::set<int>&, std::set<int>&, const int, const int))dlsym(handle, fname.c_str());
   } else if (op->type == PhysicalOperatorType::FILTER) {
 		if (config.prune) return;
 		//if (fade_data[op->id].n_masks > 0) {
 		string fname = "filter_"+ to_string(op->id) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
-		fade_data[op->id].filter_fn = (int(*)(int, int*, void*, void*, std::set<int>&, std::set<int>&))dlsym(handle, fname.c_str());
+		fade_data[op->id].filter_fn = (int(*)(int, int*, void*, void*, std::set<int>&, std::set<int>&, const int, const int))dlsym(handle, fname.c_str());
 		//	}
 	} else if (op->type == PhysicalOperatorType::HASH_JOIN
 	           || op->type == PhysicalOperatorType::NESTED_LOOP_JOIN
@@ -1046,9 +1046,9 @@ void Fade::BindFunctions(EvalConfig& config, void* handle, PhysicalOperator* op,
     if (config.n_intervention == 1 && config.incremental == true) {
       fade_data[op->id].join_fn_forward = (int(*)(int, std::unordered_map<int, std::vector<int>>&, 
               std::unordered_map<int, std::vector<int>>&, void*, void*, void*,
-              std::set<int>&, std::set<int>&, std::set<int>&))dlsym(handle, fname.c_str());
+              std::set<int>&, std::set<int>&, std::set<int>&, const int, const int))dlsym(handle, fname.c_str());
     } else {
-		  fade_data[op->id].join_fn = (int(*)(int, int*, int*, void*, void*, void*, std::set<int>&, std::set<int>&, std::set<int>&))dlsym(handle, fname.c_str());
+		  fade_data[op->id].join_fn = (int(*)(int, int*, int*, void*, void*, void*, std::set<int>&, std::set<int>&, std::set<int>&, const int, const int))dlsym(handle, fname.c_str());
     }
 		//}
 	} else if (op->type == PhysicalOperatorType::HASH_GROUP_BY
@@ -1057,14 +1057,14 @@ void Fade::BindFunctions(EvalConfig& config, void* handle, PhysicalOperator* op,
 		string fname = "agg_"+ to_string(op->id) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
 		if (config.use_duckdb && fade_data[op->id].has_agg_child == false) {
 			fade_data[op->id].agg_duckdb_fn = (int(*)(int, int*, void*, std::unordered_map<std::string, vector<void*>>&,
-			                                           ChunkCollection&, std::set<int>&))dlsym(handle, fname.c_str());
+			                                           ChunkCollection&, std::set<int>&, const int, const int))dlsym(handle, fname.c_str());
 		} else {
 			if (fade_data[op->id].has_agg_child) {
 		  		fade_data[op->id].agg_fn_nested = (int(*)(int, int*, void*, std::unordered_map<std::string, vector<void*>>&,
-				                                     std::unordered_map<std::string, vector<void*>>&, std::set<int>&))dlsym(handle, fname.c_str());
+				                                     std::unordered_map<std::string, vector<void*>>&, std::set<int>&, const int, const int))dlsym(handle, fname.c_str());
 			} else {
 		  		fade_data[op->id].agg_fn = (int(*)(int, int*, void*, std::unordered_map<std::string, vector<void*>>&,
-				                              std::unordered_map<int, void*>&, std::set<int>&))dlsym(handle, fname.c_str());
+				                              std::unordered_map<int, void*>&, std::set<int>&, const int, const int))dlsym(handle, fname.c_str());
 			}
 		}
 	}
