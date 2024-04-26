@@ -324,7 +324,7 @@ string HashAggregateCodeAndAllocPredicate(EvalConfig& config, shared_ptr<Operato
         }
       }
 			// access output arrays
-			alloc_code += Fade::get_agg_alloc(i, "sum", output_type);
+			alloc_code += Fade::get_agg_alloc(config, i, "sum", output_type);
 			// core agg operation
 			eval_code += get_agg_eval_predicate(config, agg_count++, "sum", out_var, in_val, output_type);
 		}
@@ -332,7 +332,7 @@ string HashAggregateCodeAndAllocPredicate(EvalConfig& config, shared_ptr<Operato
 
 	if (include_count == true) {
 		string out_var = "out_count";
-		alloc_code += Fade::get_agg_alloc(0, "count", "int");
+		alloc_code += Fade::get_agg_alloc(config, 0, "count", "int");
     if (config.is_scalar == false) {
 		  get_vals_code += "\t\t\ __m512i one = _mm512_set1_epi32(1);\n";
 		  eval_code += get_agg_eval_predicate(config, agg_count++, "count", out_var, "one", "int");

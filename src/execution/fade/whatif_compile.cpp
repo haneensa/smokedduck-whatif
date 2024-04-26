@@ -124,7 +124,7 @@ void GenRandomWhatifIntervention(int thread_id, EvalConfig& config, PhysicalOper
 // ADD get_agg_init for SCALE_UNIFORM which doesn't use any interventions below aggregates
 
 string get_agg_init_no_intervention(EvalConfig& config, int total_agg_count, int row_count, int chunk_count, int opid, int n_interventions, string fn, string alloc_code,
-                    string get_data_code, string get_vals_code) {
+                    string get_data_code) {
 	int n_masks = n_interventions / config.mask_size;
 	string fname = "agg_"+ to_string(opid) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
 	std::ostringstream oss;
@@ -156,30 +156,12 @@ duckdb::ChunkCollection &chunk_collection, std::set<int>& del_set, const int sta
   )";
 		}
 
-		oss << get_data_code;
-		if (config.use_duckdb) {
-			oss << R"(
-		for (int i=0; i < collection_chunk.size(); ++i) {
-			int oid = lineage[i+offset];
-			int col = oid*n_interventions;
-)";
-		} else {
-			oss << R"(
-	for (int i=start; i < end; ++i) {
-		int oid = lineage[i];
-		int col = oid*n_interventions;
-)";
-		}
-
-		if (config.n_intervention > 1)
-			oss << get_vals_code;
-
 
 	return oss.str();
 }
 
 string get_agg_init(EvalConfig& config, int total_agg_count, int row_count, int chunk_count, int opid, int n_interventions, string fn, string alloc_code,
-                    string get_data_code, string get_vals_code) {
+                    string get_data_code) {
 	int n_masks = n_interventions / config.mask_size;
 	string fname = "agg_"+ to_string(opid) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
 	std::ostringstream oss;
@@ -189,7 +171,13 @@ string get_agg_init(EvalConfig& config, int total_agg_count, int row_count, int 
 			    << R"((int thread_id, int* lineage, void* __restrict__ var_0_ptr, std::unordered_map<std::string, std::vector<void*>>& alloc_vars,
 duckdb::ChunkCollection &chunk_collection, std::set<int>& del_set, const int start, const int end) {
 )";
-	} else {
+	} else if (config.use_gb_backward_lineage) {
+		oss << R"(extern "C" int bw_)"
+		    << fname
+		    << R"((int thread_id, std::vector<std::vector<int>> lineage, void* __restrict__ var_0_ptr, std::unordered_map<std::string, std::vector<void*>>& alloc_vars,
+              std::unordered_map<int, void*>& input_data_map) {
+)";
+  } else {
 		oss << R"(extern "C" int )"
 		    << fname
 		    << R"((int thread_id, int* lineage, void* __restrict__ var_0_ptr, std::unordered_map<std::string, std::vector<void*>>& alloc_vars,
@@ -209,66 +197,34 @@ duckdb::ChunkCollection &chunk_collection, std::set<int>& del_set, const int sta
 	oss << "\tconst int n_masks  = " << n_masks << ";\n";
 	oss << "\tconst int num_threads  = " << config.num_worker << ";\n";
 
-  if (config.debug)
-    oss << "\tstd::cout << \"Specs: \"  << \" \" << mask_size << \" \" << n_interventions << \" \" << n_masks << \" \" << start << \" \" << end << std::endl;";
+  if (config.debug) {
+    if (config.use_gb_backward_lineage)
+      oss << "\tstd::cout << \"Specs: \"  << \" \" << mask_size << \" \" << n_interventions << \" \" << n_masks << \" \" << lineage.size()  << std::endl;";
+    else
+      oss << "\tstd::cout << \"Specs: \"  << \" \" << mask_size << \" \" << n_interventions << \" \" << n_masks << \" \" << start << \" \" << end << std::endl;";
+  }
 
 	oss << alloc_code;
+  
+  if (config.use_duckdb == false)
+    oss << get_data_code;
 
 	if (config.incremental && config.n_intervention == 1 && config.use_duckdb == false) {
 		// convert intervention array to annotation array where var[i]==1
-		oss << get_data_code;
 		oss << R"(
-       // std::vector<int> zeros(del_set.size());
-        //int c = 0;
-        //for (auto it = del_set.begin(); it != del_set.end(); ++it) {
-          //  zeros[c++] = *it;
-        //}
-       // for (int i=0; i < zeros.size(); ++i) {
 				for (int i : del_set) {
-          int iid = i; // zeros[i];
-          int oid = lineage[iid];
+          int oid = lineage[i];
 )";
 	} else {
-
 		if (config.use_duckdb) {
 			oss << R"(
 	int offset = 0;
 	for (int chunk_idx=start; chunk_idx < end; ++chunk_idx) {
 		duckdb::DataChunk &collection_chunk = chunk_collection.GetChunk(chunk_idx);
   )";
+    oss << get_data_code;
 		}
 
-		oss << get_data_code;
-		if (config.use_duckdb) {
-			oss << R"(
-		for (int i=0; i < collection_chunk.size(); ++i) {
-			int oid = lineage[i+offset];
-)";
-			if (config.n_intervention == 1 && ( config.intervention_type != InterventionType::SCALE_UNIFORM
-			                                   &&  config.intervention_type != InterventionType::SCALE_RANDOM)) {
-				if (total_agg_count > 1) {
-					oss << "\t\t\t\t\tif (var_0[i+offset] == 1) continue;\n";
-				}
-			} else {
-				oss << "\t\t\tint col = oid*n_interventions;\n";
-			}
-		} else {
-			oss << R"(
-	for (int i=start; i < end; ++i) {
-		int oid = lineage[i];
-)";
-			if (config.n_intervention == 1 && ( config.intervention_type != InterventionType::SCALE_UNIFORM
-			                                   &&  config.intervention_type != InterventionType::SCALE_RANDOM)) {
-				if (total_agg_count > 1) {
-					oss << "\t\t\t\t\tif (var_0[i] == 0) continue;\n";
-				}
-			} else {
-				oss << "\t\t\tint col = oid*n_interventions;\n";
-			}
-		}
-
-		if (config.n_intervention > 1)
-			oss << get_vals_code;
 	}
 
 	return oss.str();
@@ -316,39 +272,6 @@ string get_single_agg_template(EvalConfig& config, int total_agg_count, int agg_
 	// use_duckdb == False because I need to access elements directly. if I use duckdb, then first i need to locate the chunk, then access the element
 	// we iterate over the interventions, and each intervention stores the id of the tuple to be deleted
 
-	if (agg_count > 0 && agg_count % config.batch == 0) {
-		if (config.incremental && config.use_duckdb == false) {
-			oss << R"(
-				}
-				for (int i : del_set) {
-     //   for (int i=0; i < zeros.size(); ++i) {
-					int iid = i; // zeros[i];
-					int oid = lineage[iid];
-)";
-		} else if (config.use_duckdb) {
-			oss << R"(
-				}
-				for (int i=0; i < collection_chunk.size(); ++i) {
-				int oid = lineage[i+offset];
-)";
-			if (total_agg_count > 1 && ( config.intervention_type != InterventionType::SCALE_UNIFORM
-			                            &&  config.intervention_type != InterventionType::SCALE_RANDOM)) {
-				oss << "\t\t\t\t\tif (var_0[i+offset] == 1) continue;\n";
-			}
-		} else {
-			oss << R"(
-				}
-				for (int i=start; i < end; ++i) {
-					int oid = lineage[i];
-)";
-			if (total_agg_count > 1 && ( config.intervention_type != InterventionType::SCALE_UNIFORM
-			                            &&  config.intervention_type != InterventionType::SCALE_RANDOM)) {
-				oss << "\t\t\t\t\tif (var_0[i] == 1) continue;\n";
-			}
-		}
-
-	}
-
 	if (config.incremental && config.use_duckdb == false) {
 		// out_var[oid] += in_var[i];
 		if (fn == "sum") {
@@ -393,40 +316,90 @@ string get_single_agg_template(EvalConfig& config, int total_agg_count, int agg_
 	return oss.str();
 }
 
-string get_batch_agg_template(EvalConfig& config, int agg_count, string fn, string out_var="", string in_var="", string data_type="int") {
+string get_loop_close(EvalConfig& config) {
 	std::ostringstream oss;
+  if (config.n_intervention != 1) {
+    if (config.is_scalar) {
+      oss << "\n\t\t}\n"; // close for (int k=0; k < mask_size; k++)
+    }
+    oss << "\n\t\t\t}\n"; // close for (int j=0; j < n_masks; ++j)
+                          //
+  }
+  oss << "\n\t\t}\n"; // close for (int i=start; .. end) or for (oid ..
+  if (config.use_gb_backward_lineage) {
+    oss << "\n\t}\n"; // close for (int iid
+  }
+	return oss.str();
+}
 
-	if (agg_count % config.batch == 0) {
-		if (agg_count > 0) {
-			if (config.is_scalar) {
-				oss << "\n\t\t}\n"; // close for (int k=0; k < mask_size; k++)
-			}
-			oss << "\n\t\t\t}\n"; // close for (int j=0; j < n_masks; ++j)
-		}
+string get_loop_opening(EvalConfig& config, string get_vals) {
+	std::ostringstream oss;
+  if (config.incremental && config.use_duckdb == false) {
+    oss << R"(
+      for (int i : del_set) {
+        int oid = lineage[i];
+)";
+  }  else if (config.use_duckdb) {
+    oss << R"(
+      for (int i=0; i < collection_chunk.size(); ++i) {
+      int oid = lineage[i+offset];
+  )";
+    if (config.n_intervention > 1)
+      oss << "\tint col = oid*n_interventions;\n";
+  } else if (config.use_gb_backward_lineage) {
+    oss << R"(
+  // for each oid
+  for (int oid=0; oid < lineage.size(); ++oid) {
+      // see if this oid is assigned to this worker
+      if (thread_id != oid % num_threads) continue;
+)";
+    if (config.n_intervention > 1)
+      oss << "\tint col = oid*n_interventions;\n";
+    oss << R"(
+      for (int iid=0; iid < lineage[oid].size(); ++iid) {
+        int i = lineage[oid][iid];
+)";
+  } else {
+    oss << R"(
+  for (int i=start; i < end; ++i) {
+    int oid = lineage[i];
+)";
+    if (config.n_intervention > 1)
+      oss << "\tint col = oid*n_interventions;\n";
+	}
+
+  if (config.n_intervention == 1)
+	  return oss.str();
+  
+  oss << get_vals;
 
 		oss << R"(
 			for (int j=0; j < n_masks; ++j) {
 				int row = j * mask_size;
 )";
 
-		if (config.use_duckdb) {
-			oss << "\t\t\t\t__mmask16 tmp_mask = ~var_0[(i+offset)*n_masks+j];\n";
-		} else {
-			oss << "\t\t\t\t__mmask16 tmp_mask = ~var_0[i*n_masks+j];\n";
-		}
-    if (!config.is_scalar) {
-      oss << "\t__m512i zeros_i = _mm512_setzero_si512();\n";
-      oss << "\t__m512 zeros = _mm512_setzero_ps();\n";
-    }
+  if (config.use_duckdb) {
+    oss << "\t\t\t\t__mmask16 tmp_mask = ~var_0[(i+offset)*n_masks+j];\n";
+  } else {
+    oss << "\t\t\t\t__mmask16 tmp_mask = ~var_0[i*n_masks+j];\n";
+  }
+  if (!config.is_scalar) {
+    oss << "\t__m512i zeros_i = _mm512_setzero_si512();\n";
+    oss << "\t__m512 zeros = _mm512_setzero_ps();\n";
+  }
 
 
-		if (config.is_scalar) {
-			oss << R"(
-				for (int k=0; k < mask_size; k++) {
+  if (config.is_scalar) {
+    oss << R"(
+      for (int k=0; k < mask_size; k++) {
 )";
-		}
-
 	}
+	return oss.str();
+}
+
+string get_batch_agg_template(EvalConfig& config, int total_agg_count, int agg_count, string fn,
+    string out_var="", string in_var="", string data_type="int") {
+	std::ostringstream oss;
 
 	if (config.is_scalar) {
 		if (config.intervention_type == InterventionType::SCALE_RANDOM) {
@@ -461,7 +434,8 @@ string get_batch_agg_template(EvalConfig& config, int agg_count, string fn, stri
 }
 
 
-string get_agg_eval(EvalConfig& config, int total_agg_count, int agg_count, string fn, string out_var="", string in_var="", string in_arr="", string data_type="int") {
+string get_agg_eval(EvalConfig& config, int total_agg_count, int agg_count, string fn, string out_var="",
+    string in_var="", string in_arr="", string data_type="int") {
 	std::ostringstream oss;
 
 	if (config.n_intervention == 1) {
@@ -475,7 +449,7 @@ string get_agg_eval(EvalConfig& config, int total_agg_count, int agg_count, stri
 		// 	if not uniform: * (multiples[row] * scale_var_0[row] + 1) * var_0[row];
 		std::cout << "NOT SUPPORTED YET" << std::endl;
 	} else {
-		oss << get_batch_agg_template(config, agg_count, fn, out_var, in_var, data_type);
+		oss << get_batch_agg_template(config, total_agg_count, agg_count, fn, out_var, in_var, data_type);
 	}
 
 	return oss.str();
@@ -723,7 +697,6 @@ string HashAggregateIntervene2DNested(EvalConfig& config, shared_ptr<OperatorLin
 
 	idx_t row_count = op->children[0]->lineage_op->chunk_collection.Count();
 	bool include_count = false;
-	int batches = 4;
 	int agg_count = 0;
 
 	// TODO: need to access the key
@@ -868,6 +841,7 @@ string HashAggregateIntervene2D(EvalConfig& config, shared_ptr<OperatorLineage> 
 	const int n_interventions = fade_data[op->id].n_interventions;
 
 	string eval_code;
+	string body_code;
 	string code;
 	string alloc_code;
 	string get_data_code;
@@ -877,7 +851,6 @@ string HashAggregateIntervene2D(EvalConfig& config, shared_ptr<OperatorLineage> 
 
 	idx_t row_count = op->children[0]->lineage_op->chunk_collection.Count();
 	bool include_count = false;
-	int batches = 4;
 	int agg_count = 0;
 	// Populate the aggregate child vectors
 	for (idx_t i=0; i < aggregates.size(); ++i) {
@@ -898,8 +871,12 @@ string HashAggregateIntervene2D(EvalConfig& config, shared_ptr<OperatorLineage> 
 		}
 
 		if (name == "sum" || name == "sum_no_overflow" || name == "avg") {
+      if (agg_count > 0 && agg_count % config.batch == 0) {
+        body_code += get_loop_opening(config, get_vals_code) + eval_code + get_loop_close(config);
+        get_vals_code = "";
+        eval_code = "";
+      }
 			int col_idx = i + keys;
-
 			string out_var = "out_" + to_string(i); // new output
 			string in_arr = "col_" + to_string(i);  // input arrays
 			string in_val = "val_" + to_string(i);  // input values val = col_x[i]
@@ -927,8 +904,10 @@ string HashAggregateIntervene2D(EvalConfig& config, shared_ptr<OperatorLineage> 
 			    get_vals_code += "\t\t\t__m512 vec_"  + in_val + " = _mm512_set1_ps(" + in_val + "*(0.8+1));\n";
         }
       }
+
 			// access output arrays
-			alloc_code += Fade::get_agg_alloc(i, "sum", output_type);
+			alloc_code += Fade::get_agg_alloc(config, i, "sum", output_type);
+
 			// core agg operation
 			eval_code += get_agg_eval(config, aggregates.size(), agg_count++, "sum", out_var, in_val,  in_arr, output_type);
 		}
@@ -940,23 +919,32 @@ string HashAggregateIntervene2D(EvalConfig& config, shared_ptr<OperatorLineage> 
       get_vals_code += "\t\t\t__m512i vec_1 = _mm512_set1_epi32(1);\n";
       get_vals_code += "\t\t\t__m512i x_vec_1 = _mm512_set1_epi32(0.8+1);\n";
     }
-		alloc_code += Fade::get_agg_alloc(0, "count", "int");
+		alloc_code += Fade::get_agg_alloc(config, 0, "count", "int");
+    if (agg_count > 0 && agg_count % config.batch == 0) {
+      body_code += get_loop_opening(config, get_vals_code) + eval_code + get_loop_close(config);
+      get_vals_code = "";
+      eval_code = "";
+    }
 		eval_code += get_agg_eval(config, aggregates.size(), agg_count++, "count", out_var, "1", "", "int");
 	}
-
-  
+    
+  if (agg_count > 0 && !eval_code.empty()) {
+      body_code += get_loop_opening(config, get_vals_code) + eval_code + get_loop_close(config);
+      get_vals_code = "";
+      eval_code = "";
+  }
 
 	string init_code;
 	if (config.intervention_type == InterventionType::SCALE_UNIFORM) {
 		init_code = get_agg_init_no_intervention(config, aggregates.size(), row_count, op->children[0]->lineage_op->chunk_collection.ChunkCount(),
-		                                         op->id,  fade_data[op->id].n_interventions, "agg", alloc_code, get_data_code, get_vals_code);
+		                                         op->id,  fade_data[op->id].n_interventions, "agg", alloc_code, get_data_code);
 	} else {
 		init_code = get_agg_init(config, aggregates.size(), row_count, op->children[0]->lineage_op->chunk_collection.ChunkCount(), op->id,
-		                         fade_data[op->id].n_interventions, "agg", alloc_code, get_data_code, get_vals_code);
+		                         fade_data[op->id].n_interventions, "agg", alloc_code, get_data_code);
 	}
 	string end_code = Fade::get_agg_finalize(config, fade_data[op->id]);
 
-	code = init_code + eval_code + end_code;
+	code = init_code + body_code + end_code;
 
 	return code;
 }
@@ -984,7 +972,7 @@ void  HashAggregateIntervene2DEval(int thread_id, EvalConfig& config, shared_ptr
       batch_size++;
     start = thread_id * batch_size;;
     end = start + batch_size;
-    if (end >= chunk_count) { end = row_count; }
+    if (end >= row_count) { end = row_count; }
   }
   if (config.debug)
     std::cout << "Count summary: " << row_count << " " << chunk_count << " " << batch_size << " " << start << " " << end << " " << config.num_worker << " " << thread_id << std::endl;
@@ -996,8 +984,13 @@ void  HashAggregateIntervene2DEval(int thread_id, EvalConfig& config, shared_ptr
 			fade_data[op->id].agg_fn_nested(thread_id, op->lineage_op->forward_lineage[0].data(), var_0, fade_data[op->id].alloc_vars,
 			                         fade_data[fade_data[op->id].child_agg_id].alloc_vars,  fade_data[opid].del_set, start, end);
 		} else {
-			fade_data[op->id].agg_fn(thread_id, op->lineage_op->forward_lineage[0].data(), var_0, fade_data[op->id].alloc_vars,
-										 fade_data[op->id].input_data_map,  fade_data[opid].del_set, start, end);
+      if (config.use_gb_backward_lineage) {
+        fade_data[op->id].agg_fn_bw(thread_id, op->lineage_op->gb_backward_lineage, var_0, fade_data[op->id].alloc_vars,
+                       fade_data[op->id].input_data_map);
+      } else {
+        fade_data[op->id].agg_fn(thread_id, op->lineage_op->forward_lineage[0].data(), var_0, fade_data[op->id].alloc_vars,
+                       fade_data[op->id].input_data_map,  fade_data[opid].del_set, start, end);
+      }
 		}
 	}
 }

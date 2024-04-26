@@ -27,6 +27,7 @@ parser.add_argument("--spec", help="Intervention Spec", type=str, default="")
 parser.add_argument("--incremental", help="true if the agg functions are incremental", type=str, default="true")
 parser.add_argument("--prob", help="Deletion Probability", type=float, default="0.1")
 parser.add_argument("--batch", help="Agg functions batch", type=int, default="4")
+parser.add_argument("--use-gb-bw-lineage", help="use gb backward lineage", type=str, default="false")
 # DENSE_DELETE_ALL: dense matrix encoding and evaluation on all tables using prob specified by --prob
 # DENSE_DELETE_SPEC: same as DENSE_ALL except on only tables specified by --spec
 # SEARCH: conjunctive predicate search using sparse encoding
@@ -50,6 +51,9 @@ prob = args.prob
 itype = args.itype
 is_incremental = args.incremental
 spec = args.spec
+use_gb_bw_lineage = args.use_gb_bw_lineage
+if use_gb_bw_lineage == "true":
+    use_duckdb = "false"
 
 qid = str(i).zfill(2)
 distinct = args.interventions
@@ -81,11 +85,11 @@ forward_lineage = "false"
 if distinct == 1 and is_incremental == "true":
     forward_lineage = "true"
 
-pp_timings = con.execute(f"pragma PrepareLineage({query_id}, {prune}, {forward_lineage})").df()
+pp_timings = con.execute(f"pragma PrepareLineage({query_id}, {prune}, {forward_lineage}, {use_gb_bw_lineage})").df()
 print(pp_timings)
 #clear(con)
 # use_duckdb = false, is_scalr = true/false, batch = 4
-q = f"pragma WhatIf({query_id}, '{itype}', '{spec}', {distinct}, {batch}, {is_scalar}, {use_duckdb}, {num_threads}, {debug}, {prune}, {is_incremental}, {prob});"
+q = f"pragma WhatIf({query_id}, '{itype}', '{spec}', {distinct}, {batch}, {is_scalar}, {use_duckdb}, {num_threads}, {debug}, {prune}, {is_incremental}, {prob}, {use_gb_bw_lineage});"
 timings = con.execute(q).fetchdf()
 print(timings)
 
@@ -97,7 +101,8 @@ res = [args.sf, i, itype, prob, is_incremental, use_duckdb, is_scalar, prune, nu
         timings["prep_time"][0], timings["compile_time"][0], timings["eval_time"][0],
         pp_timings["prune_time"][0], pp_timings["lineage_time"][0], ksemimodule_timing, spec,
         pp_timings["lineage_count"][0], pp_timings["lineage_count_prune"][0],
-        pp_timings["lineage_size_mb"][0], pp_timings["lineage_size_mb_prune"][0]
+        pp_timings["lineage_size_mb"][0], pp_timings["lineage_size_mb_prune"][0],
+        use_gb_bw_lineage
         ]
 print(res)
 

@@ -219,8 +219,9 @@ string PragmaPrepareLineage(ClientContext &context, const FunctionParameters &pa
 	int qid = parameters.values[0].GetValue<int>();
 	bool prune = parameters.values[1].GetValue<bool>();
 	bool forward_lineage = parameters.values[2].GetValue<bool>();
+  bool use_gb_backward_lineage = parameters.values[3].GetValue<bool>();
 	PhysicalOperator* op = context.client_data->lineage_manager->queryid_to_plan[qid].get();
-	return Fade::PrepareLineage(op, prune, forward_lineage);
+	return Fade::PrepareLineage(op, prune, forward_lineage, use_gb_backward_lineage);
 }
 
 string PragmaWhatif(ClientContext &context, const FunctionParameters &parameters) {
@@ -247,6 +248,7 @@ string PragmaWhatif(ClientContext &context, const FunctionParameters &parameters
 	bool prune = parameters.values[9].GetValue<bool>();
 	bool incremental = parameters.values[10].GetValue<bool>();
 	float prob = parameters.values[11].GetValue<float>();
+  bool use_gb_backward_lineage = parameters.values[12].GetValue<bool>();
 
 	std::cout << "\nPragmaWhatif " << qid << " " << intervention_type_str << " " <<  spec << " " <<
 	    n_interventions << " " << batch << " "<< is_scalar << " " << use_duckdb << " " <<
@@ -259,10 +261,12 @@ string PragmaWhatif(ClientContext &context, const FunctionParameters &parameters
 
 	if (intervention_type == SEARCH) {
 			return Fade::PredicateSearch(op, { batch, mask_size, is_scalar, use_duckdb, debug, prune, incremental,
-		                                  spec, intervention_type, n_interventions, qid, num_workers, prob, topk} );
+		                                  spec, intervention_type, n_interventions, qid, num_workers, prob, topk,
+                                      use_gb_backward_lineage} );
 	} else {
 		    return Fade::Whatif(op, { batch, mask_size, is_scalar, use_duckdb, debug, prune, incremental,
-											 spec, intervention_type, n_interventions, qid, num_workers, prob, topk} );
+											 spec, intervention_type, n_interventions, qid, num_workers, prob, topk,
+                       use_gb_backward_lineage} );
 	}
 }
 
@@ -318,9 +322,10 @@ void PragmaQueries::RegisterFunction(BuiltinFunctions &set) {
 	                                                                    LogicalType::INTEGER, LogicalType::BOOLEAN,
 	                                                                    LogicalType::BOOLEAN, LogicalType::INTEGER,
 	                                                                    LogicalType::BOOLEAN, LogicalType::BOOLEAN,
-	                                                                    LogicalType::BOOLEAN, LogicalType::FLOAT}));
+	                                                                    LogicalType::BOOLEAN, LogicalType::FLOAT,
+                                                                      LogicalType::BOOLEAN}));
 
-	set.AddFunction(PragmaFunction::PragmaCall("PrepareLineage", PragmaPrepareLineage, {LogicalType::INTEGER, LogicalType::BOOLEAN, LogicalType::BOOLEAN}));
+	set.AddFunction(PragmaFunction::PragmaCall("PrepareLineage", PragmaPrepareLineage, {LogicalType::INTEGER, LogicalType::BOOLEAN, LogicalType::BOOLEAN, LogicalType::BOOLEAN}));
 #endif
 }
 

@@ -1,4 +1,3 @@
-# TODO: use compiled version of lineage pruning
 import sys
 import duckdb
 import pandas as pd
@@ -14,11 +13,11 @@ plot = True
 print_summary = True
 plot_scale = False
 
-batching = False
+batching =  False
 pruning = False
-vec = False
+vec = True
 workers = True
-best = False
+best = True
 
 prefix = "DELETE_"
 if plot_scale:
@@ -33,7 +32,8 @@ else:
     #dense_single = get_data(f"fade_data/dense_single_vary_probs_april7.csv", 1000)
     #dense_single = get_data(f"fade_data/single_dense_0.1_april19.csv", 1000)
     dense_single = get_data(f"fade_data/single_dense_0.1_nofilterOnprune.csv", 1000)
-    dense_fade = con.execute("select * from dense_data_v2 UNION ALL select * from dense_single").df()
+    dense_fade = get_data(f"delete_0.1_start_end.csv", 1000)
+    #dense_fade = con.execute("select * from dense_data_v2 UNION ALL select * from dense_single").df()
 
 
 postfix = """
@@ -131,7 +131,7 @@ if best:
         ggsave(f"figures/{prefix}_fade_2048_sf1_latency.png", p, postfix=postfix, width=8, height=3, scale=0.8)
         
         cat = "query"
-        scalar_data = con.execute("select * from data_distinct_2048 where is_scalar='False' and prune_label='P'").df()
+        scalar_data = con.execute("select * from data_distinct_2048 where is_scalar='False' and prune_label='Fade-Prune'").df()
         p = ggplot(scalar_data, aes(x='num_threads',  y="throughput", color=cat, fill=cat, group=cat))
         p += geom_point(stat=esc('identity'))
         p += geom_line()
@@ -151,11 +151,11 @@ if best:
         p += facet_grid(".~sf_label", scales=esc("free_y"))
         ggsave(f"figures/{prefix}_fade_2048_sf1_speedup_vec_p.png", p, postfix=postfix, width=4, height=2.5, scale=0.8)
         
-        data_distinct["cat"] = data_distinct.apply(lambda row: row["cat"]+"+P" if row["prune_label"]=='P' else  row["cat"], axis=1)
+        data_distinct["cat"] = data_distinct.apply(lambda row: row["cat"]+"+P" if row["prune_label"]=='Fade-Prune' else  row["cat"], axis=1)
         # speedup of vectorization. x-axis: queries, y-axis: speedup
         cat = "cat"
         scalar_data = con.execute("""select * from data_distinct_2048 where num_threads=1 and 
-        ( (prune_label='NP' and is_scalar='False') or (prune_label='P' and is_scalar='True') or (prune_label='P' and is_scalar='False') ) """).df()
+        ( (prune_label='NP' and is_scalar='False') or (prune_label='Fade-Prune' and is_scalar='True') or (prune_label='Fade-Prune' and is_scalar='False') ) """).df()
         p = ggplot(scalar_data, aes(x='query',  y="speedup", color=cat, fill=cat, group=cat))
         p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.9), width=0.88)
         p += axis_labels('Query', "Speedup (log)", "discrete", "log10")

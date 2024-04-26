@@ -48,6 +48,8 @@ struct FadeDataPerNode {
       std::unordered_map<int, std::vector<int>>&, void*, void*, void*, std::set<int>&,  std::set<int>&, std::set<int>&, const int, const int);
 	int (*agg_duckdb_fn)(int, int*, void*, std::unordered_map<std::string, vector<void*>>&, ChunkCollection&, std::set<int>&, const int, const int);
 	int (*agg_fn)(int, int*, void*, std::unordered_map<std::string, vector<void*>>&,  std::unordered_map<int, void*>&, std::set<int>&, const int, const int);
+	int (*agg_fn_bw)(int, std::vector<std::vector<int>>&, void*, std::unordered_map<std::string, vector<void*>>&,
+      std::unordered_map<int, void*>&);
 	int (*agg_fn_nested)(int, int*, void*, std::unordered_map<std::string, vector<void*>>&,
 	                     std::unordered_map<std::string, vector<void*>>&, std::set<int>&, const int, const int);
 	bool has_agg_child;
@@ -76,6 +78,7 @@ struct EvalConfig {
 	int num_worker;
 	float probability;
 	int topk;
+  bool use_gb_backward_lineage;
 };
 
 class Fade {
@@ -87,7 +90,7 @@ public:
 	                         std::unordered_map<idx_t, FadeDataPerNode>& fade_data);
 
   static int LineageMemory(PhysicalOperator* op);
-	static string PrepareLineage(PhysicalOperator *op, bool prune, bool forward_lineage);
+	static string PrepareLineage(PhysicalOperator *op, bool prune, bool forward_lineage, bool use_gb_backward_lineage);
   static std::vector<int> rank(PhysicalOperator* op, EvalConfig& config, std::unordered_map<idx_t, FadeDataPerNode>& fade_data);
 
 	static string Whatif(PhysicalOperator* op, EvalConfig config);
@@ -97,7 +100,7 @@ public:
 	static T2* GetInputVals(PhysicalOperator* op, shared_ptr<OperatorLineage> lop, idx_t col_idx);
 
 	static string get_header(EvalConfig config);
-	static string get_agg_alloc(int fid, string fn, string out_type);
+	static string get_agg_alloc(EvalConfig& config, int fid, string fn, string out_type);
 	static string get_agg_finalize(EvalConfig config, FadeDataPerNode& node_data);
 	static string group_partitions(EvalConfig config, FadeDataPerNode& node_data);
 
@@ -108,12 +111,13 @@ public:
 	template <class T>
 	static void PrintOutput(FadeDataPerNode& info, T* data_ptr);
 
-	static void GetLineage(PhysicalOperator* op);
+	static void GetLineage(PhysicalOperator* op, bool use_gb_backward_lineage);
 
 	static void FillFilterBackwardLineage(PhysicalOperator *op, shared_ptr<OperatorLineage> lop);
 	static void FillJoinBackwardLineage(PhysicalOperator *op, shared_ptr<OperatorLineage> lop);
 	static void FillGBForwardLineage(shared_ptr<OperatorLineage> lop, int row_count);
 	static void FillForwardLineage(PhysicalOperator* op, bool prune);
+	static void FillGBBackwardLineage(shared_ptr<OperatorLineage> lop, int row_count);
 
 	static int PruneUtilization(PhysicalOperator* op, int M, int side);
 

@@ -20,7 +20,7 @@ int (*PruneLineageCompile)(duckdb::PhysicalOperator*, std::vector<int>&, std::ve
 int (*LineageReindex)(std::vector<int>&, std::vector<int>&, std::vector<int>&);
 std::pair<int*, int> (*augment)(int, std::pair<int*, int>, std::pair<int*, int>);
 
-string Fade::PrepareLineage(PhysicalOperator *op, bool prune, bool forward_lineage) {
+string Fade::PrepareLineage(PhysicalOperator *op, bool prune, bool forward_lineage, bool use_gb_backward_lineage) {
   Fade::get_common_functions();
 	// timing vars
 	std::chrono::steady_clock::time_point start_time, end_time;
@@ -35,7 +35,7 @@ string Fade::PrepareLineage(PhysicalOperator *op, bool prune, bool forward_linea
 
 	// 2. retrieve lineage
 	start_time = std::chrono::steady_clock::now();
-	Fade::GetLineage(op);
+	Fade::GetLineage(op, use_gb_backward_lineage);
 	end_time = std::chrono::steady_clock::now();
 	time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
 	double lineage_time = time_span.count();
@@ -163,15 +163,25 @@ string Fade::get_header(EvalConfig config) {
 	return oss.str();
 }
 
-string Fade::get_agg_alloc(int fid, string fn, string out_type) {
+string Fade::get_agg_alloc(EvalConfig &config, int fid, string fn, string out_type) {
 	std::ostringstream oss;
 	if (fn == "sum") {
 		oss << "\n";
-		oss << out_type << "*__restrict__ out_" + to_string(fid) + " = (" + out_type +"*)alloc_vars[\"out_" + to_string(fid) << "\"][thread_id];\n";
+  //  if (config.use_gb_backward_lineage && config.n_intervention != 1) {
+    //  oss << out_type << "*__restrict__ out_" + to_string(fid) + " = (" + out_type +"*)alloc_vars[\"out_" + to_string(fid) << "\"][0];\n";
+   // } else {
+      oss << out_type << "*__restrict__ out_" + to_string(fid) + " = (" + out_type +"*)alloc_vars[\"out_" + to_string(fid) << "\"][thread_id];\n";
+    //}
 	} else if (fn == "count") {
+  //  if (config.use_gb_backward_lineage && config.n_intervention != 1) {
+	//	oss << R"(
+//	int* __restrict__  out_count = (int*)alloc_vars["out_count"][0];
+//)";
+  //  } else {
 		oss << R"(
 	int* __restrict__  out_count = (int*)alloc_vars["out_count"][thread_id];
 )";
+//    }
 	}
 	return oss.str();
 }
@@ -230,43 +240,16 @@ for (int k = 0; k < n_interventions; ++k) {
 
 string Fade::get_agg_finalize(EvalConfig config, FadeDataPerNode& node_data) {
 	std::ostringstream oss;
-
-	if (config.n_intervention == 1) {
-		if (config.use_duckdb) {
-			oss << R"(
-			}
-			offset +=  collection_chunk.size();
-		}
+  if (config.use_duckdb) {
+    oss << R"(
+    offset +=  collection_chunk.size();
+  }
 )";
-		} else {
-			oss << "\t }\n";
-		}
-	oss << Fade::group_partitions(config, node_data);
+  }
+	
+  oss << Fade::group_partitions(config, node_data);
 	oss << "\treturn 0;\n}\n";
   return oss.str();
-	}
-  
-  //if (config.is_scalar && config.intervention_type != InterventionType::SCALE_UNIFORM) oss <<  "\n\t\t\t\t}//c\n"; // close inner loop
-	if (config.is_scalar) oss <<  "\n\t\t\t\t}//c\n"; // close inner loop
-
-	if (config.use_duckdb) {
-		oss << R"(
-			}//a.1
-		}//a.2
-		offset +=  collection_chunk.size();
-}
-)";
-	} else {
-		oss << R"(
-		}//b.1
-	} //b.2
-)";
-	}
-
-	oss << Fade::group_partitions(config, node_data);
-	oss << "\treturn 0;\n}\n";
-
-	return oss.str();
 }
 
 
@@ -380,6 +363,32 @@ void Fade::FillJoinBackwardLineage(PhysicalOperator *op, shared_ptr<OperatorLine
 	} while (cache_on || result.size() > 0);
 }
 
+void Fade::FillGBBackwardLineage(shared_ptr<OperatorLineage> lop, int row_count) {
+	DataChunk result;
+	idx_t global_count = 0;
+	idx_t local_count = 0;
+	idx_t current_thread = 0;
+	idx_t log_id = 0;
+	bool cache_on = false;
+  lop->gb_backward_lineage.resize(row_count);
+
+	do {
+		cache_on = false;
+		result.Reset();
+		result.Destroy();
+		lop->GetLineageAsChunk(result, global_count, local_count,
+		                       current_thread, log_id, cache_on);
+		result.Flatten();
+		int64_t * in_index = reinterpret_cast<int64_t *>(result.data[0].GetData());
+		int * out_index = reinterpret_cast<int *>(result.data[1].GetData());
+		for (idx_t i=0; i < result.size(); ++i) {
+			idx_t iid = in_index[i];
+			idx_t oid = out_index[i];
+      lop->gb_backward_lineage[oid].push_back(iid);
+		}
+	} while (cache_on || result.size() > 0);
+}
+
 void Fade::FillGBForwardLineage(shared_ptr<OperatorLineage> lop, int row_count) {
 	DataChunk result;
 	idx_t global_count = 0;
@@ -388,6 +397,7 @@ void Fade::FillGBForwardLineage(shared_ptr<OperatorLineage> lop, int row_count) 
 	idx_t log_id = 0;
 	bool cache_on = false;
 	lop->forward_lineage[0].resize(row_count);
+
 	do {
 		cache_on = false;
 		result.Reset();
@@ -534,9 +544,9 @@ void Fade::PruneLineage(PhysicalOperator* op, vector<int>& out_order) {
 	}
 }
 
-void Fade::GetLineage(PhysicalOperator* op) {
+void Fade::GetLineage(PhysicalOperator* op, bool use_gb_backward_lineage) {
 	for (idx_t i = 0; i < op->children.size(); i++) {
-		GetLineage(op->children[i].get());
+		GetLineage(op->children[i].get(), use_gb_backward_lineage);
 	}
 
 	if (op->type == PhysicalOperatorType::TABLE_SCAN || op->type == PhysicalOperatorType::FILTER) {
@@ -561,6 +571,12 @@ void Fade::GetLineage(PhysicalOperator* op) {
 		// key: iid, val: oid
 		idx_t row_count = op->children[0]->lineage_op->chunk_collection.Count();
 		FillGBForwardLineage(op->lineage_op, row_count);
+    if (use_gb_backward_lineage) {
+		  row_count = op->lineage_op->chunk_collection.Count();
+      FillGBBackwardLineage(op->lineage_op, row_count);
+      //for (int i=0; i < row_count; i++)
+      //  std::cout << "GB Backward Lineage Per Bucket: " << lop->gb_backward_lineage[i].size() << std::endl;
+    }
 	} else if (op->type == PhysicalOperatorType::UNGROUPED_AGGREGATE) {
 		// key: iid, val: oid
 		idx_t row_count = op->children[0]->lineage_op->chunk_collection.Count();
@@ -1065,6 +1081,11 @@ void Fade::BindFunctions(EvalConfig& config, void* handle, PhysicalOperator* op,
 			} else {
 		  		fade_data[op->id].agg_fn = (int(*)(int, int*, void*, std::unordered_map<std::string, vector<void*>>&,
 				                              std::unordered_map<int, void*>&, std::set<int>&, const int, const int))dlsym(handle, fname.c_str());
+          if (config.use_gb_backward_lineage) {
+		        string fname = "bw_agg_"+ to_string(op->id) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
+            fade_data[op->id].agg_fn_bw = (int(*)(int, std::vector<std::vector<int>>&, void*, std::unordered_map<std::string, vector<void*>>&,
+                                        std::unordered_map<int, void*>&))dlsym(handle, fname.c_str());
+          }
 			}
 		}
 	}
