@@ -497,12 +497,12 @@ if print_summary:
         summary_speedup("threading_data", "sf")
         
 
-    def summary_speedup_thr(table, attrs):
+    def summary_speedup_thr(table, attrs, whr=""):
         print(table, attrs)
         print(con.execute(f"""select {attrs}, max(speedup), avg(speedup), min(speedup), 
         max(throughput), avg(throughput), min(throughput),
         max(eval_time_ms), avg(eval_time_ms), min(eval_time_ms)
-        from {table}
+        from {table} {whr}
         group by {attrs}
         order by {attrs}""").df())
 
@@ -510,7 +510,9 @@ if print_summary:
     if best:
         print("======== DENSE Best =============")
         summary_speedup_thr("best_data_all", "sf, qid, prob, n")
-        summary_speedup_thr("best_data_all", "sf, qid")
         summary_speedup_thr("best_data_all", "sf, n")
         print("Overall across all queries and batches speedup range from")
+        summary_speedup_thr("best_data_all", "sf, qid", "where n=2048")
+        summary_speedup_thr("best_data_all", "sf, sf",  "where query<>'Q1' and n=2048")
+        summary_speedup_thr("best_data_all", "sf, sf", "where n=2048")
         summary_speedup_thr("best_data_all", "sf")
