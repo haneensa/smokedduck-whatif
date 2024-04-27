@@ -8,7 +8,7 @@ export DUCKDB_LIB_PATH=/ProvEnhance/third_party/smokedduck-whatif/build/release/
 # forward vs backward as we vary threads
 
 # Q1. chunked vs not : forward lineage, vary threads, vary n, scalar vs vec, single agg vs many (evaluated n at a time)
-groups=(4 10 1000 10000) #2 4 8 10 100 1000)
+groups=(8 16 32 64 1000 10000) #2 4 8 10 100 1000)
 cards=(10000000) #100000 1000000 10000000)
 distinct=(1024) #64 256 512 1024 2048)
 alpha_list=(1 0)
@@ -16,7 +16,7 @@ aggs=(1) # 2 4 8)
 threads_num=(1 2 4 8)
 prune="true"
 is_scalar_binary=("true" "false")
-csv="forward_vs_backward_v4.csv"
+csv="test.csv" #forward_vs_backward_v5.csv"
 debug="false"
 itype="DENSE_DELETE"
 prob_list=("0.1") #"0.001"  "0.002" "0.005" "0.01" "0.02" "0.05" "0.1" "0.2" "0.3" "0.4" "0.5")

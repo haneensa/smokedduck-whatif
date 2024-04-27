@@ -1,3 +1,4 @@
+# TODO: rerun dbt non pruned
 import duckdb
 import pandas as pd
 from pygg import *
@@ -23,9 +24,10 @@ if True:
     # fade using incremental data processing with sparse intervention representation
     #single_data_all = get_data("single_fade_april6.csv", 1000)
     #single_data_all = get_data("fade_data/dense_single_vary_probs_april7.csv", 1000)
-    single_data_all = get_data(f"fade_data/single_dense_vary_probs_nofilterOnprune.csv", 1000)
-    #dbt_data = get_data("fade_data/dbtoast_delete_april21.csv", 1)
-    dbt_data = get_data("fade_data/dbtoast.csv", 1)
+    #single_data_all = get_data(f"fade_data/single_dense_vary_probs_nofilterOnprune.csv", 1000)
+    single_data_all = get_data(f"fade_data/forward_backward_all_probs_april26.csv", 1000)
+    dbt_data = get_data("fade_data/dbtoast_delete_april21.csv", 1)
+    #dbt_data = get_data("fade_data/dbtoast.csv", 1)
     dbt_data["cat"] = dbt_data.apply(lambda row: "DBT_prune" if row["prune"] else "DBT", axis=1)
 
     cat = "query"
@@ -40,10 +42,11 @@ if True:
     #data = pd.read_csv('dense_delete_all_sf1.csv')
     #dense_data = get_data('fade_data/dense_all_sf1_v2.csv', 1000)
     #dense_data = get_data('fade_data/dense_sf1_v4.csv', 1000)
-    dense_data = get_data(f"fade_data/batch_dense_0.1_nofilterOnprune.csv", 1000)
+    #dense_data = get_data(f"fade_data/batch_dense_0.1_nofilterOnprune.csv", 1000)
+    dense_data = get_data(f"fade_data/forward_backward_0.1_april26.csv", 1000)
     dense_data["cat"] = dense_data.apply(lambda row: str(row["num_threads"]) + "W", axis=1)
     dense_data["cat"] = dense_data.apply(lambda row: row["cat"] + "+SIMD" if row["is_scalar"] == False else row["cat"] , axis=1)
-    dense_data["cat"] = dense_data.apply(lambda row: row["itype"]+" ^"+row["cat"] if row["incremental"] and row["itype"] == "S" else row["itype"] + row["cat"], axis=1)
+    dense_data["cat"] = dense_data.apply(lambda row: row["cat"] + "_b" if row["use_gb_backward_lineage"] else  row["cat"] + "_f", axis=1)
     
     provsql_data = [{'qid': 1, 'with_prov': False, 'expid': 0, 'time_ms': 3927.064}, {'qid': 3, 'with_prov': False, 'expid': 1, 'time_ms': 476.422}, {'qid': 5, 'with_prov': False, 'expid': 2, 'time_ms': 1234.733}, {'qid': 7, 'with_prov': False, 'expid': 3, 'time_ms': 892.848}, {'qid': 9, 'with_prov': False, 'expid': 4, 'time_ms': 1315.129}, {'qid': 10, 'with_prov': False, 'expid': 5, 'time_ms': 1389.753}, {'qid': 12, 'with_prov': False, 'expid': 6, 'time_ms': 501.138}, {'qid': 3, 'with_prov': True, 'expid': 8, 'time_ms': 5544.203}, {'qid': 5, 'with_prov': True, 'expid': 9, 'time_ms': 1624.657}, {'qid': 7, 'with_prov': True, 'expid': 10, 'time_ms': 1334.478}, {'qid': 9, 'with_prov': True, 'expid': 11, 'time_ms': 68457.627}, {'qid': 10, 'with_prov': True, 'expid': 12, 'time_ms': 23379.272}, {'qid': 12, 'with_prov': True, 'expid': 13, 'time_ms': 3617.771}]
     df_provsql = pd.DataFrame(provsql_data)
@@ -53,14 +56,14 @@ if True:
     # figure 1: single intervention latency
     dbt_prob=0.1
     single_data = con.execute(f"""
-        select 'Fade-Prune' as system, query, prune, sf, sf_label,  eval_time_ms, incremental
-            from single_data_all where n=1 and num_threads=1 and prune='True' and prob={dbt_prob} and incremental='False'
+        select 'Fade-b-Prune' as system, query, prune, sf, sf_label,  eval_time_ms, incremental
+            from single_data_all where n=1 and num_threads=1 and prune='True' and prob={dbt_prob} and incremental='False' and use_gb_backward_lineage='False'
+        UNION ALL select 'Fade-b' as system, query, prune, sf, sf_label, eval_time_ms, incremental
+            from single_data_all where n=1 and num_threads=1  and prune='False' and prob={dbt_prob} and incremental='False' and use_gb_backward_lineage='False'
         UNION ALL select 'Fade' as system, query, prune, sf, sf_label, eval_time_ms, incremental
-            from single_data_all where n=1 and num_threads=1  and prune='False' and prob={dbt_prob} and incremental='False'
-        UNION ALL select 'Fade-p-sparse-incr' as system, query, prune, sf, sf_label,  eval_time_ms, incremental
-            from single_data_all where n=1 and num_threads=1 and prune='True' and prob={dbt_prob} and incremental='True'
-        UNION ALL select 'Fade-sparse-incr' as system, query, prune, sf, sf_label, eval_time_ms, incremental
-            from single_data_all where n=1 and num_threads=1  and prune='False' and prob={dbt_prob} and incremental='True'
+            from single_data_all where n=1 and num_threads=1  and prune='False' and prob={dbt_prob} and incremental='False' and use_gb_backward_lineage='True'
+        UNION ALL select 'Fade-Prune' as system, query, prune, sf, sf_label,  eval_time_ms, incremental
+            from single_data_all where n=1 and num_threads=1 and prune='True' and prob={dbt_prob} and incremental='False' and use_gb_backward_lineage='True'
         UNION ALL select 'DBT-Prune' as system, query, prune, sf, sf_label, eval_time_ms as eval_time, 'False' as incremental
             from dbt_data where prob={dbt_prob} and prune='True'
             and itype='DELETE'
@@ -89,6 +92,9 @@ if True:
     p += legend_bottom
     p += facet_grid(".~sf_label", scales=esc("free_y"))
     ggsave("figures/fade_single_sf1.png", p, postfix=postfix, width=5, height=3, scale=0.8)
+    
+    single_data_all = con.execute("select * from single_data_all where use_gb_backward_lineage='False'").df()
+    dense_data = con.execute("select * from dense_data where use_gb_backward_lineage='False'").df()
 
     # fig 1:
     # x-axis prob, y-axis dbt normalized latency against fade

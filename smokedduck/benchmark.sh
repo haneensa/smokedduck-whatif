@@ -9,20 +9,19 @@ export DUCKDB_LIB_PATH=/ProvEnhance/third_party/smokedduck-whatif/build/release/
 
 # Q1. chunked vs not : forward lineage, vary threads, vary n, scalar vs vec, single agg vs many (evaluated n at a time)
 query_nums=("1" "3" "5" "7" "9"  "10" "12")
-sf_values=("1") # "5" "10") # "10")  # "0.2" "0.4") # "5.0" "10.0") # (# "3.0" "4.0")
+sf_values=("10") #"1" "5" "10") # "10")  # "0.2" "0.4") # "5.0" "10.0") # (# "3.0" "4.0")
 # ADD 64, 256
-distinct=("1") # "64" "256" "512" "1024" "2048")
-threads_num=("1" "2" "4" "8")
-prune_binary=("true" "false")
-is_scalar_binary=("true") # "false") # "true") # "false")
-#csv="forward_backward_0.1_april26.csv" #"scale_random_vary_probs_april22.csv"  #"dense_delete_q1_till_512__april11.csv"
-csv="forward_backward_all_probs_april26.csv" #"scale_random_vary_probs_april22.csv"  #"dense_delete_q1_till_512__april11.csv"
+distinct=("1" "64" "256" "512") # "1024" "2048")
+threads_num=("16") #"1" "2" "4" "8")
+prune_binary=("true") # "false")
+is_scalar_binary=("false") #"true") 
+csv="scale.csv" 
 debug="false"
 #itype_list=("SCALE_RANDOM") # evaluate scaling some tuples of an attribute
 itype_list=("DENSE_DELETE")
 #itype_list=("SEARCH")
 # if search then include incremental or not
-prob_list=("0.001"  "0.002" "0.005" "0.01" "0.02" "0.05" "0.1" "0.2" "0.3" "0.4" "0.5")
+prob_list=("0.1") #"0.001"  "0.002" "0.005" "0.01" "0.02" "0.05" "0.1" "0.2" "0.3" "0.4" "0.5")
 spec='""'
 #spec='lineitem.i'
 #gen='--gen_distinct True'

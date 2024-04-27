@@ -15,9 +15,10 @@ pd.set_option('display.max_rows', None)
 con = duckdb.connect(':default:')
 
 
-micro = pd.read_csv("forward_vs_backward_v3.csv")
+micro = pd.read_csv("forward_vs_backward_v5.csv")
 micro["eval_time_ms"] = 1000 * micro["eval_time"]
 micro["system"] = micro.apply(lambda row: 'backward' if row['use_gb_backward_lineage'] else 'forward' , axis=1)
+micro["vec_label"] = micro.apply(lambda row: 'scalar' if row['is_scalar'] else 'SIMD' , axis=1)
 micro.rename(columns={'distinct': 'n'}, inplace=True)
 micro.rename(columns={'group': 'g'}, inplace=True)
 print(micro)
@@ -64,29 +65,42 @@ print(con.execute("""select system, card, g, n, is_scalar, alpha,
     order by  is_scalar, g, n, alpha, system
     """).df())
 scale_data = con.execute("""select system, card, g, n, is_scalar, alpha, t2.num_threads,
-        'n='||card as nlabel, 'g='||g as glabel,
-    t1.eval_time_ms, t1.eval_time_ms/t2.eval_time_ms as speedup
+        'n='||card as nlabel, 'g='||g as glabel,t2.vec_label, 'a='||alpha as alabel,
+    t2.eval_time_ms, t1.eval_time_ms/t2.eval_time_ms as speedup
     from (select * from micro where num_threads=1) t1 JOIN
     (select * from micro) t2
     USING (card, system, is_scalar, g, alpha, n)
-    where alpha=1
     """).df()
-cat = "system"
-p = ggplot(scale_data, aes(x='num_threads',  y="speedup", color=cat, fill=cat, group=cat))
-p += geom_line(stat=esc('identity'))
-p += axis_labels('#threads', "Speedup", 'continuous')
-p += legend_side
-p += facet_grid(".~glabel~is_scalar", scales=esc("free_y"))
-ggsave(f"figures/agg_forward_vs_backward.png", p, width=8, height=8, scale=0.8)
 
-scale_data_one = con.execute("select * from scale_data where is_scalar='True' and g=10").df()
+postfix = """
+data$glabel = factor(data$glabel, levels=c('g=8', 'g=16', 'g=32', 'g=64', 'g=1000', 'g=10000'))
+    """
 cat = "system"
-p = ggplot(scale_data_one, aes(x='num_threads',  y="speedup", color=cat, fill=cat, group=cat))
+p = ggplot(scale_data, aes(x='num_threads',  y="speedup", color=cat, fill=cat, linetype='vec_label'))
 p += geom_line(stat=esc('identity'))
 p += axis_labels('#threads', "Speedup", 'continuous')
 p += legend_side
-p += facet_grid(".~glabel~nlabel", scales=esc("free_y"))
-ggsave(f"figures/agg_forward_vs_backward_g10_scalar.png", p, width=4, height=2.5, scale=0.8)
+p += facet_grid(".~glabel~alabel", scales=esc("free_y"))
+ggsave(f"figures/agg_forward_vs_backward.png", p, postfix=postfix,  width=8, height=8, scale=0.8)
+
+scale_data_pick = con.execute("select * from scale_data where (g=8 or g=64 or g=1000 or g=10000) ").df()
+cat = "system"
+p = ggplot(scale_data_pick, aes(x='num_threads',  y="speedup", color=cat, fill=cat, linetype='vec_label'))
+p += geom_line(stat=esc('identity'))
+p += axis_labels('#threads', "Speedup", 'continuous')
+p += legend_bottom
+p += facet_grid(".~nlabel~alabel~glabel", scales=esc("free_y"))
+ggsave(f"figures/agg_forward_vs_backward_sample.png", p, postfix=postfix, width=6, height=4, scale=0.8)
+
+cat = "system"
+p = ggplot(scale_data_pick, aes(x='num_threads',  y="eval_time_ms", color=cat, fill=cat, linetype='vec_label'))
+p += geom_line(stat=esc('identity'))
+p += axis_labels('#threads', "Speedup", 'continuous')
+p += legend_bottom
+p += facet_grid(".~nlabel~alabel~glabel", scales=esc("free_y"))
+ggsave(f"figures/agg_forward_vs_backward_latency_sample.png", p, postfix=postfix, width=6, height=4, scale=0.8)
+
+
 # x-axis: num_threads, y-axis: speedup
 if False:
     forward_q1_multi = get_data(f"forward_q1_multi.csv", 1000)

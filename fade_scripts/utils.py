@@ -6,6 +6,7 @@ from pygg import *
 def get_data(fname, scale):
     local_data = pd.read_csv(fname)
     local_data["eval_time_ms"] = scale * local_data["eval_time"]
+    local_data["prune_time_ms"] = scale * local_data["prune_time"]
     local_data["query"] = "Q"+ local_data["qid"].astype(str)
     local_data["cat"] = local_data.apply(lambda row: str(row["num_threads"]) + "W", axis=1)
     local_data["cat"] = local_data.apply(lambda row: row["cat"] + "+SIMD" if row["is_scalar"] == False else row["cat"] , axis=1)
@@ -34,7 +35,7 @@ legend = theme_bw() + theme(**{
 
 legend_bottom = legend + theme(**{
   "legend.position":esc("bottom"),
-  "legend.spacing": "unit(-.5, 'cm')"
+  "legend.spacing": "unit(-.1, 'cm')"
 })
 
 legend_side = legend + theme(**{
