@@ -11,7 +11,7 @@ def get_data(fname, scale):
     local_data["cat"] = local_data.apply(lambda row: str(row["num_threads"]) + "W", axis=1)
     local_data["cat"] = local_data.apply(lambda row: row["cat"] + "+SIMD" if row["is_scalar"] == False else row["cat"] , axis=1)
     local_data["sf_label"] = "SF="+ local_data["sf"].astype(str)
-    local_data["prune_label"] = local_data.apply(lambda row:"Fade-Prune" if row["prune"] else "Fade" , axis=1)
+    local_data["prune_label"] = local_data.apply(lambda row:"FaDE-Prune" if row["prune"] else "FaDE" , axis=1)
     local_data.rename(columns={'distinct': 'n'}, inplace=True)
     return local_data
     

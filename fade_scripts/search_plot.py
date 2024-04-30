@@ -77,8 +77,8 @@ data_cube["query"] = "Q"+data_cube["qid"].astype(str)
 data_cube["n"] = data_cube["distinct"]
 data_cube = con.execute("""select 0 as prune_time_ms, sf, eval_time_ms, query, qid, n, num_threads  from data_cube where num_threads=8""").df()
 
-data_spec["sys"] = "FaDe"
-data_search["sys"] = "FaDe-Sparse"
+data_spec["sys"] = "FaDE"
+data_search["sys"] = "FaDE-Sparse"
 data_cube["sys"] = "GB"
 
 data_spec["itype"] = "DD"
@@ -86,7 +86,7 @@ data_search["itype"] = "S"
 data_cube["itype"] = "GB"
 data = pd.concat([data_spec, data_search], axis=0)
 
-data["sys"] = data.apply(lambda row: row["sys"]+"-inc" if row["incremental"] and row["itype"] == "S" else row["sys"] , axis=1)
+data["sys"] = data.apply(lambda row: row["sys"]+"-Inc" if row["incremental"] and row["itype"] == "S" else row["sys"] , axis=1)
 #data["sys"] = data.apply(lambda row: row["sys"]+"-p" if row["prune"] else row["sys"] , axis=1)
 
 
@@ -98,6 +98,7 @@ data["cat"] = data.apply(lambda row: row["itype"]+" ^"+row["cat"] if row["increm
 data_cube["cat"] = data_cube.apply(lambda row: row["itype"] + " " + str(row["num_threads"]) + "W", axis=1)
 
 if plot:
+    # TODO: add baseline
     plot_data = con.execute("""
     select prune, sys, cat, query, prune_time_ms, eval_time_ms, itype, n, sf, num_threads, n/(eval_time_ms/1000.0) as throughput
         from data where n>1 and itype='S' and incremental='True' and is_scalar='True'
@@ -112,7 +113,8 @@ if plot:
     select 'x' as prune, sys, cat, query, prune_time_ms, eval_time_ms, itype,n, sf, num_threads, n/(eval_time_ms/1000.0) as throughput from data_cube 
             """).df()
     plot_data_best = con.execute("""select itype, sys, query, min(eval_time_ms) as eval_time_ms,
-                                min(eval_time_ms+prune_time_ms) as eval_prune_time_ms, avg(prune_time_ms) as prune_time_ms, n, sf
+                                min(eval_time_ms+prune_time_ms) as eval_prune_time_ms,
+                                avg(prune_time_ms) as prune_time_ms, n, sf
                                 from plot_data where n=2048 group by itype, sys, n, sf, query order by sys, query, n, sf
                                 """).df()
     cat = "sys"
@@ -133,13 +135,35 @@ if plot:
     p += facet_grid(".~sf_label", scales=esc("free_y"))
     ggsave("figures/fade_search_fade_sf10.png", p, postfix=postfix, width=4, height=2.5, scale=0.8)
 
-    plot_data = con.execute("""select 'sf='||sf as sf_label, t1.sys, sf, n, query, max(base.eval_time_ms / t1.eval_prune_time_ms) as speedup,
+
+    # todo: add baseline
+    # read lineage_overhead.csv, get tpch runtimes without lineage
+    lineage_data = pd.read_csv('fade_data/lineage_overhead_all_april30_v2.csv')
+    lineage_data["query"] = "Q"+lineage_data["qid"].astype(str)
+    """
+            UNION ALL
+            select 'sf='||sf as sf_label, t1.sys, sf, n, query, max(base.eval_time_ms / t1.eval_prune_time_ms) as speedup,
             min(t1.eval_time_ms) as sys_eval, min(base.eval_time_ms) as base_eval,
+            max(n/(t1.eval_prune_time_ms/1000.0)) as throughput,
+            avg(t1.prune_time_ms) as prune_eval, 
+            from (select * from plot_data_best where  itype='GB') as t1 JOIN
+            (select * from plot_data_best where itype='GB') as base using (sf, n, query)
+            group by sf, n, query, t1.sys
+    """
+    plot_data = con.execute("""
+            select 'sf='||sf as sf_label, t1.sys, sf, n, query, max(base.eval_time_ms / t1.eval_prune_time_ms) as speedup,
+            min(t1.eval_time_ms) as sys_eval, min(base.eval_time_ms) as base_eval,
+            max(n/(t1.eval_prune_time_ms/1000.0)) as throughput,
             avg(t1.prune_time_ms) as prune_eval, 
             from (select * from plot_data_best where  itype<>'GB') as t1 JOIN
             (select * from plot_data_best where itype='GB') as base using (sf, n, query)
             group by sf, n, query, t1.sys
-            order by n, query
+            UNION ALL
+            select 'sf='||sf as sf_label, 'Baseline' as sys, sf, 1, query, 0 speedup, 0 sys_eval, 0 base_eval,
+            max(1/query_timing) as throughput, 0 as prune_eval
+            from lineage_data
+            where workload='tpch'
+            group by sf, query, workload
             """).df()
     print("check")
     print(plot_data)
@@ -157,13 +181,22 @@ if plot:
     p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.9), width=0.88)
     p += axis_labels('Query', "Speedup (log)", "discrete", "log10")
     p += legend_side
-    ggsave("figures/fade_search_fade_sf10_2048_speedup.png", p,  width=7, height=2.5, scale=0.8)
+    ggsave("figures/fade_search_fade_sf10_2048_speedup.png", p,  postfix=postfix,width=7, height=2.5, scale=0.8)
+    
+    p = ggplot(sf10_plot_data, aes(x='query',  y="throughput", color=cat, fill=cat, group=cat))
+    p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.9), width=0.88)
+    p += axis_labels('Query', "Interventions / Sec (log)", "discrete", "log10",
+                ykwargs=dict(breaks=[10,1000,100000, 1000000],  labels=list(map(esc,['10', '1K', '100K', '1M']))))
+    p += legend_side
+    ggsave("figures/fade_search_fade_sf10_2048_throughput.png", p,  postfix=postfix,width=7, height=2.5, scale=0.8)
+    
     
     summary = con.execute("""select sf, sys,
     avg(speedup) as as, max(speedup) maxs, min(speedup) mins,
-    avg(sys_eval) asys, max(sys_eval) maxsys, min(sys_eval) minsys,
-    avg(base_eval) abase, max(base_eval) maxbase, min(base_eval) minbase,
-    avg(prune_eval) aprune, max(prune_eval) maxprune, min(prune_eval) minprune
+    avg(sys_eval) asys, 
+    avg(base_eval) abase,
+    avg(throughput),
+    max(throughput)
     from plot_data
     group by sf, sys
     order by sf, sys
@@ -171,9 +204,10 @@ if plot:
     print(summary)
     summary = con.execute("""select sf, sys,
     avg(speedup) as as, max(speedup) maxs, min(speedup) mins,
-    avg(sys_eval) asys, max(sys_eval) maxsys, min(sys_eval) minsys,
-    avg(base_eval) abase, max(base_eval) maxbase, min(base_eval) minbase,
-    avg(prune_eval) aprune, max(prune_eval) maxprune, min(prune_eval) minprune
+    avg(sys_eval) asys,
+    avg(base_eval) abase, 
+    avg(throughput),
+    max(throughput)
     from plot_data
     where query<>'Q1'
     group by sf, sys

@@ -15,7 +15,7 @@ plot_scale = False
 
 batching =  False
 pruning = False
-vec = False
+vec = True
 workers = False
 best = False
 best_distinct = True
@@ -296,13 +296,14 @@ if vec:
         USING (sf, qid, n, prune, prob, bw) where prob={prob}""").df()
     vec_data["prune_label"] = vec_data.apply(lambda row:"FaDE-Prune" if row["prune"] else "FaDE" , axis=1)
     if plot:
-        p = ggplot(vec_data, aes(x='n',  y="speedup", color="query", fill="query", shape='prune_label', linetype='prune_label'))
+        p = ggplot(vec_data, aes(x='n',  y="speedup", color="query", fill="query"))
         p += geom_line(stat=esc('identity'))  + geom_point(stat=esc('identity'))
         p += legend_side
         p += axis_labels('Batch Size (log)', "Speedup (log)", "log10", "log10",
                 xkwargs=dict(breaks=[1, 64, 256, 512,1024,2048],  labels=list(map(esc,['1','64', '256', '512','1K','2K']))),
             )
-        ggsave(f"figures/{prefix}_fade_vec.png", p, postfix=postfix, width=3.5, height=2.5, scale=0.8)
+        p += facet_grid(".~prune_label", scales=esc("free_y"))
+        ggsave(f"figures/{prefix}_fade_vec.png", p, postfix=postfix, width=6, height=2.5, scale=0.8)
 
 if workers:
     print("======== DENSE Threads =============")
@@ -387,7 +388,7 @@ if best_distinct:
                 elif c==f'8W+SIMD+B={nv}':
                     return '+B+W+SIMD'
                 elif c==f'8W+SIMD+P+B={nv}':
-                    return '+B+W+SIMD+P'
+                    return '+B+W+P+SIMD'
                 elif c==f'8W+P+B={nv}':
                     return '+B+W+P'
                 else:
@@ -399,13 +400,13 @@ if best_distinct:
             '2W', '2W+SIMD', '2W+P', '2W+SIMD+P',
             '4W', '4W+SIMD', '4W+P', '4W+SIMD+P',
             '8W', '8W+SIMD', '8W+P', '8W+SIMD+P'))
-            data$cat2 = factor(data$cat2, levels=c('Baseline', '+B', '+B+W', '+B+W+SIMD', '+B+W+P', '+B+W+SIMD+P'))
+            data$cat2 = factor(data$cat2, levels=c('Baseline', '+B', '+B+W', '+B+W+SIMD', '+B+W+P', '+B+W+P+SIMD'))
                 """
             data_distinct_q = con.execute(f"""
             select 'avg' as typ, prob ,cat, cat2, query, sf_label, prune_label, n, avg(throughput) throughput, avg(speedup) as speedup
             ,avg(speedupwprune) as speedupwprune, avg(throughputwprune) as throughputwprune
             from data_distinct
-            where prob={prob} and cat IN ('1W+B=1', '1W+B={nv}', '8W+B={nv}', '8W+SIMD+B={nv}', '8W+P+B={nv}', '8W+SIMD+P+B={nv}')
+            where prob={prob} and cat IN ('1W+B=1', '1W+B={nv}', '8W+B={nv}', '8W+P+B={nv}', '8W+SIMD+P+B={nv}')
             group by cat, sf_label, prune_label, n, prob, typ, query, cat2
             """).df()
             print(f"++++++++++Summary {nv}+++++++")
@@ -474,7 +475,7 @@ if best_distinct:
         ggsave(f"figures/{prefix}_fade_2048_sf1_latency.png", p, postfix=postfix, width=8, height=3, scale=0.8)
         
         cat = "query"
-        scalar_data = con.execute("select * from data_distinct_2048 where is_scalar='False' and prune_label='Fade-Prune'").df()
+        scalar_data = con.execute("select * from data_distinct_2048 where is_scalar='False' and prune_label='FaDE-Prune'").df()
         p = ggplot(scalar_data, aes(x='num_threads',  y="throughput", color=cat, fill=cat, group=cat))
         p += geom_point(stat=esc('identity'))
         p += geom_line()

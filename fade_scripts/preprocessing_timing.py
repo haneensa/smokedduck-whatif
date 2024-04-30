@@ -62,3 +62,33 @@ lineage_time["prune_time"] *= 1000
 lineage_time["lineage_time"] *= 1000
 summary_time("lineage_time", "sf, qid, use_gb_backward_lineage")
 summary_time("lineage_time", "sf, use_gb_backward_lineage")
+
+lineage_data = pd.read_csv('fade_data/lineage_overhead.csv')
+lineage_data = pd.read_csv('fade_data/lineage_overhead_all_april30_v2.csv')
+lineage_data["query"] = "Q"+lineage_data["qid"].astype(str)
+lineage_data["sf_label"] = "SF="+lineage_data["sf"].astype(str)
+print("======== Lineage Overheaad Summary =============")
+#summary_data = con.execute("""
+#select qid, sf, avg(query_timing) as qtiming, avg(lineage_timing) as ltiming,
+#avg(dense_data.ksemimodule_timing) as ktiming,
+#avg(lineage_timing-query_timing) as lineage_overhead,
+#avg(dense_data.ksemimodule_timing-query_timing) as ksemimodule_overhead,
+#from lineage_data JOIN dense_data USING (qid, sf)
+#group by qid, sf
+#order by qid, sf
+#""").df()
+#print(summary_data)
+def lineage_details(attrs):
+    print(con.execute(f"""select {attrs}, avg(query_timing), avg(lineage_timing),
+        avg(lineage_timing/query_timing) slowdown,
+        avg( 1000*(lineage_timing-query_timing)) diff_ms,
+        avg( ((lineage_timing-query_timing) / query_timing)*100 ) avg_rover,
+        max( ((lineage_timing-query_timing) / query_timing)*100 ) max_rover,
+        min( ((lineage_timing-query_timing) / query_timing)*100 ) min_rover
+    from lineage_data group by {attrs}
+    order by {attrs}""").df())
+lineage_details("sf, query, model, workload")
+lineage_details("sf, model, workload")
+lineage_details("model, workload")
+
+# TODO: get how much extra overhead to cache values
