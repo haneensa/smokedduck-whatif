@@ -113,7 +113,7 @@ void DuckDBQueriesListFunction(ClientContext &context, TableFunctionInput &data_
 		auto plan = context.client_data->lineage_manager->queryid_to_plan[data.offset].get();
 		std::vector<idx_t> stats(3, 0);//GetStats(plan);
 		clock_t start = clock();
-		LineageManager::PostProcess(plan);
+		//LineageManager::PostProcess(plan);
 		clock_t end = clock();
 
 		idx_t col = 0;

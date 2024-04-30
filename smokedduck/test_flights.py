@@ -3,7 +3,7 @@ import pandas as pd
 import smokedduck
 
 con = smokedduck.connect('flights.db')
-if False:
+if 0:
     con.execute('pragma threads=16')
     csvfile = '/home/haneenmo/airline.csv.shuffle'
     try:
@@ -16,6 +16,7 @@ if False:
 
     con.execute(f"create table flights as (select * from data)")
 print(con.execute("select year, count() from flights group by year").df())
+print(con.execute("select count() from flights").df())
 
 q1 = f"""select year as x, sum(ActualElapsedTime-AirTime) as sy,
 count() as cy
@@ -43,24 +44,23 @@ end = time.time()
 ksemimodule_timing = end - start
 print("Lineage Capture Timing: ", ksemimodule_timing, no_lineage, ksemimodule_timing - no_lineage)
 
-prune='true'
+prune = 'true'
 query_id = con.query_id
-pp_timings = con.execute(f"pragma PrepareLineage({query_id}, {prune}, false)").df()
+pp_timings = con.execute(f"pragma PrepareLineage({query_id}, {prune}, false, false)").df()
 print(pp_timings)
 
-use_duckdb = 'true'
+use_duckdb = 'false'
 num_threads = '8'
 is_scalar = 'false'
 batch = '1'
 debug = 'false'
-prune = 'true'
-prob = '0.01'
+prob = '0.1'
 itype = 'DENSE_DELETE'
 is_incremental = 'false'
 spec = 'flights.i'
 distinct = '896'
 
-q = f"pragma WhatIf({query_id}, '{itype}', '{spec}', {distinct}, {batch}, {is_scalar}, {use_duckdb}, {num_threads}, {debug}, {prune}, {is_incremental}, {prob});"
+q = f"pragma WhatIf({query_id}, '{itype}', '{spec}', {distinct}, {batch}, {is_scalar}, {use_duckdb}, {num_threads}, {debug}, {prune}, {is_incremental}, {prob}, false);"
 timings = con.execute(q).fetchdf()
 print(timings)
 

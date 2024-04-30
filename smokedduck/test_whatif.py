@@ -102,7 +102,8 @@ res = [args.sf, i, itype, prob, is_incremental, use_duckdb, is_scalar, prune, nu
         pp_timings["prune_time"][0], pp_timings["lineage_time"][0], ksemimodule_timing, spec,
         pp_timings["lineage_count"][0], pp_timings["lineage_count_prune"][0],
         pp_timings["lineage_size_mb"][0], pp_timings["lineage_size_mb_prune"][0],
-        use_gb_bw_lineage
+        use_gb_bw_lineage,
+        timings["code_gen_time"][0], timings["data_time"][0]
         ]
 print(res)
 

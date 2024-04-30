@@ -22,6 +22,7 @@ class PhysicalOperator;
 // holds allocated data per node
 // interventions, annotations, etc
 struct FadeDataPerNode {
+  bool gen;
 	int* annotations;
 	idx_t n_interventions;
 	std::set<int> del_set;
@@ -125,6 +126,15 @@ public:
 
 	static void ReleaseFade(EvalConfig& config, void* handle, PhysicalOperator* op,
 	                 std::unordered_map<idx_t, FadeDataPerNode>& fade_data);
+	
+  static void GroupByGetCachedData(EvalConfig& config, shared_ptr<OperatorLineage> lop,
+	                         std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
+	                         PhysicalOperator* op, vector<unique_ptr<Expression>>& aggregates,
+	                         int keys, int n_groups);
+
+  static void GetCachedData(EvalConfig& config, PhysicalOperator* op,
+                    std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
+                     std::unordered_map<std::string, std::vector<std::string>>& spec);
 
 	static void GroupByAlloc(EvalConfig& config, shared_ptr<OperatorLineage> lop,
 	                         std::unordered_map<idx_t, FadeDataPerNode>& fade_data,

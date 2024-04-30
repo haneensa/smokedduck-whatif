@@ -70,13 +70,12 @@ from scale_fig_data group by bw, query, sf""").df()
 p = ggplot(scale_fig_data_best, aes(x='sf',  y="throughput", color='query', shape='query'))
 p += geom_point(stat=esc('identity'))
 p +=  geom_line(state=esc('identity'))
-p += axis_labels('SF (log)', "Interventions / Seconds (log)", "log10", "log10", 
-        ykwargs=dict(breaks=[1000,10000,100000,1000000],  labels=list(map(esc,['10e3','10e4','10e5','10e6']))),
+p += axis_labels('SF (log)', "Interventions / Sec (log)", "log10", "log10", 
+        ykwargs=dict(breaks=[1000,10000,100000,1000000],  labels=list(map(esc,['1K','10K','100K','1M']))),
         xkwargs=dict(breaks=[1,5,10],  labels=list(map(esc,['1','5','10']))),
         )
 p += legend_side
-p += facet_grid(".~bw", scales=esc("free_y"))
-ggsave("figures/fade_throughput_best.png", p, postfix=postfix, width=4, height=2.5, scale=0.8)
+ggsave("figures/fade_throughput_best.png", p, postfix=postfix, width=4, height=2.2, scale=0.8)
 
 p = ggplot(scale_fig_data_best, aes(x='sf',  y="time_ms", color='query', shape='query'))
 p += geom_point(stat=esc('identity'))

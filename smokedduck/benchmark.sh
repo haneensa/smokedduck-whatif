@@ -9,28 +9,30 @@ export DUCKDB_LIB_PATH=/ProvEnhance/third_party/smokedduck-whatif/build/release/
 
 # Q1. chunked vs not : forward lineage, vary threads, vary n, scalar vs vec, single agg vs many (evaluated n at a time)
 query_nums=("1" "3" "5" "7" "9"  "10" "12")
-sf_values=("10") #"1" "5" "10") # "10")  # "0.2" "0.4") # "5.0" "10.0") # (# "3.0" "4.0")
+sf_values=("1") #"5" "10") #"1" "5" "10") # "10")  # "0.2" "0.4") # "5.0" "10.0") # (# "3.0" "4.0")
 # ADD 64, 256
-distinct=("1" "64" "256" "512") # "1024" "2048")
-threads_num=("16") #"1" "2" "4" "8")
-prune_binary=("true") # "false")
-is_scalar_binary=("false") #"true") 
-csv="scale.csv" 
+distinct=("2048") #"64" "256" "512" "1024" "2048")
+threads_num=("8") # "2" "4" "8")
+prune_binary=("false" "true") # "false")
+is_scalar_binary=("false" "true") 
+#csv="search_sf1_april28.csv" 
+#csv="search_sf5_10_prune_no_q1_april28.csv" 
+csv="search_sf5_10_april28.csv" 
 debug="false"
 #itype_list=("SCALE_RANDOM") # evaluate scaling some tuples of an attribute
-itype_list=("DENSE_DELETE")
-#itype_list=("SEARCH")
+#itype_list=("DENSE_DELETE")
+itype_list=("SEARCH")
 # if search then include incremental or not
 prob_list=("0.1") #"0.001"  "0.002" "0.005" "0.01" "0.02" "0.05" "0.1" "0.2" "0.3" "0.4" "0.5")
 spec='""'
-#spec='lineitem.i'
+spec='lineitem.i'
 #gen='--gen_distinct True'
 batch_list=("4") #"1" "2" "4" "8")
 use_duckdb="false"
-use_gb_bw_lineage_list=("true" "false")
+use_gb_bw_lineage_list=("false") # "true") 
 touch ${csv}
 # add prob, itype, incremental
-echo sf,qid,itype,prob,incremental,use_duckdb,is_scalar,prune,num_threads,distinct,batch,post_time,gen_time,prep_time,compile_time,eval_time,prune_time,lineage_time,ksemimodule_timing,spec,lineage_count,lineage_count_prune,lineage_size_mb,lineage_size_mb_prune,use_gb_backward_lineage > ${csv}
+echo sf,qid,itype,prob,incremental,use_duckdb,is_scalar,prune,num_threads,distinct,batch,post_time,gen_time,prep_time,compile_time,eval_time,prune_time,lineage_time,ksemimodule_timing,spec,lineage_count,lineage_count_prune,lineage_size_mb,lineage_size_mb_prune,use_gb_backward_lineage,code_gen_time,data_time > ${csv}
 
 capture_lineage_overhead="false"
 if [ "$capture_lineage_overhead" = "true" ]; then
@@ -50,6 +52,9 @@ do
   python3 smokedduck/prep_db.py --sf ${sf} ${gen}
   for itype in "${itype_list[@]}"
   do
+    if [ "$itype" = "SEARCH" ]; then
+      spec='lineitem.i'
+    fi
     for n in "${distinct[@]}"
     do
       for is_scalar in "${is_scalar_binary[@]}"
@@ -90,7 +95,7 @@ do
                           continue
                         fi
 
-                        #python3 smokedduck/test_whatif.py  --spec ${spec} --batch ${batch} --prune ${prune} --sf ${sf} --csv ${csv} --i ${query_num} --use-duckdb ${use_duckdb} --t ${thread} --is-scalar ${is_scalar} --debug ${debug} --interventions ${n} --itype ${itype} --prob ${prob} --incremental "true"
+                        python3 smokedduck/test_whatif.py  --spec ${spec} --batch ${batch} --prune ${prune} --sf ${sf} --csv ${csv} --i ${query_num} --use-duckdb ${use_duckdb} --t ${thread} --is-scalar ${is_scalar} --debug ${debug} --interventions ${n} --itype ${itype} --prob ${prob} --incremental "true"
                       fi
                     done # prob
                   done

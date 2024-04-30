@@ -27,11 +27,13 @@ string Fade::PrepareLineage(PhysicalOperator *op, bool prune, bool forward_linea
 	std::chrono::duration<double> time_span;
 
 	// 1. Post Process
+  std::cout << "start post process " << std::endl;
 	start_time = std::chrono::steady_clock::now();
 	LineageManager::PostProcess(op);
 	end_time = std::chrono::steady_clock::now();
 	time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
 	double post_processing_time = time_span.count();
+  std::cout << "end post process " << post_processing_time <<std::endl;
 
 	// 2. retrieve lineage
 	start_time = std::chrono::steady_clock::now();
@@ -569,13 +571,14 @@ void Fade::GetLineage(PhysicalOperator* op, bool use_gb_backward_lineage) {
 		FillJoinBackwardLineage(op, op->lineage_op);
 	} else if (op->type == PhysicalOperatorType::HASH_GROUP_BY || op->type == PhysicalOperatorType::PERFECT_HASH_GROUP_BY) {
 		// key: iid, val: oid
-		idx_t row_count = op->children[0]->lineage_op->chunk_collection.Count();
-		FillGBForwardLineage(op->lineage_op, row_count);
     if (use_gb_backward_lineage) {
-		  row_count = op->lineage_op->chunk_collection.Count();
+		  idx_t row_count = op->lineage_op->chunk_collection.Count();
       FillGBBackwardLineage(op->lineage_op, row_count);
       //for (int i=0; i < row_count; i++)
       //  std::cout << "GB Backward Lineage Per Bucket: " << lop->gb_backward_lineage[i].size() << std::endl;
+    } else {
+		  idx_t row_count = op->children[0]->lineage_op->chunk_collection.Count();
+		  FillGBForwardLineage(op->lineage_op, row_count);
     }
 	} else if (op->type == PhysicalOperatorType::UNGROUPED_AGGREGATE) {
 		// key: iid, val: oid
@@ -721,6 +724,81 @@ void Fade::allocate_agg_output(string typ, int t, int n_groups, int n_interventi
 	memset(fade_data[op->id].alloc_vars[out_var][t], 0, sizeof(T) * n_groups * n_interventions);
 }
 
+void Fade::GroupByGetCachedData(EvalConfig& config, shared_ptr<OperatorLineage> lop,
+                        std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
+                        PhysicalOperator* op, vector<unique_ptr<Expression>>& aggregates,
+                        int keys_size, int n_groups
+                        ) {
+	// Populate the aggregate child vectors
+	for (idx_t i=0; i < aggregates.size(); i++) {
+		auto &aggr = aggregates[i]->Cast<BoundAggregateExpression>();
+		vector<idx_t> aggregate_input_idx;
+		for (auto &child_expr : aggr.children) {
+			D_ASSERT(child_expr->type == ExpressionType::BOUND_REF);
+			auto &bound_ref_expr = child_expr->Cast<BoundReferenceExpression>();
+			aggregate_input_idx.push_back(bound_ref_expr.index);
+		}
+		string name = aggr.function.name;
+
+		if (name == "sum" || name == "sum_no_overflow" || name == "avg") {
+			int col_idx = aggregate_input_idx[0]; //i + keys_size;
+			if (config.use_duckdb == false) {
+				if (op->children[0]->lineage_op->chunk_collection.Types()[col_idx] == LogicalType::INTEGER) {
+					fade_data[op->id].input_data_map[i] = Fade::GetInputVals<int, int>(op, op->lineage_op, col_idx);
+        } else if (op->children[0]->lineage_op->chunk_collection.Types()[col_idx] == LogicalType::BIGINT) {
+					fade_data[op->id].input_data_map[i] = Fade::GetInputVals<int64_t, int>(op, op->lineage_op, col_idx);
+				} else if (op->children[0]->lineage_op->chunk_collection.Types()[col_idx] == LogicalType::FLOAT) {
+					fade_data[op->id].input_data_map[i] = Fade::GetInputVals<float, float>(op, op->lineage_op, col_idx);
+				} else if (op->children[0]->lineage_op->chunk_collection.Types()[col_idx] == LogicalType::DOUBLE) {
+					fade_data[op->id].input_data_map[i] = Fade::GetInputVals<double, float>(op, op->lineage_op, col_idx);
+				} else {
+					fade_data[op->id].input_data_map[i] = Fade::GetInputVals<float, float>(op, op->lineage_op, col_idx);
+				}
+			}
+
+		}
+	}
+
+}
+
+void Fade::GetCachedData(EvalConfig& config, PhysicalOperator* op,
+                    std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
+                     std::unordered_map<std::string, std::vector<std::string>>& spec) {
+	for (idx_t i = 0; i < op->children.size(); ++i) {
+		GetCachedData(config, op->children[i].get(), fade_data, spec);
+	}
+
+	if (op->type == PhysicalOperatorType::HASH_GROUP_BY
+	           || op->type == PhysicalOperatorType::PERFECT_HASH_GROUP_BY
+	           || op->type == PhysicalOperatorType::UNGROUPED_AGGREGATE) {
+		// To support nested agg, check if any descendants is an agg
+		if (op->type == PhysicalOperatorType::HASH_GROUP_BY) {
+			PhysicalHashAggregate * gb = dynamic_cast<PhysicalHashAggregate *>(op);
+			auto &aggregates = gb->grouped_aggregate_data.aggregates;
+			int n_groups = op->lineage_op->log_index->ha_hash_index.size();
+			if (!fade_data[op->id].has_agg_child) {
+			  Fade::GroupByGetCachedData(config, op->lineage_op, fade_data, op, aggregates, gb->grouped_aggregate_data.groups.size(), n_groups);
+			}
+		} else if (op->type == PhysicalOperatorType::PERFECT_HASH_GROUP_BY) {
+			PhysicalPerfectHashAggregate * gb = dynamic_cast<PhysicalPerfectHashAggregate *>(op);
+			auto &aggregates = gb->aggregates;
+			int n_groups = op->lineage_op->log_index->pha_hash_index.size();
+			if (!fade_data[op->id].has_agg_child) {
+			  Fade::GroupByGetCachedData(config, op->lineage_op, fade_data, op, aggregates, gb->groups.size(), n_groups);
+			}
+		} else {
+			PhysicalUngroupedAggregate * gb = dynamic_cast<PhysicalUngroupedAggregate *>(op);
+			auto &aggregates = gb->aggregates;
+			int n_groups = 1;
+			if (!fade_data[op->id].has_agg_child) {
+			  Fade::GroupByGetCachedData(config, op->lineage_op, fade_data, op, aggregates, 0, n_groups);
+			}
+
+		}
+
+	}
+}
+
 
 // if nested, then take the output of the previous agg as input
 void Fade::GroupByAlloc(EvalConfig& config, shared_ptr<OperatorLineage> lop,
@@ -768,21 +846,6 @@ void Fade::GroupByAlloc(EvalConfig& config, shared_ptr<OperatorLineage> lop,
 			string out_var = "out_" + to_string(i); // new output
 			string in_arr = "col_" + to_string(i);  // input arrays
 			string in_val = "val_" + to_string(i);  // input values val = col_x[i]
-
-			if (config.use_duckdb == false) {
-				if (op->children[0]->lineage_op->chunk_collection.Types()[col_idx] == LogicalType::INTEGER) {
-					fade_data[op->id].input_data_map[i] = Fade::GetInputVals<int, int>(op, op->lineage_op, col_idx);
-        } else if (op->children[0]->lineage_op->chunk_collection.Types()[col_idx] == LogicalType::BIGINT) {
-					fade_data[op->id].input_data_map[i] = Fade::GetInputVals<int64_t, int>(op, op->lineage_op, col_idx);
-				} else if (op->children[0]->lineage_op->chunk_collection.Types()[col_idx] == LogicalType::FLOAT) {
-					fade_data[op->id].input_data_map[i] = Fade::GetInputVals<float, float>(op, op->lineage_op, col_idx);
-				} else if (op->children[0]->lineage_op->chunk_collection.Types()[col_idx] == LogicalType::DOUBLE) {
-					fade_data[op->id].input_data_map[i] = Fade::GetInputVals<double, float>(op, op->lineage_op, col_idx);
-				} else {
-					fade_data[op->id].input_data_map[i] = Fade::GetInputVals<float, float>(op, op->lineage_op, col_idx);
-				}
-			}
-
 			fade_data[op->id].alloc_vars[out_var].resize(config.num_worker);
 			for (int t=0; t < config.num_worker; ++t) {
 				if (op->children[0]->lineage_op->chunk_collection.Types()[col_idx] == LogicalType::INTEGER ||

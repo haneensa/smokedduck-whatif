@@ -17,8 +17,8 @@ batching =  False
 pruning = False
 vec = False
 workers = False
-best = True
-best_distinct = False
+best = False
+best_distinct = True
 
 prefix = "DELETE_"
 if plot_scale:
@@ -27,7 +27,7 @@ if plot_scale:
 else:
     dense_fade = get_data(f"fade_data/forward_backward_0.1_april26.csv", 1000)
     dense_fade["bw"] = dense_fade.apply(lambda row:"GB-B" if row["use_gb_backward_lineage"] else "GB-F" , axis=1)
-    #dense_fade = con.execute("select * from dense_fade where bw='False'").df()
+    dense_fade = con.execute("select * from dense_fade where use_gb_backward_lineage='False'").df()
 
 postfix = """
 data$query = factor(data$query, levels=c('Q1', 'Q3', 'Q5', 'Q7', 'Q9', 'Q10', 'Q12'))
@@ -77,8 +77,8 @@ if best:
     p += axis_labels('n', "Latency (ms, log)", "log10", "log10",
             xkwargs=dict(breaks=[1,64, 256, 512,1024,2048],  labels=list(map(esc,['1','64', '256', '512','1K','2K']))),)
     p += legend_side
-    p += facet_grid(".~sf", scales=esc("free_y"))
     ggsave(f"figures/{prefix}_fade_best_best_batching_latency_sf1_line.png", p, postfix=postfix, width=4, height=2.5, scale=0.8)
+
     p = ggplot(best_best_data_all, aes(x='n',  y="throughput", color=cat, fill=cat, group=cat))
     p += geom_point(stat=esc('identity'))
     p += geom_line()
@@ -86,7 +86,6 @@ if best:
             ykwargs=dict(breaks=[10000,100000,1000000],  labels=list(map(esc,['10e4','10e5','10e6']))),
             xkwargs=dict(breaks=[1,64, 256, 512,1024,2048],  labels=list(map(esc,['1','64', '256', '512','1K','2K']))),)
     p += legend_side
-    p += facet_grid(".~sf~bw", scales=esc("free_y"))
     ggsave(f"figures/{prefix}_fade_best_best_batching_throughput_sf1.png", p, postfix=postfix, width=4, height=2.5, scale=0.8)
 
     p = ggplot(best_data, aes(x='n',  y="speedup", color=cat, fill=cat, group=cat))
@@ -95,7 +94,6 @@ if best:
     p += axis_labels('n', "Speedup", "log10", "log10",
             xkwargs=dict(breaks=[1,64, 256, 512,1024,2048],  labels=list(map(esc,['1','64', '256', '512','1K','2K']))),)
     p += legend_side
-    p += facet_grid(".~sf~bw", scales=esc("free_y"))
     ggsave(f"figures/{prefix}_fade_best_batching_speedup_sf1_line.png", p, postfix=postfix, width=4, height=2.5, scale=0.8)
     
     p = ggplot(best_data, aes(x='n',  y="speedup_setup", color=cat, fill=cat, group=cat))
@@ -104,7 +102,6 @@ if best:
     p += axis_labels('n', "Speedup", "log10", "log10",
             xkwargs=dict(breaks=[1,64, 256, 512,1024,2048],  labels=list(map(esc,['1','64', '256', '512','1K','2K']))),)
     p += legend_side
-    p += facet_grid(".~sf~bw", scales=esc("free_y"))
     ggsave(f"figures/{prefix}_fade_best_batching_speedup_with_pcost_sf1_line.png", p, postfix=postfix, width=4, height=2.5, scale=0.8)
 
     # x-axis: batch size, y-axis: throughput
@@ -302,12 +299,10 @@ if vec:
         p = ggplot(vec_data, aes(x='n',  y="speedup", color="query", fill="query", shape='prune_label', linetype='prune_label'))
         p += geom_line(stat=esc('identity'))  + geom_point(stat=esc('identity'))
         p += legend_side
-        p += facet_grid(".~sf_label", scales=esc("free_y"))
-        p += axis_labels('Batch Size', "Speedup", "log10", "log10",
+        p += axis_labels('Batch Size (log)', "Speedup (log)", "log10", "log10",
                 xkwargs=dict(breaks=[1, 64, 256, 512,1024,2048],  labels=list(map(esc,['1','64', '256', '512','1K','2K']))),
             )
-        p += facet_grid(".~sf~bw", scales=esc("free_y"))
-        ggsave(f"figures/{prefix}_fade_vec.png", p, postfix=postfix, width=4, height=3, scale=0.8)
+        ggsave(f"figures/{prefix}_fade_vec.png", p, postfix=postfix, width=3.5, height=2.5, scale=0.8)
 
 if workers:
     print("======== DENSE Threads =============")
@@ -346,13 +341,25 @@ if workers:
 if best_distinct:
     # speedup avg, max, min
     print("======== DENSE Best Distinct =============")
-    data_distinct = con.execute(f"""select bw, sf, qid, n, prob, t1.sf_label, t1.prune_label, t1.query, t1.cat, t1.num_threads, t1.is_scalar,
-                        t1.eval_time_ms, base.eval_time_ms / (t1.eval_time_ms+t1.prune_time_ms) as speedup,
-                        n / t1.eval_time as throughput
+    # x-axis: adding optimization one at a time
+    # y-axis: speedup
+    dense_fade["cat"] = dense_fade.apply(lambda row: row["cat"] + "+P" if row["prune"] else row["cat"], axis=1)
+    dense_fade["cat"] = dense_fade.apply(lambda row: row["cat"] + "+B="+ str(row["n"]), axis=1)
+
+    # 1 intervention 1 worker.   batch, 1 worker.  batch 8 worker.   batch 8 worker + simd.   batch 8 worker + pruning
+    data_distinct = con.execute(f"""select bw, sf, qid, t1.n, prob, t1.sf_label, t1.prune_label, t1.query, t1.cat, t1.num_threads, t1.is_scalar,
+                        t1.eval_time_ms,
+                        ((t1.n*base.eval_time_ms) / (t1.eval_time_ms)) as speedup,
+                        ((t1.n*base.eval_time_ms) / (t1.eval_time_ms+t1.prune_time_ms)) as speedupwprune,
+                        t1.n / t1.eval_time as throughput,
+                        t1.n / (t1.eval_time+t1.prune_time) as throughputwprune
     from ( select * from dense_fade) as t1 JOIN
-         ( select * from dense_fade where num_threads=1 and is_scalar='true' and prune='False') as base 
-         USING (sf, qid, n, prob, bw)
-         where prob={prob} and bw='GB-F'""").df()
+         ( select * from dense_fade where n=1 and num_threads=1 and is_scalar='true' and prune='False') as base 
+         USING (sf, qid, prob, bw)
+         where prob={prob} and bw='GB-F'
+
+
+         """).df()
     data_distinct_2048 = con.execute(f"select * from data_distinct where prob={prob} and n=2048").df()
 
     if plot:
@@ -363,15 +370,100 @@ if best_distinct:
         p += legend_bottom
         p += legend_side
         p += facet_grid(".~sf_label~prune_label~n", scales=esc("free_y"))
-        ggsave(f"figures/{prefix}_fade_sf1_speedup.png", p, postfix=postfix, width=15, height=4, scale=0.8)
+        ggsave(f"figures/{prefix}_fade_sf1_per_qspeedup.png", p, postfix=postfix, width=15, height=4, scale=0.8)
         
-        p = ggplot(data_distinct_2048, aes(x='query',  y="speedup", color=cat, fill=cat, group=cat))
-        p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.9), width=0.88)
-        p += axis_labels('Query', "Speedup (log)", "discrete", "log10")
-        p += legend_bottom
-        p += legend_side
-        p += facet_grid(".~sf_label~prune_label~n", scales=esc("free_y"))
-        ggsave(f"figures/{prefix}_fade_2048_sf1_speedup.png", p, postfix=postfix, width=8, height=3, scale=0.8)
+        """
+        """
+        # aggregate over queries
+        for nv in [2048]:
+            # Baseline, +B, +B+W, +B+W+SIMD, +B+W+SIMD+P
+            def label_cat(c):
+                if c==f'1W+B=1':
+                    return 'Baseline'
+                elif c==f'1W+B={nv}':
+                    return '+B'
+                elif c==f'8W+B={nv}':
+                    return '+B+W'
+                elif c==f'8W+SIMD+B={nv}':
+                    return '+B+W+SIMD'
+                elif c==f'8W+SIMD+P+B={nv}':
+                    return '+B+W+SIMD+P'
+                elif c==f'8W+P+B={nv}':
+                    return '+B+W+P'
+                else:
+                    return c
+            data_distinct["cat2"] = data_distinct.apply(lambda row: label_cat(row["cat"]), axis=1)
+            postfixcat = """
+            data$query = factor(data$query, levels=c('Q1', 'Q3', 'Q5', 'Q7', 'Q9', 'Q10', 'Q12'))
+            data$cat = factor(data$cat, levels=c('1W', '1W+SIMD', '1W+P', '1W+SIMD+P',
+            '2W', '2W+SIMD', '2W+P', '2W+SIMD+P',
+            '4W', '4W+SIMD', '4W+P', '4W+SIMD+P',
+            '8W', '8W+SIMD', '8W+P', '8W+SIMD+P'))
+            data$cat2 = factor(data$cat2, levels=c('Baseline', '+B', '+B+W', '+B+W+SIMD', '+B+W+P', '+B+W+SIMD+P'))
+                """
+            data_distinct_q = con.execute(f"""
+            select 'avg' as typ, prob ,cat, cat2, query, sf_label, prune_label, n, avg(throughput) throughput, avg(speedup) as speedup
+            ,avg(speedupwprune) as speedupwprune, avg(throughputwprune) as throughputwprune
+            from data_distinct
+            where prob={prob} and cat IN ('1W+B=1', '1W+B={nv}', '8W+B={nv}', '8W+SIMD+B={nv}', '8W+P+B={nv}', '8W+SIMD+P+B={nv}')
+            group by cat, sf_label, prune_label, n, prob, typ, query, cat2
+            """).df()
+            print(f"++++++++++Summary {nv}+++++++")
+            print(con.execute(f"""select sf_label, cat2, cat, query,
+            avg(speedupwprune) as avg_speedupP,
+            max(speedupwprune) as max_speedupP,
+            min(speedupwprune) as min_speedupP,
+            avg(speedup) as avg_speedup,
+            max(speedup) as max_speedup,
+            avg(throughputwprune) as avg_thp,
+            max(throughputwprune) as max_thp
+            from data_distinct_q
+            group by cat2, cat, sf_label, query
+            order by cat2, cat, sf_label, query
+            """).df())
+            print(con.execute(f"""select sf_label, cat2, cat,
+            avg(speedupwprune) as avg_speedupP,
+            max(speedupwprune) as max_speedupP,
+            min(speedupwprune) as min_speedupP,
+            avg(speedup) as avg_speedup,
+            max(speedup) as max_speedup,
+            avg(throughputwprune) as avg_thp,
+            max(throughputwprune) as max_thp
+            from data_distinct_q
+            group by cat2, cat, sf_label
+            """).df())
+            print(f"+++++++++++++++++")
+
+            print(data_distinct_q)
+            p = ggplot(data_distinct_q, aes(x='query',  y="speedup", color='cat2', fill='cat2'))
+            p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.9), width=0.88)
+            p += axis_labels('Query', "Speedup (log)", "discrete", "log10")
+            p += legend_bottom
+            p += legend_side
+            ggsave(f"figures/{prefix}_fade_{nv}_sf1_speedup.png", p,  postfix=postfixcat,width=8, height=3, scale=0.8)
+            
+            p = ggplot(data_distinct_q, aes(x='query',  y="throughput", color='cat2', fill='cat2'))
+            p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.9), width=0.88)
+            p += axis_labels('Query', "Interventions / Sec (log)", "discrete", "log10",
+                ykwargs=dict(breaks=[10,1000,1000000],  labels=list(map(esc,['10','1K','1M']))))
+            p += legend_bottom
+            p += legend_side
+            ggsave(f"figures/{prefix}_fade_{nv}_sf1_throughput.png", p, postfix=postfixcat, width=8, height=3, scale=0.8)
+            
+            p = ggplot(data_distinct_q, aes(x='query',  y="speedupwprune", color='cat2', fill='cat2'))
+            p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.9), width=0.88)
+            p += axis_labels('Query', "Speedup (log)", "discrete", "log10")
+            p += legend_bottom
+            p += legend_side
+            ggsave(f"figures/{prefix}_fade_{nv}_sf1_speedup_prunecost.png", p,  postfix=postfixcat, width=8, height=3, scale=0.8)
+            
+            p = ggplot(data_distinct_q, aes(x='query',  y="throughputwprune", color='cat2', fill='cat2'))
+            p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.9), width=0.88)
+            p += axis_labels('Query', "Interventions / Sec (log)", "discrete", "log10",
+                ykwargs=dict(breaks=[10,1000,100000, 1000000],  labels=list(map(esc,['10','1K','100K', '1M']))))
+            p += legend_bottom
+            p += legend_side
+            ggsave(f"figures/{prefix}_fade_{nv}_sf1_throughput_prunecost.png", p, postfix=postfixcat, width=8, height=3, scale=0.8)
         
         p = ggplot(data_distinct_2048, aes(x='query',  y="eval_time_ms", color=cat, fill=cat, group=cat))
         p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.9), width=0.88)

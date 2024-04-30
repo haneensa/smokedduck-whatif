@@ -27,7 +27,8 @@ if True:
     #single_data_all = get_data(f"fade_data/single_dense_vary_probs_nofilterOnprune.csv", 1000)
     single_data_all = get_data(f"fade_data/forward_backward_all_probs_april26.csv", 1000)
     dbt_data = get_data("fade_data/dbtoast_delete_april21.csv", 1)
-    #dbt_data = get_data("fade_data/dbtoast.csv", 1)
+    dbt_data_no_prune = get_data("fade_data/dbtoast.csv", 1)
+    dbt_data = con.execute("select * from dbt_data UNION ALL select * from dbt_data_no_prune where prune='False'").df()
     dbt_data["cat"] = dbt_data.apply(lambda row: "DBT_prune" if row["prune"] else "DBT", axis=1)
 
     cat = "query"
@@ -56,14 +57,10 @@ if True:
     # figure 1: single intervention latency
     dbt_prob=0.1
     single_data = con.execute(f"""
-        select 'Fade-b-Prune' as system, query, prune, sf, sf_label,  eval_time_ms, incremental
-            from single_data_all where n=1 and num_threads=1 and prune='True' and prob={dbt_prob} and incremental='False' and use_gb_backward_lineage='False'
-        UNION ALL select 'Fade-b' as system, query, prune, sf, sf_label, eval_time_ms, incremental
+        select 'Fade' as system, query, prune, sf, sf_label, eval_time_ms, incremental
             from single_data_all where n=1 and num_threads=1  and prune='False' and prob={dbt_prob} and incremental='False' and use_gb_backward_lineage='False'
-        UNION ALL select 'Fade' as system, query, prune, sf, sf_label, eval_time_ms, incremental
-            from single_data_all where n=1 and num_threads=1  and prune='False' and prob={dbt_prob} and incremental='False' and use_gb_backward_lineage='True'
         UNION ALL select 'Fade-Prune' as system, query, prune, sf, sf_label,  eval_time_ms, incremental
-            from single_data_all where n=1 and num_threads=1 and prune='True' and prob={dbt_prob} and incremental='False' and use_gb_backward_lineage='True'
+            from single_data_all where n=1 and num_threads=1 and prune='True' and prob={dbt_prob} and incremental='False' and use_gb_backward_lineage='False'
         UNION ALL select 'DBT-Prune' as system, query, prune, sf, sf_label, eval_time_ms as eval_time, 'False' as incremental
             from dbt_data where prob={dbt_prob} and prune='True'
             and itype='DELETE'
@@ -87,11 +84,17 @@ if True:
 
     single_data_sf1 = con.execute("select * from single_data where sf=1").df()
     p = ggplot(single_data_sf1, aes(x='query', y='eval_time_ms', color=cat, fill=cat, group=cat))
-    p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.6), width=0.5)
+    p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.9), width=0.8)
     p += axis_labels('Query', 'Latency (ms, log)', 'discrete', 'log10')
     p += legend_bottom
-    p += facet_grid(".~sf_label", scales=esc("free_y"))
     ggsave("figures/fade_single_sf1.png", p, postfix=postfix, width=5, height=3, scale=0.8)
+    
+    single_data_sf1 = con.execute("select * from single_data where sf=1").df()
+    p = ggplot(single_data_sf1, aes(x='query', y='eval_time_ms', color=cat, fill=cat, group=cat))
+    p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.6), width=0.5)
+    p += axis_labels('Query', 'Latency (ms, log)', 'discrete', 'log10')
+    p += legend_side
+    ggsave("figures/fade_single_sf1_side.png", p, postfix=postfix, width=7, height=2.5, scale=0.8)
     
     single_data_all = con.execute("select * from single_data_all where use_gb_backward_lineage='False'").df()
     dense_data = con.execute("select * from dense_data where use_gb_backward_lineage='False'").df()
@@ -115,9 +118,10 @@ if True:
         xkwargs=dict(breaks=[0.001, 0.01, 0.1,0.5],  labels=list(map(esc,['0.001','0.01','0.1', '0.5']))),
         )
     p += legend_bottom
+    p += legend_side
     p += geom_hline(aes(yintercept=1))
     p += facet_grid(".~system", scales=esc("free_y"))
-    ggsave(f"figures/fade_dbt_vs_fade.png", p, postfix=postfix, width=7, height=3, scale=0.8)
+    ggsave(f"figures/fade_dbt_vs_fade.png", p, postfix=postfix, width=7, height=2.5, scale=0.8)
 
     dbt_fade_data_prune = con.execute("""select * from dbt_fade_data where fprune='True'""").df()
     p = ggplot(dbt_fade_data_prune, aes(x='prob',  y="nor", color="query", fill="query"))

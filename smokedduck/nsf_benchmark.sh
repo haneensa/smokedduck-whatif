@@ -3,18 +3,18 @@
 export DUCKDB_LIB_PATH=/ProvEnhance/third_party/smokedduck-whatif/build/release/src
 
 sf_values=("1")
-threads_num=("1") # "2" "4" "8")
+threads_num=("8") # "2" "4" "8")
 is_scalar_binary=("true") # "false") 
 #duckdb_binary=("false" "true")
 prune_binary=("false") #"true") #"true") # "false")
-csv="nsf_test_v2.csv"
+csv="nsf_test.csv"
 debug="false"
 mat=0
 batch="4"
 use_duckdb="false"
 touch ${csv}
 # add prob, itype, incremental
-echo sf,qid,itype,prob,incremental,use_duckdb,is_scalar,prune,num_threads,distinct,batch,post_time,gen_time,prep_time,compile_time,eval_time,prune_time,lineage_time,ksemimodule_timing > ${csv}
+echo sf,qid,itype,prob,incremental,use_duckdb,is_scalar,prune,num_threads,distinct,batch,post_time,gen_time,prep_time,compile_time,eval_time,prune_time,lineage_time,ksemimodule_timing,spec,lineage_count,lineage_count_prune,lineage_size_mb,lineage_size_mb_prune,use_gb_backward_lineage,code_gen_time,data_time > ${csv}
 
 capture_lineage_overhead="false"
 if [ "$capture_lineage_overhead" = "true" ]; then

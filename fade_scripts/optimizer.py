@@ -65,7 +65,7 @@ print(con.execute("""select system, card, g, n, is_scalar, alpha,
     order by  is_scalar, g, n, alpha, system
     """).df())
 scale_data = con.execute("""select system, card, g, n, is_scalar, alpha, t2.num_threads,
-        'n='||card as nlabel, 'g='||g as glabel,t2.vec_label, 'a='||alpha as alabel,
+        'n='||card as nlabel, 'groups='||g as glabel,t2.vec_label, 'skew='||alpha as alabel,
     t2.eval_time_ms, t1.eval_time_ms/t2.eval_time_ms as speedup
     from (select * from micro where num_threads=1) t1 JOIN
     (select * from micro) t2
@@ -73,7 +73,7 @@ scale_data = con.execute("""select system, card, g, n, is_scalar, alpha, t2.num_
     """).df()
 
 postfix = """
-data$glabel = factor(data$glabel, levels=c('g=8', 'g=16', 'g=32', 'g=64', 'g=1000', 'g=10000'))
+data$glabel = factor(data$glabel, levels=c('groups=8', 'groups=16', 'groups=32', 'groups=64', 'groups=1000', 'groups=10000'))
     """
 cat = "system"
 p = ggplot(scale_data, aes(x='num_threads',  y="speedup", color=cat, fill=cat, linetype='vec_label'))
@@ -81,24 +81,24 @@ p += geom_line(stat=esc('identity'))
 p += axis_labels('#threads', "Speedup", 'continuous')
 p += legend_side
 p += facet_grid(".~glabel~alabel", scales=esc("free_y"))
-ggsave(f"figures/agg_forward_vs_backward.png", p, postfix=postfix,  width=8, height=8, scale=0.8)
+ggsave(f"figures/agg_forward_vs_backward.png", p, postfix=postfix,  width=8, height=6, scale=0.8)
 
 scale_data_pick = con.execute("select * from scale_data where (g=8 or g=64 or g=1000 or g=10000) ").df()
 cat = "system"
 p = ggplot(scale_data_pick, aes(x='num_threads',  y="speedup", color=cat, fill=cat, linetype='vec_label'))
 p += geom_line(stat=esc('identity'))
 p += axis_labels('#threads', "Speedup", 'continuous')
-p += legend_bottom
-p += facet_grid(".~nlabel~alabel~glabel", scales=esc("free_y"))
-ggsave(f"figures/agg_forward_vs_backward_sample.png", p, postfix=postfix, width=6, height=4, scale=0.8)
+p += legend_side
+p += facet_grid(".~alabel~glabel", scales=esc("free_y"))
+ggsave(f"figures/agg_forward_vs_backward_sample.png", p, postfix=postfix, width=7, height=2.5, scale=0.8)
 
 cat = "system"
 p = ggplot(scale_data_pick, aes(x='num_threads',  y="eval_time_ms", color=cat, fill=cat, linetype='vec_label'))
 p += geom_line(stat=esc('identity'))
 p += axis_labels('#threads', "Speedup", 'continuous')
-p += legend_bottom
-p += facet_grid(".~nlabel~alabel~glabel", scales=esc("free_y"))
-ggsave(f"figures/agg_forward_vs_backward_latency_sample.png", p, postfix=postfix, width=6, height=4, scale=0.8)
+p += legend_side
+p += facet_grid(".~alabel~glabel", scales=esc("free_y"))
+ggsave(f"figures/agg_forward_vs_backward_latency_sample.png", p, postfix=postfix, width=7, height=2.5, scale=0.8)
 
 
 # x-axis: num_threads, y-axis: speedup

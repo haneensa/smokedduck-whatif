@@ -526,6 +526,8 @@ idx_t HashJoinLog::GetLineageAsChunk(DataChunk &insert_chunk,
 	
 }
 
+// TODO: instead of constructing bw index, get dictionary encoding of the scan index
+//       then we scan the input and replace addresses with output id assigned   
 // Hash Agg
 // schema: [INTEGER in_index, INTEGER out_index]
 idx_t HALog::GetLineageAsChunk(DataChunk &insert_chunk,

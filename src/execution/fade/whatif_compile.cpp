@@ -519,7 +519,7 @@ string get_single_join_template(EvalConfig &config, PhysicalOperator *op,
 
 	return oss.str();
 }
-string JoinCodeAndAlloc(EvalConfig& config, PhysicalOperator *op, shared_ptr<OperatorLineage> lop,
+string GetJoinCode(EvalConfig& config, PhysicalOperator *op, shared_ptr<OperatorLineage> lop,
                         std::unordered_map<idx_t, FadeDataPerNode>& fade_data) {
 	int n_masks = config.n_intervention / config.mask_size;
 	string fname = "join_"+ to_string(op->id) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
@@ -602,7 +602,7 @@ string JoinCodeAndAlloc(EvalConfig& config, PhysicalOperator *op, shared_ptr<Ope
 }
 
 
-string FilterCodeAndAlloc(EvalConfig& config, PhysicalOperator *op, shared_ptr<OperatorLineage> lop, std::unordered_map<idx_t, FadeDataPerNode>& fade_data) {
+string GetFilterCode(EvalConfig& config, PhysicalOperator *op, shared_ptr<OperatorLineage> lop, std::unordered_map<idx_t, FadeDataPerNode>& fade_data) {
 	int n_masks = config.n_intervention / config.mask_size;
 	string fname = "filter_"+ to_string(op->id) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
 	std::ostringstream oss;
@@ -735,36 +735,17 @@ string HashAggregateIntervene2DNested(EvalConfig& config, shared_ptr<OperatorLin
 	std::ostringstream oss;
 	oss << R"(extern "C" int )" << fname
 	    << R"((int thread_id, int* lineage, void* __restrict__ var_0_ptr, std::unordered_map<std::string, std::vector<void*>>& alloc_vars,
-             std::unordered_map<std::string, std::vector<void*>>& input_data_map, std::set<int>& del_set) {
+             std::unordered_map<std::string, std::vector<void*>>& input_data_map, std::set<int>& del_set, const int start, const int end) {
 )";
 
 	idx_t chunk_count = op->children[0]->lineage_op->chunk_collection.ChunkCount();
 	int n_masks = n_interventions / config.mask_size;
 
-	oss << "\tconst int chunk_count = " << chunk_count << ";\n";
-	oss << "\tconst int row_count = " << row_count << ";\n";
 	oss << "\tconst int n_interventions  = " << n_interventions << ";\n";
 	oss << "\tconst int num_threads  = " << config.num_worker << ";\n";
-	oss << "\tconst int mask_size = " << config.mask_size << ";\n";
 	oss << "\tconst int n_masks  = " << n_masks << ";\n";
+	oss << "\tconst int mask_size  = " << config.mask_size << ";\n";
 
-	if (config.use_duckdb) {
-		int batch_size = chunk_count / config.num_worker;
-		if (chunk_count % config.num_worker > 0)
-			batch_size++;
-		oss << "\tconst int batch_size  = " << batch_size << ";\n";
-		oss << "\tconst int start = thread_id * batch_size;\n";
-		oss << "\tint end   = start + batch_size;\n";
-		oss << "\tif (end >= chunk_count) { end = chunk_count; }\n";
-	} else {
-		int batch_size = row_count / config.num_worker;
-		if (row_count % config.num_worker > 0)
-			batch_size++;
-		oss << "\tconst int batch_size  = " << batch_size << ";\n";
-		oss << "\tconst int start = thread_id * batch_size;\n";
-		oss << "\tint end   = start + batch_size;\n";
-		oss << "\tif (end >= row_count) { end = row_count; }\n";
-	}
 	oss << get_data_code;
 	// change this according to if it is batched or single, vectorized or scalar
 	oss << R"(
@@ -995,15 +976,73 @@ void  HashAggregateIntervene2DEval(int thread_id, EvalConfig& config, shared_ptr
 	}
 }
 
-
-
-void GenCodeAndAlloc(EvalConfig& config, string& code, PhysicalOperator* op,
+void GenCode(EvalConfig& config, string& code, PhysicalOperator* op,
                     std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
                      std::unordered_map<std::string, std::vector<std::string>>& spec) {
 	for (idx_t i = 0; i < op->children.size(); ++i) {
-		GenCodeAndAlloc(config, code, op->children[i].get(), fade_data, spec);
+		GenCode(config, code, op->children[i].get(), fade_data, spec);
 	}
 
+	// two cases for scaling intervention: 1) scaling with selection vector (SCALE_RANDOM), 2) uniform scaling (SCALE_UNIFORM)
+	// uniform: only allocate memory for the aggregate results
+	// random: allocate single intervention/selection vector per table with 0s/1s with prob
+	if (op->type == PhysicalOperatorType::TABLE_SCAN ||
+      op->type == PhysicalOperatorType::FILTER
+      ) {
+    if (fade_data[op->id].gen) {
+				code += GetFilterCode(config, op, op->lineage_op, fade_data);
+    }
+	} else if (op->type == PhysicalOperatorType::HASH_JOIN
+	           || op->type == PhysicalOperatorType::NESTED_LOOP_JOIN
+	           || op->type == PhysicalOperatorType::BLOCKWISE_NL_JOIN
+	           || op->type == PhysicalOperatorType::PIECEWISE_MERGE_JOIN
+	           || op->type == PhysicalOperatorType::CROSS_PRODUCT) {
+			code += GetJoinCode(config, op, op->lineage_op, fade_data);
+	} else if (op->type == PhysicalOperatorType::HASH_GROUP_BY
+	           || op->type == PhysicalOperatorType::PERFECT_HASH_GROUP_BY
+	           || op->type == PhysicalOperatorType::UNGROUPED_AGGREGATE) {
+		// To support nested agg, check if any descendants is an agg
+		if (op->type == PhysicalOperatorType::HASH_GROUP_BY) {
+			PhysicalHashAggregate * gb = dynamic_cast<PhysicalHashAggregate *>(op);
+			auto &aggregates = gb->grouped_aggregate_data.aggregates;
+			int n_groups = op->lineage_op->log_index->ha_hash_index.size();
+			if (fade_data[op->id].has_agg_child) {
+			  code += HashAggregateIntervene2DNested(config, op->lineage_op, fade_data, op, aggregates, gb->grouped_aggregate_data.groups.size(), n_groups);
+			} else {
+			  code += HashAggregateIntervene2D(config, op->lineage_op, fade_data, op, aggregates, gb->grouped_aggregate_data.groups.size(), n_groups);
+			}
+		} else if (op->type == PhysicalOperatorType::PERFECT_HASH_GROUP_BY) {
+			PhysicalPerfectHashAggregate * gb = dynamic_cast<PhysicalPerfectHashAggregate *>(op);
+			auto &aggregates = gb->aggregates;
+			int n_groups = op->lineage_op->log_index->pha_hash_index.size();
+			if (fade_data[op->id].has_agg_child) {
+			  code += HashAggregateIntervene2DNested(config, op->lineage_op, fade_data, op, aggregates, gb->groups.size(), n_groups);
+			} else {
+			  code += HashAggregateIntervene2D(config, op->lineage_op, fade_data, op, aggregates, gb->groups.size(), n_groups);
+			}
+		} else {
+			PhysicalUngroupedAggregate * gb = dynamic_cast<PhysicalUngroupedAggregate *>(op);
+			auto &aggregates = gb->aggregates;
+			int n_groups = 1;
+			if (fade_data[op->id].has_agg_child) {
+			  code += HashAggregateIntervene2DNested(config, op->lineage_op, fade_data, op, aggregates, 0, n_groups);
+			} else {
+			  code += HashAggregateIntervene2D(config, op->lineage_op, fade_data, op, aggregates, 0, n_groups);
+			}
+		}
+
+	}
+}
+
+
+void Alloc(EvalConfig& config, PhysicalOperator* op,
+                    std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
+                    std::unordered_map<std::string, std::vector<std::string>>& spec) {
+	for (idx_t i = 0; i < op->children.size(); ++i) {
+		Alloc(config, op->children[i].get(), fade_data, spec);
+	}
+
+  fade_data[op->id].gen = false;
 	// two cases for scaling intervention: 1) scaling with selection vector (SCALE_RANDOM), 2) uniform scaling (SCALE_UNIFORM)
 	// uniform: only allocate memory for the aggregate results
 	// random: allocate single intervention/selection vector per table with 0s/1s with prob
@@ -1072,7 +1111,7 @@ void GenCodeAndAlloc(EvalConfig& config, string& code, PhysicalOperator* op,
           if (config.debug)
             std::cout << rows << " alloc del_interventions " << output_count << " " << fade_data[op->id].n_masks
               << " " << fade_data[op->id].del_interventions << std::endl;
-				  code += FilterCodeAndAlloc(config, op, op->lineage_op, fade_data);
+          fade_data[op->id].gen = true;
         } else {
           fade_data[op->id].del_interventions = fade_data[op->id].base_target_matrix;
         }
@@ -1093,7 +1132,8 @@ void GenCodeAndAlloc(EvalConfig& config, string& code, PhysicalOperator* op,
     for (int i=0; i < out_count; ++i)
       if (op->lineage_op->backward_lineage[0][i] > max_row_count)
         max_row_count = op->lineage_op->backward_lineage[0][i];
-    std::cout << "table scan -> " << out_count << " " << max_row_count << " " << row_count << std::endl;
+    if (config.debug)
+      std::cout << "table scan -> " << out_count << " " << max_row_count << " " << row_count << std::endl;
     
     int input_target_matrix_count = max_row_count;
     if (config.prune) input_target_matrix_count = out_count;
@@ -1106,7 +1146,7 @@ void GenCodeAndAlloc(EvalConfig& config, string& code, PhysicalOperator* op,
 				fade_data[op->id].base_single_del_interventions = new int8_t[input_target_matrix_count];
         if (out_count != max_row_count && !config.prune) {
 				  fade_data[op->id].single_del_interventions = new int8_t[out_count];
-				  code += FilterCodeAndAlloc(config, op, op->lineage_op, fade_data);
+          fade_data[op->id].gen = true;
         } else {
 				  fade_data[op->id].single_del_interventions = fade_data[op->id].base_single_del_interventions;
         }
@@ -1115,7 +1155,7 @@ void GenCodeAndAlloc(EvalConfig& config, string& code, PhysicalOperator* op,
       fade_data[op->id].base_target_matrix = (__mmask16*)aligned_alloc(64, sizeof(__mmask16) * input_target_matrix_count * n_masks);
       if (out_count != max_row_count && !config.prune) {
 			  fade_data[op->id].del_interventions = (__mmask16*)aligned_alloc(64, sizeof(__mmask16) * out_count * n_masks);
-				code += FilterCodeAndAlloc(config, op, op->lineage_op, fade_data);
+        fade_data[op->id].gen = true;
         if (config.debug)
           std::cout << "alloc del_interventions " << out_count << " " << n_masks
             << " " << fade_data[op->id].del_interventions << std::endl;
@@ -1146,7 +1186,7 @@ void GenCodeAndAlloc(EvalConfig& config, string& code, PhysicalOperator* op,
 			  fade_data[op->id].del_interventions = (__mmask16*)aligned_alloc(64, sizeof(__mmask16) * row_count * n_masks);
 			}
 			if (config.prune == false)
-				code += FilterCodeAndAlloc(config, op, op->lineage_op, fade_data);
+        fade_data[op->id].gen = true;
 		}
 	} else if (op->type == PhysicalOperatorType::HASH_JOIN
 	           || op->type == PhysicalOperatorType::NESTED_LOOP_JOIN
@@ -1170,12 +1210,13 @@ void GenCodeAndAlloc(EvalConfig& config, string& code, PhysicalOperator* op,
 				//fade_data[op->id].del_interventions = new __mmask16[row_count * n_masks];
 			  fade_data[op->id].del_interventions = (__mmask16*)aligned_alloc(64, sizeof(__mmask16) * row_count * n_masks);
 			}
-			code += JoinCodeAndAlloc(config, op, op->lineage_op, fade_data);
+      fade_data[op->id].gen = true;
 		}
 	} else if (op->type == PhysicalOperatorType::HASH_GROUP_BY
 	           || op->type == PhysicalOperatorType::PERFECT_HASH_GROUP_BY
 	           || op->type == PhysicalOperatorType::UNGROUPED_AGGREGATE) {
-    	fade_data[op->id].opid = op->id;
+    fade_data[op->id].gen = true;
+    fade_data[op->id].opid = op->id;
 		fade_data[op->id].del_interventions  = fade_data[op->children[0]->id].del_interventions;
 		fade_data[op->id].single_del_interventions  = fade_data[op->children[0]->id].single_del_interventions;
 		if (config.intervention_type == InterventionType::SCALE_UNIFORM) {
@@ -1206,31 +1247,22 @@ void GenCodeAndAlloc(EvalConfig& config, string& code, PhysicalOperator* op,
 			PhysicalHashAggregate * gb = dynamic_cast<PhysicalHashAggregate *>(op);
 			auto &aggregates = gb->grouped_aggregate_data.aggregates;
 			int n_groups = op->lineage_op->log_index->ha_hash_index.size();
-			if (fade_data[op->id].has_agg_child) {
-			  code += HashAggregateIntervene2DNested(config, op->lineage_op, fade_data, op, aggregates, gb->grouped_aggregate_data.groups.size(), n_groups);
-			} else {
+			if (!fade_data[op->id].has_agg_child) {
 			  Fade::GroupByAlloc(config, op->lineage_op, fade_data, op, aggregates, gb->grouped_aggregate_data.groups.size(), n_groups);
-			  code += HashAggregateIntervene2D(config, op->lineage_op, fade_data, op, aggregates, gb->grouped_aggregate_data.groups.size(), n_groups);
 			}
 		} else if (op->type == PhysicalOperatorType::PERFECT_HASH_GROUP_BY) {
 			PhysicalPerfectHashAggregate * gb = dynamic_cast<PhysicalPerfectHashAggregate *>(op);
 			auto &aggregates = gb->aggregates;
 			int n_groups = op->lineage_op->log_index->pha_hash_index.size();
-			if (fade_data[op->id].has_agg_child) {
-			  code += HashAggregateIntervene2DNested(config, op->lineage_op, fade_data, op, aggregates, gb->groups.size(), n_groups);
-			} else {
+			if (!fade_data[op->id].has_agg_child) {
 			  Fade::GroupByAlloc(config, op->lineage_op, fade_data, op, aggregates, gb->groups.size(), n_groups);
-			  code += HashAggregateIntervene2D(config, op->lineage_op, fade_data, op, aggregates, gb->groups.size(), n_groups);
 			}
 		} else {
 			PhysicalUngroupedAggregate * gb = dynamic_cast<PhysicalUngroupedAggregate *>(op);
 			auto &aggregates = gb->aggregates;
 			int n_groups = 1;
-			if (fade_data[op->id].has_agg_child) {
-			  code += HashAggregateIntervene2DNested(config, op->lineage_op, fade_data, op, aggregates, 0, n_groups);
-			} else {
+			if (!fade_data[op->id].has_agg_child) {
 			  Fade::GroupByAlloc(config, op->lineage_op, fade_data, op, aggregates, 0, n_groups);
-			  code += HashAggregateIntervene2D(config, op->lineage_op, fade_data, op, aggregates, 0, n_groups);
 			}
 		}
 
@@ -1243,7 +1275,7 @@ void GenCodeAndAlloc(EvalConfig& config, string& code, PhysicalOperator* op,
 	}
 
 	if (config.debug) {
-		std::cout << "GenCodeAndAlloc(" << op->id << ") -> n_masks:"
+		std::cout << "Alloc(" << op->id << ") -> n_masks:"
 		          << fade_data[op->id].n_masks << ", n_interventions: "
 		          << fade_data[op->id].n_interventions << std::endl;
 	}
@@ -1447,13 +1479,6 @@ void Clear(PhysicalOperator *op) {
   2. compile
   2. traverse plan to bind variables and execute code
 */
-// TODO: (3) nested aggregate
-// TODO: (2.3) scaling and deletion interventions combined
-// TODO: (2.5) change values from 0 to 1 to represent target list
-// TODO: (4) add register dependency (execute query, store lineage, generate&compile template, clear up all other memory)
-// TODO: (5) batch process interventions (given N interventions, process them B interventions at a time. If K is specified, then keep K interventions at a time.
-// TODO: (6) add intervention generation module (1. check if there is any dependency that the current query doesn't satisfy,
-//		2. if yes, then use dependency lineage stored to compute them, 3. ..
 string Fade::Whatif(PhysicalOperator *op, EvalConfig config) {
 	std::cout << op->ToString() << std::endl;
 	// timing vars
@@ -1471,12 +1496,26 @@ string Fade::Whatif(PhysicalOperator *op, EvalConfig config) {
 
   	Clear(op);
 	// 4. Alloc vars, generate eval code
-	string code;
+  //
+  // separate memory allocation form code generation from accessing cached values
 	start_time = std::chrono::steady_clock::now();
-	GenCodeAndAlloc(config, code, op, fade_data, columns_spec);
+	Alloc(config, op, fade_data, columns_spec);
 	end_time = std::chrono::steady_clock::now();
 	time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
 	double prep_time = time_span.count();
+	
+  start_time = std::chrono::steady_clock::now();
+	GetCachedData(config, op, fade_data, columns_spec);
+	end_time = std::chrono::steady_clock::now();
+	time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
+	double data_time = time_span.count();
+	
+  string code;
+	start_time = std::chrono::steady_clock::now();
+	GenCode(config, code, op, fade_data, columns_spec);
+	end_time = std::chrono::steady_clock::now();
+	time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
+	double code_gen_time = time_span.count();
 
 
 	std::ostringstream oss;
@@ -1486,6 +1525,7 @@ string Fade::Whatif(PhysicalOperator *op, EvalConfig config) {
 	//if (config.debug)
 		std::cout << final_code << std::endl;
 
+  std::cout << "compile: " << std::endl;
 	start_time = std::chrono::steady_clock::now();
 	void* handle = compile(final_code, 0);
 	end_time = std::chrono::steady_clock::now();
@@ -1495,6 +1535,7 @@ string Fade::Whatif(PhysicalOperator *op, EvalConfig config) {
 	if (handle == nullptr) return "select 0";
 
 
+  std::cout << "fill random: " << std::endl;
   double intervention_gen_time = 0;
   if (!use_preprep_tm) {
     string fname = "fill_random";
@@ -1563,6 +1604,8 @@ string Fade::Whatif(PhysicalOperator *op, EvalConfig config) {
     return "select " + to_string(intervention_gen_time) + " as intervention_gen_time, "
            + to_string(prep_time) + " as prep_time, "
            + to_string(compile_time) + " as compile_time, "
+           + to_string(code_gen_time) + " as code_gen_time, "
+           + to_string(data_time) + " as data_time, "
            + to_string(eval_time) + " as eval_time, "
            + to_string(rank_time) + " as rank_time";
   } else {
@@ -1571,6 +1614,8 @@ string Fade::Whatif(PhysicalOperator *op, EvalConfig config) {
     return "select " + to_string(intervention_gen_time) + " as intervention_gen_time, "
            + to_string(prep_time) + " as prep_time, "
            + to_string(compile_time) + " as compile_time, "
+           + to_string(code_gen_time) + " as code_gen_time, "
+           + to_string(data_time) + " as data_time, "
            + to_string(eval_time) + " as eval_time";
   }
 }

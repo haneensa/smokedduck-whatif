@@ -179,14 +179,14 @@ ksemimodule_timing = end - start
 query_id = con.query_id
 print("=================", query_id, qid, use_duckdb, is_scalar, num_threads)
 forward_lineage = "false"
-pp_timings = con.execute(f"pragma PrepareLineage({query_id}, {prune}, {forward_lineage})").df()
+pp_timings = con.execute(f"pragma PrepareLineage({query_id}, {prune}, {forward_lineage}, false)").df()
 print(pp_timings)
 
 
 if args.mat:
-    itype="DENSE_DELETE_SPEC"
+    itype="DENSE_DELETE"
     is_incremental = "false"
-    q = f"pragma WhatIf({query_id}, '{itype}', '{spec}', {distinct}, {batch}, {is_scalar}, {use_duckdb}, {num_threads}, {debug}, {prune}, {is_incremental}, 0);"
+    q = f"pragma WhatIf({query_id}, '{itype}', '{spec}', {distinct}, {batch}, {is_scalar}, {use_duckdb}, {num_threads}, {debug}, {prune}, {is_incremental}, 0, false);"
     timings = con.execute(q).fetchdf()
     print(timings)
 else:
@@ -194,7 +194,7 @@ else:
     is_incremental = "true"
     distinct = 170619
     #spec = "Investigator.nyp_PIName"
-    q = f"pragma WhatIf({query_id}, '{itype}', '{spec}', {distinct}, {batch}, {is_scalar}, {use_duckdb}, {num_threads}, {debug}, {prune}, {is_incremental}, 0);"
+    q = f"pragma WhatIf({query_id}, '{itype}', '{spec}', {distinct}, {batch}, {is_scalar}, {use_duckdb}, {num_threads}, {debug}, {prune}, {is_incremental}, 0, false);"
     timings = con.execute(q).fetchdf()
     print(timings)
 
@@ -203,7 +203,12 @@ clear(con)
 res = [args.sf, i, itype, 0, is_incremental, use_duckdb, is_scalar, prune, num_threads, distinct, batch,
         pp_timings["post_processing_time"][0], timings["intervention_gen_time"][0],
         timings["prep_time"][0], timings["compile_time"][0], timings["eval_time"][0],
-        pp_timings["prune_time"][0], pp_timings["lineage_time"][0], ksemimodule_timing]
+        pp_timings["prune_time"][0], pp_timings["lineage_time"][0], ksemimodule_timing, spec,
+        pp_timings["lineage_count"][0], pp_timings["lineage_count_prune"][0],
+        pp_timings["lineage_size_mb"][0], pp_timings["lineage_size_mb_prune"][0],
+        "false",
+        timings["code_gen_time"][0], timings["data_time"][0]
+        ]
 print(res)
 
 filename=args.csv

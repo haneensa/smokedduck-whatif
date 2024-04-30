@@ -115,13 +115,13 @@ string get_agg_init_predicate(EvalConfig config, int row_count, int chunk_count,
 		oss << R"(extern "C" int )"
 		    << fname
 		    << R"((int thread_id, int* lineage, void* __restrict__ var_0_ptr, std::unordered_map<std::string, std::vector<void*>>& alloc_vars,
-              duckdb::ChunkCollection &chunk_collection) {
+              duckdb::ChunkCollection &chunk_collection, std::set<int>& del_set, const int start, const int end) {
 )";
 	} else {
 		oss << R"(extern "C" int )"
 		    << fname
 		    << R"((int thread_id, int* lineage, void* __restrict__ var_0_ptr, std::unordered_map<std::string, std::vector<void*>>& alloc_vars,
-              std::unordered_map<int, void*>& input_data_map) {
+              std::unordered_map<int, void*>& input_data_map, std::set<int>& del_set, const int start, const int end) {
 )";
   }
 	
@@ -130,71 +130,55 @@ string get_agg_init_predicate(EvalConfig config, int row_count, int chunk_count,
   oss << "\tif (thread_id >= num_threads)  return 0;\n";
 	oss << "\t int* __restrict__ var_0 = (int* __restrict__)var_0_ptr;\n";
 
-	oss << "\tconst int chunk_count = " << chunk_count << ";\n";
-	oss << "\tconst int row_count = " << row_count << ";\n";
 	oss << "\tconst int n_interventions  = " << n_interventions << ";\n";
 
-	if (config.num_worker > 0) {
-		if (config.use_duckdb) {
-			int batch_size = chunk_count / config.num_worker;
-			if (chunk_count % config.num_worker > 0)
-				batch_size++;
-			oss << "\tconst int batch_size  = " << batch_size << ";\n";
-			oss << "\tconst int start = thread_id * batch_size;\n";
-			oss << "\tint end   = start + batch_size;\n";
-			oss << "\tif (end >= chunk_count) { end = chunk_count; }\n";
-		} else {
-			int batch_size = row_count / config.num_worker;
-			if (row_count % config.num_worker > 0)
-				batch_size++;
-			oss << "\tconst int batch_size  = " << batch_size << ";\n";
-			oss << "\tconst int start = thread_id * batch_size;\n";
-			oss << "\tint end   = start + batch_size;\n";
-			oss << "\tif (end >= row_count) { end = row_count; }\n";
-		}
-	} else {
-		oss << "\tconst int start = 0;\n";
-		oss << "\tconst int end   = row_count;\n";
-	}
-
   if (config.debug)
- 	  oss << "std::cout << \"agg \" << chunk_count << \" \" <<  row_count << \" \" << n_interventions << \" \" << start << \" \" << end << std::endl;";
+ 	  oss << "std::cout << \"agg \" <<  n_interventions << \" \" << start << \" \" << end << std::endl;";
 
 	oss << alloc_code;
 
-	if (config.use_duckdb) {
-		oss << R"(
-  // TODO: figure out correct offset when we partition chunks
-	int offset = start;
-	for (int chunk_idx=start; chunk_idx < end; ++chunk_idx) {
-		duckdb::DataChunk &collection_chunk = chunk_collection.GetChunk(chunk_idx);
-  )";
-	}
-
 	oss << get_data_code;
-	if (config.use_duckdb) {
-		oss << R"(
-		for (int i=0; i < collection_chunk.size(); ++i) {
-			int oid = lineage[i+offset];
-			int col = oid*n_interventions;
-			int row = var_0[i+offset];
-)";
-	} else {
-		oss << R"(
+
+	return oss.str();
+}
+
+
+string get_loop_close2(EvalConfig& config) {
+	std::ostringstream oss;
+	if (config.incremental == false) {
+    oss << "\n\t\t\t}\n"; // close for (int j=0; j < n_masks; ++j)
+	}
+  oss << "\n\t\t}\n"; // close for (int i=start; .. end) or for (oid ..
+
+	return oss.str();
+}
+
+string get_loop_opening2(EvalConfig& config, string get_vals) {
+	std::ostringstream oss;
+  oss <<  R"(
 	for (int i=start; i < end; i++) {
 		int oid = lineage[i];
 		int col = oid*n_interventions;
 		int row = var_0[i];
 )";
-	}
-
-
-	oss << get_vals_code;
+  oss << get_vals;
+  if (!config.incremental) {
+		if (config.is_scalar) {
+			oss << R"(
+			for (int j=0; j < n_interventions; ++j) {
+)";
+		} else {
+			oss << R"(
+      tmp_mask = 0xFFFF;
+      tmp_mask &= ~(1 << row%16);
+			for (int j=0; j < n_interventions; j+=16) {
+)";
+		}
+    }
 
 
 	return oss.str();
 }
-
 
 string get_agg_eval_predicate(EvalConfig config, int agg_count, string fn, string out_var="", string in_var="", string data_type="int") {
 	std::ostringstream oss;
@@ -208,33 +192,6 @@ string get_agg_eval_predicate(EvalConfig config, int agg_count, string fn, strin
 		}
 		return oss.str();
 	}
-
-	if (agg_count % config.batch == 0) {
-		if (agg_count > 0) {
-			oss << "\n\t\t\t}\n"; // close for (int j=0; j < n_interventions; j++)
-		}
-
-		// 1:
-		// pre:
-		// old = out_var[col+row]
-
-		// post:
-		// out_var[col+row] = old
-
-		if (config.is_scalar) {
-			oss << R"(
-			for (int j=0; j < n_interventions; ++j) {
-)";
-		} else {
-			oss << R"(
-      tmp_mask = 0xFFFF;
-      tmp_mask &= ~(1 << row%16);
-			for (int j=0; j < n_interventions; j+=16) {
-)";
-		}
-
-	}
-
 
 	if (config.is_scalar) {
 		oss << "\t\t\t\t" << out_var+"[col + j ] +="+ in_var+";\n";
@@ -266,6 +223,7 @@ string HashAggregateCodeAndAllocPredicate(EvalConfig& config, shared_ptr<Operato
                                           PhysicalOperator* op, vector<unique_ptr<Expression>>& aggregates,
                                           int keys, int n_groups) {
 	string eval_code;
+	string body_code;
 	string code;
 	string alloc_code;
 	string get_data_code;
@@ -274,7 +232,6 @@ string HashAggregateCodeAndAllocPredicate(EvalConfig& config, shared_ptr<Operato
 	idx_t row_count = op->children[0]->lineage_op->chunk_collection.Count();
   // if n_groups * n_interventions > rows then use single thread
 	bool include_count = false;
-	int batches = 4;
 	int agg_count = 0;
 	// Populate the aggregate child vectors
 	for (idx_t i=0; i < aggregates.size(); i++) {
@@ -295,6 +252,11 @@ string HashAggregateCodeAndAllocPredicate(EvalConfig& config, shared_ptr<Operato
 		}
 
 		if (name == "sum" || name == "sum_no_overflow" || name == "avg") {
+      if (agg_count > 0 && agg_count % config.batch == 0) {
+        body_code += get_loop_opening2(config, get_vals_code) + eval_code + get_loop_close2(config);
+        get_vals_code = "";
+        eval_code = "";
+      }
 			int col_idx = i + keys;
 
 			string out_var = "out_" + to_string(i); // new output
@@ -333,6 +295,11 @@ string HashAggregateCodeAndAllocPredicate(EvalConfig& config, shared_ptr<Operato
 	if (include_count == true) {
 		string out_var = "out_count";
 		alloc_code += Fade::get_agg_alloc(config, 0, "count", "int");
+    if (agg_count > 0 && agg_count % config.batch == 0) {
+      body_code += get_loop_opening2(config, get_vals_code) + eval_code + get_loop_close2(config);
+      get_vals_code = "";
+      eval_code = "";
+    }
     if (config.is_scalar == false) {
 		  get_vals_code += "\t\t\ __m512i one = _mm512_set1_epi32(1);\n";
 		  eval_code += get_agg_eval_predicate(config, agg_count++, "count", out_var, "one", "int");
@@ -340,25 +307,25 @@ string HashAggregateCodeAndAllocPredicate(EvalConfig& config, shared_ptr<Operato
 		  eval_code += get_agg_eval_predicate(config, agg_count++, "count", out_var, "1", "int");
     }
 	}
+  
+  if (agg_count > 0 && !eval_code.empty()) {
+      body_code += get_loop_opening2(config, get_vals_code) + eval_code + get_loop_close2(config);
+      get_vals_code = "";
+      eval_code = "";
+  }
 
 
 	string init_code = get_agg_init_predicate(config, row_count, op->children[0]->lineage_op->chunk_collection.ChunkCount(), op->id,  fade_data[op->id].n_interventions, "agg", alloc_code, get_data_code, get_vals_code);
 	string end_code;
 
-	if (config.incremental == false) {
-		end_code += "\n\t\t\t}\n";
-	}
-
 	if (config.use_duckdb) {
 		end_code += "\t} \n offset +=  collection_chunk.size();\n}";
-	} else {
-		end_code += "\t}\n";
-	}
+	} 
 
 	end_code += Fade::group_partitions(config, fade_data[op->id]);
 	end_code +=  "\treturn 0;\n}\n";
 
-	code = init_code + eval_code + end_code;
+	code = init_code + body_code + end_code;
 
 	return code;
 }
@@ -445,7 +412,8 @@ void GenCodeAndAllocPredicate(EvalConfig& config, string& code, PhysicalOperator
 		}
     // alloc
 		fade_data[op->id].annotations = new int[op->lineage_op->backward_lineage[0].size()];
-		code += FilterCodeAndAllocPredicate(config, op, op->lineage_op, fade_data);
+		if (config.prune == false)
+		  code += FilterCodeAndAllocPredicate(config, op, op->lineage_op, fade_data);
 	} else if (op->type == PhysicalOperatorType::HASH_JOIN
 	           || op->type == PhysicalOperatorType::NESTED_LOOP_JOIN
 	           || op->type == PhysicalOperatorType::BLOCKWISE_NL_JOIN
@@ -528,18 +496,40 @@ void Intervention2DEvalPredicate(int thread_id, EvalConfig& config, void* handle
 		                                       fade_data[op->children[0]->id].del_set,
 		                                       fade_data[op->children[1]->id].del_set,
 		                                       	fade_data[op->id].del_set, 0, 0);
-	} else if (op->type == PhysicalOperatorType::HASH_GROUP_BY) {
+	} else if (op->type == PhysicalOperatorType::HASH_GROUP_BY
+	           || op->type == PhysicalOperatorType::PERFECT_HASH_GROUP_BY
+	           || op->type == PhysicalOperatorType::UNGROUPED_AGGREGATE) {
 		if (fade_data[op->id].n_interventions <= 1) return;
+    idx_t row_count = op->children[0]->lineage_op->chunk_collection.Count();
+    idx_t chunk_count = op->children[0]->lineage_op->chunk_collection.ChunkCount();
+    int start = 0;
+    int end = 0;
+    int batch_size = chunk_count / config.num_worker;
+    if (config.use_duckdb) {
+      if (chunk_count % config.num_worker > 0)
+        batch_size++;
+      start = thread_id * batch_size;;
+      end = start + batch_size;
+      if (end >= chunk_count) { end = chunk_count; }
+    } else {
+      batch_size = row_count / config.num_worker;
+      if (row_count % config.num_worker > 0)
+        batch_size++;
+      start = thread_id * batch_size;;
+      end = start + batch_size;
+      if (end >= row_count) { end = row_count; }
+    }
+    if (config.debug)
+      std::cout << "Count summary: " << row_count << " " << chunk_count << " " << batch_size << " " << start << " " << end << " " << config.num_worker << " " << thread_id << std::endl;
 		if (config.use_duckdb) {
 			int result = fade_data[op->id].agg_duckdb_fn(thread_id, op->lineage_op->forward_lineage[0].data(),
 			                                             fade_data[op->children[0]->id].annotations, fade_data[op->id].alloc_vars,
-			                                             op->children[0]->lineage_op->chunk_collection, fade_data[op->id].del_set, 0, 0);
+			                                             op->children[0]->lineage_op->chunk_collection, fade_data[op->id].del_set, start, end);
 		} else {
 			int result = fade_data[op->id].agg_fn(thread_id, op->lineage_op->forward_lineage[0].data(),
 			                                      fade_data[op->children[0]->id].annotations, fade_data[op->id].alloc_vars,
-			                                      fade_data[op->id].input_data_map, fade_data[op->id].del_set, 0, 0);
+			                                      fade_data[op->id].input_data_map, fade_data[op->id].del_set, start, end);
 		}
-	} else if (op->type == PhysicalOperatorType::UNGROUPED_AGGREGATE) {
 	} else if (op->type == PhysicalOperatorType::PROJECTION) {
     // TODO: fix pass pointer instead of copying
 		fade_data[op->id].annotations = fade_data[op->children[0]->id].annotations;
@@ -592,6 +582,7 @@ string Fade::PredicateSearch(PhysicalOperator *op, EvalConfig config) {
 	// holds any extra data needed during exec
 	std::unordered_map<idx_t, FadeDataPerNode> fade_data;
 	
+  std::cout << "gen intervention" << std::endl;
   start_time = std::chrono::steady_clock::now();
 	GenInterventionPredicate(config, op, fade_data, columns_spec);
 	end_time = std::chrono::steady_clock::now();
@@ -599,6 +590,7 @@ string Fade::PredicateSearch(PhysicalOperator *op, EvalConfig config) {
 	double gen_time = time_span.count();
 
 
+  std::cout << "gen code" << std::endl;
 	// 4. Alloc vars, generate eval code
 	string code;
 	start_time = std::chrono::steady_clock::now();
@@ -606,13 +598,18 @@ string Fade::PredicateSearch(PhysicalOperator *op, EvalConfig config) {
 	end_time = std::chrono::steady_clock::now();
 	time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
 	double prep_time = time_span.count();
+  
+  start_time = std::chrono::steady_clock::now();
+	GetCachedData(config, op, fade_data, columns_spec);
+	end_time = std::chrono::steady_clock::now();
+	time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
+	double data_time = time_span.count();
 
 	std::ostringstream oss;
 	oss << get_header(config) << "\n" << code;
 	string final_code = oss.str();
 
-	if (config.debug)
-		std::cout << final_code << std::endl;
+	std::cout << final_code << std::endl;
 
 	start_time = std::chrono::steady_clock::now();
 	void* handle = compile(final_code, 0);
@@ -622,10 +619,12 @@ string Fade::PredicateSearch(PhysicalOperator *op, EvalConfig config) {
 
 	if (handle == nullptr) return "select 0";
 	
+  std::cout << "bind" << std::endl;
 	BindFunctionsPredicate(config, handle,  op, fade_data);
 
 	std::vector<std::thread> workers;
 
+  std::cout << "eval" << std::endl;
 	start_time = std::chrono::steady_clock::now();
 
  	for (int i = 0; i < config.num_worker; ++i) {
@@ -662,12 +661,16 @@ string Fade::PredicateSearch(PhysicalOperator *op, EvalConfig config) {
 		return "select " + to_string(gen_time) + " as intervention_gen_time, "
 				   + to_string(prep_time) + " as prep_time, "
 				   + to_string(compile_time) + " as compile_time, "
+           + to_string(0) + " as code_gen_time, "
+           + to_string(data_time) + " as data_time, "
 				   + to_string(eval_time) + " as eval_time";
 	} else {
 	  ReleaseFade(config, handle, op, fade_data);
 		return "select " + to_string(gen_time) + " as intervention_gen_time, "
 				   + to_string(prep_time) + " as prep_time, "
 				   + to_string(compile_time) + " as compile_time, "
+           + to_string(0) + " as code_gen_time, "
+           + to_string(data_time) + " as data_time, "
 				   + to_string(eval_time) + " as eval_time";
 	}
 }
