@@ -41,7 +41,10 @@ if True:
     dbt_data = get_data("fade_data/dbtoast_delete_april21.csv", 1)
     dbt_data_no_prune = get_data("fade_data/dbtoast.csv", 1)
     dbt_data = con.execute("select * from dbt_data UNION ALL select * from dbt_data_no_prune where prune='False'").df()
+    #dbt_data = get_data("fade_data/dbtoast_may1.csv", 1)
+    #dbt_data = con.execute("select * from dbt_data where itype='DELETE'").df()
     dbt_data["cat"] = dbt_data.apply(lambda row: "DBT_prune" if row["prune"] else "DBT", axis=1)
+    print(dbt_data)
 
     cat = "query"
     p = ggplot(dbt_data, aes(x='prob',  y="eval_time_ms", color=cat, fill=cat, group=cat))
@@ -87,13 +90,6 @@ if True:
 
     cat = "system"
 
-    p = ggplot(single_data, aes(x='query', y='eval_time_ms', color=cat, fill=cat, group=cat))
-    p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.6), width=0.5)
-    p += axis_labels('Query', 'Latency (ms, log)', 'discrete', 'log10')
-    p += legend_side
-    p += facet_grid(".~sf_label", scales=esc("free_y"))
-    ggsave("figures/fade_single.png", p, postfix=postfix, width=8, height=3, scale=0.8)
-
     single_data_sf1 = con.execute("select * from single_data where sf=1").df()
     p = ggplot(single_data_sf1, aes(x='query', y='eval_time_ms', color=cat, fill=cat, group=cat))
     p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.9), width=0.8)
@@ -127,7 +123,7 @@ if True:
     p += geom_line(stat=esc('identity')) 
     p += axis_labels('Deletion Probability (log)', "Speedup (log)", "log10", "log10",
         ykwargs=dict(breaks=[0.1,10,100,1000,10000],  labels=list(map(esc,['0.1','10','100','1000','10000']))),
-        xkwargs=dict(breaks=[0.001, 0.01, 0.1,0.5],  labels=list(map(esc,['0.001','0.01','0.1', '0.5']))),
+        xkwargs=dict(breaks=[0.001, 0.01, 0.05, 0.1,0.5],  labels=list(map(esc,['0.001','0.01','0.05', '0.1', '0.5']))),
         )
     p += legend_bottom
     p += legend_side
@@ -140,7 +136,7 @@ if True:
     p += geom_line(stat=esc('identity')) 
     p += axis_labels('Deletion Probability (log)', "Speedup  (log)", "log10", "log10",
         ykwargs=dict(breaks=[0.1,10,100,1000,10000],  labels=list(map(esc,['0.1','10','100','1000','10000']))),
-        xkwargs=dict(breaks=[0.001, 0.01, 0.1,0.5],  labels=list(map(esc,['0.001','0.01','0.1', '0.5']))),
+        xkwargs=dict(breaks=[0.001, 0.01, 0.05, 0.1,0.5],  labels=list(map(esc,['0.001','0.01','0.05', '0.1', '0.5']))),
         )
     p += legend_side
     p += geom_hline(aes(yintercept=1))
@@ -345,12 +341,13 @@ if True:
 
 
 if True:
-    dbt_data_scale = get_data("fade_data/dbtoast_scale_april4.csv", 1)
-    fade_scale = get_data("scale_random_single.csv", 1000)
-    fade_scale_lineitem = get_data("scale_single_lineitem.csv", 1000)
-    dbt_data_scale["cat"] = dbt_data_scale.apply(lambda row: "DBT_prune" if row["prune"] else "DBT", axis=1)
+    dbt_data_scale = get_data("fade_data/dbtoast_may1.csv", 1)
+    dbt_data_all = con.execute("""select * from dbt_data_scale where itype='SCALE'
+    UNION ALL select * from dbt_data where itype='DELETE'""").df()
+    fade_scale = get_data("scaling_sf1_may1.csv", 1000)
+    dbt_data_all["cat"] = dbt_data_all.apply(lambda row: "DBT_prune" if row["prune"] else "DBT", axis=1)
     cat = 'query'
-    p = ggplot(dbt_data_scale, aes(x='prob',  y="eval_time_ms", color=cat, fill=cat, group=cat))
+    p = ggplot(dbt_data_all, aes(x='prob',  y="eval_time_ms", color=cat, fill=cat, group=cat))
     p += geom_line(stat=esc('identity')) + geom_point(stat=esc('identity'))
     p += axis_labels('Prob', "Run time (ms)", "continuous", "log10")
     p += legend_bottom
@@ -362,7 +359,7 @@ if True:
     fade.prune as fprune, fade.num_threads,
     (dbt.eval_time_ms / fade.eval_time_ms) as nor,
     dbt.eval_time_ms, fade.eval_time_ms
-    from (select * from dbt_data_scale where prune='True') as dbt JOIN
+    from (select * from dbt_data_all where prune='True' and itype='SCALE') as dbt JOIN
     (select * from  fade_scale where n=1 and num_threads=1 and incremental='False') as fade
     USING (query, sf, prob)
     """).df()
@@ -371,7 +368,7 @@ if True:
     p += geom_line(stat=esc('identity')) 
     p += axis_labels('Deletion Probability (log)', "Speedup (log)", "log10", "log10",
         ykwargs=dict(breaks=[0.1,10,100,1000,10000],  labels=list(map(esc,['0.1','10','100','1000','10000']))),
-        xkwargs=dict(breaks=[0.001, 0.01, 0.1,0.5],  labels=list(map(esc,['0.001','0.01','0.1', '0.5']))),
+        xkwargs=dict(breaks=[0.001, 0.01, 0.05, 0.1,0.5],  labels=list(map(esc,['0.001','0.01','0.05', '0.1', '0.5']))),
         )
     p += legend_bottom
     p += legend_side
@@ -390,13 +387,13 @@ if True:
         UNION ALL select 'FaDE-Prune-S' as system, query, prune, sf, sf_label,  eval_time_ms, incremental
             from fade_scale  where n=1 and num_threads=1 and prune='True' and prob={dbt_prob} and incremental='False' and itype='SCALE_RANDOM'
         UNION ALL select 'DBT-Prune-D' as system, query, prune, sf, sf_label, eval_time_ms as eval_time, 'False' as incremental
-            from dbt_data_scale where prob={dbt_prob} and prune='True' and itype='DELETE'
+            from dbt_data_all where prob={dbt_prob} and prune='True' and itype='DELETE'
         UNION ALL select 'DBT-Prune-S' as system, query, prune, sf, sf_label, eval_time_ms as eval_time, 'False' as incremental
-            from dbt_data_scale where prob={dbt_prob} and prune='True'and itype='SCALE'
+            from dbt_data_all where prob={dbt_prob} and prune='True'and itype='SCALE'
         UNION ALL select 'DBT-S' as system, query, prune, sf, sf_label, eval_time_ms as eval_time, 'False' as incremental
-            from dbt_data_scale where prob={dbt_prob} and prune='False' and itype='SCALE'
+            from dbt_data_all where prob={dbt_prob} and prune='False' and itype='SCALE'
         UNION ALL select 'DBT-D' as system, query, prune, sf, sf_label, eval_time_ms as eval_time, 'False' as incremental
-            from dbt_data_scale where prob={dbt_prob} and prune='False' and itype='DELETE'
+            from dbt_data_all where prob={dbt_prob} and prune='False' and itype='DELETE'
         UNION ALL select 'ProvSQL' as system, query, 'False' as prune, 1 as sf, sf_label, time_ms as eval_time, 'False' as incremental
             from df_provsql where with_prov='True'
         UNION ALL select  'Postgres' as system, query,  'False' as prune, 1 as sf, sf_label, time_ms as eval_time, 'False' as incremental
@@ -418,8 +415,8 @@ if True:
     max(scale.eval_time_ms/del.eval_time_ms) as speedup_max,
     avg(scale.eval_time_ms/del.eval_time_ms) as speedup_avg,
     min(scale.eval_time_ms/del.eval_time_ms) as speedup_min
-    from (select * from dbt_data_scale where itype='DELETE') as del
-    JOIN (select * from dbt_data_scale where itype='SCALE') as scale
+    from (select * from dbt_data_all where itype='DELETE') as del
+    JOIN (select * from dbt_data_all where itype='SCALE') as scale
     USING (sf, qid, prob)
     where qid<>12
     group by sf, qid
@@ -432,8 +429,8 @@ if True:
 
     detailed_data = con.execute("""
     select sf, qid, prob, del.eval_time_ms, scale.eval_time_ms
-    from (select * from dbt_data_scale where itype='DELETE') as del
-    JOIN (select * from dbt_data_scale where itype='SCALE') as scale
+    from (select * from dbt_data_all where itype='DELETE') as del
+    JOIN (select * from dbt_data_all where itype='SCALE') as scale
     USING (sf, qid, prob)
     where qid<>12
     order by qid, prob
@@ -445,8 +442,8 @@ if True:
     max(scale.eval_time_ms/del.eval_time_ms) as speedup_max,
     avg(scale.eval_time_ms/del.eval_time_ms) as speedup_avg,
     min(scale.eval_time_ms/del.eval_time_ms) as speedup_min
-    from (select * from dbt_data_scale where itype='DELETE') as del
-    JOIN (select * from dbt_data_scale where itype='SCALE') as scale
+    from (select * from dbt_data_all where itype='DELETE') as del
+    JOIN (select * from dbt_data_all where itype='SCALE') as scale
     USING (sf, qid, prob)
     where qid<>12
     """).df()
@@ -483,8 +480,8 @@ if True:
     select sf, query, prob,
     avg(dbt.eval_time_ms) as dbt_eval, avg(fade.eval_time_ms) as fade_eval,
     avg(dbt.eval_time_ms / fade.eval_time_ms) as fade_speedup,
-    from (select * from fade_scale_lineitem where prune='True') as fade JOIN
-    (select * from dbt_data_scale) as dbt using (query, sf, prob) 
+    from (select * from fade_scale where prune='True') as fade JOIN
+    (select * from dbt_data_all) as dbt using (query, sf, prob) 
     group by sf, query, prob
     order by sf, query, prob
     """).df()

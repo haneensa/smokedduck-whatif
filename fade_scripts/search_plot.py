@@ -149,14 +149,22 @@ if plot:
             from (select * from plot_data_best where  itype='GB') as t1 JOIN
             (select * from plot_data_best where itype='GB') as base using (sf, n, query)
             group by sf, n, query, t1.sys
-    """
-    plot_data = con.execute("""
+            
             select 'sf='||sf as sf_label, t1.sys, sf, n, query, max(base.eval_time_ms / t1.eval_prune_time_ms) as speedup,
             min(t1.eval_time_ms) as sys_eval, min(base.eval_time_ms) as base_eval,
             max(n/(t1.eval_prune_time_ms/1000.0)) as throughput,
             avg(t1.prune_time_ms) as prune_eval, 
             from (select * from plot_data_best where  itype<>'GB') as t1 JOIN
             (select * from plot_data_best where itype='GB') as base using (sf, n, query)
+            group by sf, n, query, t1.sys
+    """
+    plot_data = con.execute("""
+            select 'sf='||sf as sf_label, t1.sys, sf, n, query, max((base.query_timing*1000) / t1.eval_prune_time_ms) as speedup,
+            min(t1.eval_time_ms) as sys_eval, min(base.query_timing*1000) as base_eval,
+            max(n/(t1.eval_prune_time_ms/1000.0)) as throughput,
+            avg(t1.prune_time_ms) as prune_eval, 
+            from (select * from plot_data_best where  itype<>'GB') as t1 JOIN
+            (select * from lineage_data where workload='tpch') as base using (sf, query)
             group by sf, n, query, t1.sys
             UNION ALL
             select 'sf='||sf as sf_label, 'Baseline' as sys, sf, 1, query, 0 speedup, 0 sys_eval, 0 base_eval,
@@ -198,6 +206,7 @@ if plot:
     avg(throughput),
     max(throughput)
     from plot_data
+    where query='Q1'
     group by sf, sys
     order by sf, sys
     """).df()

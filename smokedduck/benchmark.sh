@@ -11,21 +11,22 @@ export DUCKDB_LIB_PATH=/ProvEnhance/third_party/smokedduck-whatif/build/release/
 query_nums=("1" "3" "5" "7" "9"  "10" "12")
 sf_values=("1") #"5" "10") #"1" "5" "10") # "10")  # "0.2" "0.4") # "5.0" "10.0") # (# "3.0" "4.0")
 # ADD 64, 256
-distinct=("2048") #"64" "256" "512" "1024" "2048")
-threads_num=("8") # "2" "4" "8")
+distinct=("1" "64" "256" "512" "1024" "2048")
+threads_num=("1" "8") #"1" "2" "4" "8")
 prune_binary=("false" "true") # "false")
 is_scalar_binary=("false" "true") 
 #csv="search_sf1_april28.csv" 
 #csv="search_sf5_10_prune_no_q1_april28.csv" 
-csv="search_sf5_10_april28.csv" 
+#csv="vec_sf1_may1_iter1.csv" 
+csv="vec_sf1_may1_iter2.csv" 
 debug="false"
 #itype_list=("SCALE_RANDOM") # evaluate scaling some tuples of an attribute
-#itype_list=("DENSE_DELETE")
-itype_list=("SEARCH")
+itype_list=("DENSE_DELETE")
+#itype_list=("SEARCH")
 # if search then include incremental or not
 prob_list=("0.1") #"0.001"  "0.002" "0.005" "0.01" "0.02" "0.05" "0.1" "0.2" "0.3" "0.4" "0.5")
 spec='""'
-spec='lineitem.i'
+#spec='lineitem.i'
 #gen='--gen_distinct True'
 batch_list=("4") #"1" "2" "4" "8")
 use_duckdb="false"
@@ -95,7 +96,7 @@ do
                           continue
                         fi
 
-                        python3 smokedduck/test_whatif.py  --spec ${spec} --batch ${batch} --prune ${prune} --sf ${sf} --csv ${csv} --i ${query_num} --use-duckdb ${use_duckdb} --t ${thread} --is-scalar ${is_scalar} --debug ${debug} --interventions ${n} --itype ${itype} --prob ${prob} --incremental "true"
+                        #python3 smokedduck/test_whatif.py  --spec ${spec} --batch ${batch} --prune ${prune} --sf ${sf} --csv ${csv} --i ${query_num} --use-duckdb ${use_duckdb} --t ${thread} --is-scalar ${is_scalar} --debug ${debug} --interventions ${n} --itype ${itype} --prob ${prob} --incremental "true"
                       fi
                     done # prob
                   done

@@ -582,7 +582,7 @@ string GetJoinCode(EvalConfig& config, PhysicalOperator *op, shared_ptr<Operator
 	oss << "\tconst int n_masks = " + to_string(fade_data[op->id].n_masks) + ";\n";
 
   if (config.debug)
-	  oss << "std::cout << \"JOIN: \"  << \" \" <<  n_masks << " " << start << " " << end << std::endl;";
+	  oss << "std::cout << \"JOIN: \"  << \" \" <<  n_masks << \" \" << start << \" \" << end << std::endl;";
 
 	oss << "\tfor (int i=start; i < end; ++i) {\n";
 
