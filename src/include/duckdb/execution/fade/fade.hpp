@@ -25,7 +25,6 @@ struct FadeDataPerNode {
   bool gen;
 	int* annotations;
 	idx_t n_interventions;
-	std::set<int> del_set;
 	idx_t n_masks;
 	idx_t n_groups;
 	// single_del_intervention.size() == input table size
@@ -43,16 +42,16 @@ struct FadeDataPerNode {
 	std::unordered_map<string, string> alloc_vars_types;
 	std::unordered_map<string, int> alloc_vars_index;
 	std::unordered_map<int, void*> input_data_map;
-	int (*filter_fn)(int, int*, void*, void*, std::set<int>&, std::set<int>&, const int, const int);
-	int (*join_fn)(int, int*, int*, void*, void*, void*, std::set<int>&,  std::set<int>&, std::set<int>&, const int, const int);
+	int (*filter_fn)(int, int*, void*, void*, const int, const int);
+	int (*join_fn)(int, int*, int*, void*, void*, void*, const int, const int);
 	int (*join_fn_forward)(int, std::unordered_map<int, std::vector<int>>&,
-      std::unordered_map<int, std::vector<int>>&, void*, void*, void*, std::set<int>&,  std::set<int>&, std::set<int>&, const int, const int);
-	int (*agg_duckdb_fn)(int, int*, void*, std::unordered_map<std::string, vector<void*>>&, ChunkCollection&, std::set<int>&, const int, const int);
-	int (*agg_fn)(int, int*, void*, std::unordered_map<std::string, vector<void*>>&,  std::unordered_map<int, void*>&, std::set<int>&, const int, const int);
+      std::unordered_map<int, std::vector<int>>&, void*, void*, void*, const int, const int);
+	int (*agg_duckdb_fn)(int, int*, void*, std::unordered_map<std::string, vector<void*>>&, ChunkCollection&, const int, const int);
+	int (*agg_fn)(int, int*, void*, std::unordered_map<std::string, vector<void*>>&,  std::unordered_map<int, void*>&, const int, const int);
 	int (*agg_fn_bw)(int, std::vector<std::vector<int>>&, void*, std::unordered_map<std::string, vector<void*>>&,
       std::unordered_map<int, void*>&);
 	int (*agg_fn_nested)(int, int*, void*, std::unordered_map<std::string, vector<void*>>&,
-	                     std::unordered_map<std::string, vector<void*>>&, std::set<int>&, const int, const int);
+	                     std::unordered_map<std::string, vector<void*>>&, const int, const int);
 	bool has_agg_child;
 	int child_agg_id;
 };

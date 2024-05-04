@@ -1,3 +1,29 @@
+## TODO: add instructions to install smokedduck
+## TODO: add DBT and ProvSQL scripts
+## TODO: add flights and nsf data links
+
+## Flights
+$ python3 smokedduck/test_flights.py
+
+## NSF
+$ ./smokedduck/nsf_benchmark.sh
+
+## Fade ablation
+$ ./smokedduck/benchmark.sh
+
+## Fade micro
+$ ./smokedduck/benchmark_forward_vs_backward.sh
+
+## plotting scripts
+
+$ python3 fade_scripts/ablation_abalysis.py
+$ python3 fade_scripts/dbt.py
+$ python3 fade_scripts/search_plot.py
+$ python3 fade_scripts/optimizer.py
+$ python3 fade_scripts/plot_scale.py
+
+
+
 <div align="center">
   <img src="https://duckdb.org/images/logo-dl/DuckDB_Logo-stacked.svg" height="120">
 </div>

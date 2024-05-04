@@ -13,21 +13,27 @@ plot = True
 print_summary = True
 plot_scale = False
 
-batching =  False
-pruning = False
+batching =  True
+pruning = True
 vec = True
-workers = False
-best = False
+workers = True
+best = True
 best_distinct = True
 
 prefix = "DELETE_"
+all_fade = get_data(f"allconfigs_2.csv", 1000)
 if plot_scale:
-    dense_fade = get_data(f"fade_data/scale_random_april10.csv", 1000)
+    #dense_fade = get_data(f"fade_data/scale_random_april10.csv", 1000)
+    dense_fade = con.execute("select * from all_fade where use_gb_backward_lineage='False' and itype='SCALE_RANDOM' ").df()
+    dense_fade["bw"] = dense_fade.apply(lambda row:"GB-B" if row["use_gb_backward_lineage"] else "GB-F" , axis=1)
+    dense_fade = dense_fade[dense_fade['spec']!='lineitem.i']
     prefix = "SCALE_"
 else:
-    dense_fade = get_data(f"fade_data/forward_backward_0.1_april26.csv", 1000)
+    #dense_fade = get_data(f"fade_data/forward_backward_0.1_april26.csv", 1000)
+    dense_fade = con.execute("select * from all_fade where use_gb_backward_lineage='False' and itype='DENSE_DELETE' ").df()
     dense_fade["bw"] = dense_fade.apply(lambda row:"GB-B" if row["use_gb_backward_lineage"] else "GB-F" , axis=1)
-    dense_fade = con.execute("select * from dense_fade where use_gb_backward_lineage='False'").df()
+    dense_fade = dense_fade[dense_fade['spec']!='lineitem.i']
+
 
 postfix = """
 data$query = factor(data$query, levels=c('Q1', 'Q3', 'Q5', 'Q7', 'Q9', 'Q10', 'Q12'))
