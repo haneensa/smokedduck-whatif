@@ -1,6 +1,15 @@
-## TODO: add instructions to install smokedduck
-## TODO: add DBT and ProvSQL scripts
-## TODO: add flights and nsf data links
+## git clone git@github.com:haneensa/ProvEnhance.git
+
+## Install smokedduck
+$ BUILD_BENCHMARK=1 BUILD_TPCH=1 BUILD_LINEAGE=1 BUILD_PYTHON=1 make
+$ cd tools/pythonpkg
+$ BUILD_LINEAGE=true python3 setup.py install
+
+## ProvSQL
+cd ProvEnhance/scripts/baselines/provsql
+
+## DBT
+$ ./smokedduck/dbtoaster.sh
 
 ## Flights
 $ python3 smokedduck/test_flights.py
@@ -17,9 +26,13 @@ $ ./smokedduck/benchmark_forward_vs_backward.sh
 ## plotting scripts
 
 $ python3 fade_scripts/ablation_abalysis.py
+
 $ python3 fade_scripts/dbt.py
+
 $ python3 fade_scripts/search_plot.py
+
 $ python3 fade_scripts/optimizer.py
+
 $ python3 fade_scripts/plot_scale.py
 
 

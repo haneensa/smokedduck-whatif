@@ -29,8 +29,8 @@ fi
 
 for sf in "${sf_values[@]}"
 do
-  #rm build/db/nsf_data_keyed.db
-  #python3 ../nsf/parse_data.py
+  rm build/db/nsf_data_keyed.db
+  python3 ProvEnhance/third_party/nsf/parse_data.py
   for is_scalar in "${is_scalar_binary[@]}"
   do
     for thread in "${threads_num[@]}"

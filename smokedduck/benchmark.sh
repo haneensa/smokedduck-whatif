@@ -12,10 +12,10 @@ sf_values=("1") #"5" "10") #"1" "5" "10") # "10")  # "0.2" "0.4") # "5.0" "10.0"
 # ADD 64, 256
 distinct=("1" "64" "256" "512" "1024" "2048")
 threads_num=("1" "2" "4" "8")
-prune_binary=("false"  "true")
-is_scalar_binary=("true" "false") 
+prune_binary=("true"  "false")
+is_scalar_binary=("true"  "false") 
 csv="all.csv" 
-debug="true"
+debug="false"
 itype_list=("SCALE_RANDOM" "DENSE_DELETE" "SEARCH" "DENSE_SPEC")
 spec='""'
 batch_list=("4") 
@@ -31,7 +31,9 @@ do
   python3 smokedduck/prep_db.py --sf ${sf} ${gen}
   for itype in "${itype_list[@]}"
   do
-    if [ "$itype" = "SEARCH" ] || [ "$itype" = "DENSE_SPEC" ]  ; then
+    if [ "$itype" = "SEARCH" ] ; then
+      spec='lineitem.i'
+    elif [ "$itype" = "DENSE_SPEC" ] ; then
       itype="DENSE_DELETE"
       spec='lineitem.i'
     else
@@ -40,7 +42,7 @@ do
     for n in "${distinct[@]}"
     do
       if [ "$n" -eq 1 ] && [ "$itype" = "DENSE_DELETE" ] && [ "$spec" = '""' ] ; then
-        prob_list=("0.001"  "0.002" "0.005" "0.01" "0.02" "0.05" "0.1" "0.2" "0.3" "0.4" "0.5")
+        prob_list=("0.001") #  "0.002" "0.005" "0.01" "0.02" "0.05" "0.1" "0.2" "0.3" "0.4" "0.5")
       else
         prob_list=("0.1")
       fi

@@ -143,17 +143,18 @@ string get_agg_init_predicate(EvalConfig config, int row_count, int chunk_count,
 }
 
 
-string get_loop_close2(EvalConfig& config) {
+string get_loop_close2(EvalConfig& config, string post_vals) {
 	std::ostringstream oss;
 	if (config.incremental == false) {
     oss << "\n\t\t\t}\n"; // close for (int j=0; j < n_masks; ++j)
+    oss << post_vals;
 	}
   oss << "\n\t\t}\n"; // close for (int i=start; .. end) or for (oid ..
 
 	return oss.str();
 }
 
-string get_loop_opening2(EvalConfig& config, string get_vals) {
+string get_loop_opening2(EvalConfig& config, string get_vals, string pre_vals) {
 	std::ostringstream oss;
   oss <<  R"(
 	for (int i=start; i < end; i++) {
@@ -162,7 +163,10 @@ string get_loop_opening2(EvalConfig& config, string get_vals) {
 		int row = var_0[i];
 )";
   oss << get_vals;
+
   if (!config.incremental) {
+    // temp_0 = val_0
+    oss << pre_vals;
 		if (config.is_scalar) {
 			oss << R"(
 			for (int j=0; j < n_interventions; ++j) {
@@ -194,7 +198,9 @@ string get_agg_eval_predicate(EvalConfig config, int agg_count, string fn, strin
 	}
 
 	if (config.is_scalar) {
-		oss << "\t\t\t\t" << out_var+"[col + j ] +="+ in_var+";\n";
+		oss << "\t\t\t\t" << out_var+"[col + j ] +="+ in_var;
+		//oss << " * (row!=j);\n";
+		oss << ";\n";
 	} else {
 		oss << "{";
     // TODO: maintain the original value for row and restore it after this
@@ -228,6 +234,8 @@ string HashAggregateCodeAndAllocPredicate(EvalConfig& config, shared_ptr<Operato
 	string alloc_code;
 	string get_data_code;
 	string get_vals_code;
+  string post_vals_code;
+  string pre_vals_code;
 
 	idx_t row_count = op->children[0]->lineage_op->chunk_collection.Count();
   // if n_groups * n_interventions > rows then use single thread
@@ -253,8 +261,10 @@ string HashAggregateCodeAndAllocPredicate(EvalConfig& config, shared_ptr<Operato
 
 		if (name == "sum" || name == "sum_no_overflow" || name == "avg") {
       if (agg_count > 0 && agg_count % config.batch == 0) {
-        body_code += get_loop_opening2(config, get_vals_code) + eval_code + get_loop_close2(config);
+        body_code += get_loop_opening2(config, get_vals_code, pre_vals_code) + eval_code + get_loop_close2(config, post_vals_code);
         get_vals_code = "";
+        pre_vals_code = "";
+        post_vals_code = "";
         eval_code = "";
       }
 			int col_idx = i + keys;
@@ -276,6 +286,9 @@ string HashAggregateCodeAndAllocPredicate(EvalConfig& config, shared_ptr<Operato
 				                 to_string(i) + "]);\n";
 			}
 
+      pre_vals_code += "\t\t"  + output_type + " " + out_var + "_temp = " + out_var  + "[col + row];\n";
+      post_vals_code += "\t\t"  + out_var + "[col + row] = " + out_var + "_temp;\n";
+
       if (config.is_scalar) {
 			  get_vals_code += "\t\t\t" + output_type +" " + in_val + "= " + in_arr + "[i];\n";
       } else {
@@ -296,8 +309,10 @@ string HashAggregateCodeAndAllocPredicate(EvalConfig& config, shared_ptr<Operato
 		string out_var = "out_count";
 		alloc_code += Fade::get_agg_alloc(config, 0, "count", "int");
     if (agg_count > 0 && agg_count % config.batch == 0) {
-      body_code += get_loop_opening2(config, get_vals_code) + eval_code + get_loop_close2(config);
+      body_code += get_loop_opening2(config, get_vals_code, pre_vals_code) + eval_code + get_loop_close2(config, post_vals_code);
       get_vals_code = "";
+      pre_vals_code = "";
+      post_vals_code = "";
       eval_code = "";
     }
     if (config.is_scalar == false) {
@@ -306,11 +321,15 @@ string HashAggregateCodeAndAllocPredicate(EvalConfig& config, shared_ptr<Operato
     } else {
 		  eval_code += get_agg_eval_predicate(config, agg_count++, "count", out_var, "1", "int");
     }
+    pre_vals_code += "\t\tint " + out_var + "_temp = " + out_var  + "[col + row];\n";
+    post_vals_code += "\t\t"  + out_var + "[col + row] = " + out_var + "_temp;\n";
 	}
   
   if (agg_count > 0 && !eval_code.empty()) {
-      body_code += get_loop_opening2(config, get_vals_code) + eval_code + get_loop_close2(config);
+      body_code += get_loop_opening2(config, get_vals_code, pre_vals_code) + eval_code + get_loop_close2(config, post_vals_code);
       get_vals_code = "";
+      pre_vals_code = "";
+      post_vals_code = "";
       eval_code = "";
   }
 
@@ -535,40 +554,6 @@ void Intervention2DEvalPredicate(int thread_id, EvalConfig& config, void* handle
 	}
 }
 
-
-void BindFunctionsPredicate(EvalConfig config, void* handle, PhysicalOperator* op,
-                   std::unordered_map<idx_t, FadeDataPerNode>& fade_data) {
-
-	for (idx_t i = 0; i < op->children.size(); i++) {
-		BindFunctionsPredicate(config, handle, op->children[i].get(), fade_data);
-	}
-
-	if (op->type == PhysicalOperatorType::FILTER) {
-		if (config.prune) return;
-		if (fade_data[op->id].n_interventions <= 1) return;
-		string fname = "filter_"+ to_string(op->id) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
-		fade_data[op->id].filter_fn = (int(*)(int, int*, void*, void*, const int, const int))dlsym(handle, fname.c_str());
-	} else if (op->type == PhysicalOperatorType::HASH_JOIN
-	           || op->type == PhysicalOperatorType::NESTED_LOOP_JOIN
-	           || op->type == PhysicalOperatorType::BLOCKWISE_NL_JOIN
-	           || op->type == PhysicalOperatorType::PIECEWISE_MERGE_JOIN
-	           || op->type == PhysicalOperatorType::CROSS_PRODUCT) {
-		if (fade_data[op->id].n_interventions <= 1) return;
-		string fname = "join_"+ to_string(op->id) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
-		fade_data[op->id].join_fn = (int(*)(int, int*, int*, void*, void*, void*,
-          const int, const int))dlsym(handle, fname.c_str());
-	} else if (op->type == PhysicalOperatorType::HASH_GROUP_BY) {
-		string fname = "agg_"+ to_string(op->id) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
-		if (config.use_duckdb) {
-			fade_data[op->id].agg_duckdb_fn = (int(*)(int, int*, void*, std::unordered_map<std::string, vector<void*>>&,
-			                                           ChunkCollection&, const int, const int))dlsym(handle, fname.c_str());
-		} else {
-			fade_data[op->id].agg_fn = (int(*)(int, int*, void*, std::unordered_map<std::string, vector<void*>>&,
-			    std::unordered_map<int, void*>&, const int, const int))dlsym(handle, fname.c_str());
-		}
-	}
-}
-
 string Fade::PredicateSearch(PhysicalOperator *op, EvalConfig config) {
   std::cout << "Predicate Search" << std::endl;
 	// timing vars
@@ -619,7 +604,7 @@ string Fade::PredicateSearch(PhysicalOperator *op, EvalConfig config) {
 	if (handle == nullptr) return "select 0";
 	
   std::cout << "bind" << std::endl;
-	BindFunctionsPredicate(config, handle,  op, fade_data);
+	BindFunctions(config, handle,  op, fade_data);
 
 	std::vector<std::thread> workers;
 

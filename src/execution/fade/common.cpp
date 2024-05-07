@@ -1092,17 +1092,9 @@ void Fade::BindFunctions(EvalConfig& config, void* handle, PhysicalOperator* op,
 		BindFunctions(config, handle, op->children[i].get(), fade_data);
 	}
 
-	if (op->type == PhysicalOperatorType::TABLE_SCAN) {
-		int row_count = op->lineage_op->backward_lineage[0].size();
-    if (fade_data[op->id].base_rows == row_count) return;
+	if (op->type == PhysicalOperatorType::TABLE_SCAN || op->type == PhysicalOperatorType::FILTER) {
 		string fname = "filter_"+ to_string(op->id) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
 		fade_data[op->id].filter_fn = (int(*)(int, int*, void*, void*, const int, const int))dlsym(handle, fname.c_str());
-  } else if (op->type == PhysicalOperatorType::FILTER) {
-		if (config.prune) return;
-		//if (fade_data[op->id].n_masks > 0) {
-		string fname = "filter_"+ to_string(op->id) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
-		fade_data[op->id].filter_fn = (int(*)(int, int*, void*, void*, const int, const int))dlsym(handle, fname.c_str());
-		//	}
 	} else if (op->type == PhysicalOperatorType::HASH_JOIN
 	           || op->type == PhysicalOperatorType::NESTED_LOOP_JOIN
 	           || op->type == PhysicalOperatorType::BLOCKWISE_NL_JOIN
@@ -1110,14 +1102,8 @@ void Fade::BindFunctions(EvalConfig& config, void* handle, PhysicalOperator* op,
 	           || op->type == PhysicalOperatorType::CROSS_PRODUCT) {
 		//if (fade_data[op->id].n_masks > 0) {
 		string fname = "join_"+ to_string(op->id) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
-    if (config.n_intervention == 1 && config.incremental == true) {
-      fade_data[op->id].join_fn_forward = (int(*)(int, std::unordered_map<int, std::vector<int>>&, 
-              std::unordered_map<int, std::vector<int>>&, void*, void*, void*,
-              const int, const int))dlsym(handle, fname.c_str());
-    } else {
-		  fade_data[op->id].join_fn = (int(*)(int, int*, int*, void*, void*, void*,
+		fade_data[op->id].join_fn = (int(*)(int, int*, int*, void*, void*, void*,
             const int, const int))dlsym(handle, fname.c_str());
-    }
 		//}
 	} else if (op->type == PhysicalOperatorType::HASH_GROUP_BY
 	           || op->type == PhysicalOperatorType::PERFECT_HASH_GROUP_BY
