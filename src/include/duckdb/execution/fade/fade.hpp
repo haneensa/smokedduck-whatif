@@ -24,6 +24,7 @@ class PhysicalOperator;
 struct FadeDataPerNode {
   bool gen;
 	int* annotations;
+	int* base_annotations;
 	idx_t n_interventions;
 	idx_t n_masks;
 	idx_t n_groups;

@@ -21,28 +21,16 @@ string FilterCodeAndAllocPredicate(EvalConfig& config, PhysicalOperator *op,
 	std::ostringstream oss;
 	oss << R"(extern "C" int )"
 	    << fname
-	    << R"((int thread_id, int* lineage,  void* __restrict__ var_ptr, void* __restrict__ out_ptr, int s, int e) {
+	    << R"((int thread_id, int* lineage,  void* __restrict__ var_ptr, void* __restrict__ out_ptr, int start, int end) {
 )";
 
-	oss << "\t int* __restrict__ out = (int* __restrict__)out_ptr;\n";
-	oss << "\t int* __restrict__ var = (int* __restrict__)var_ptr;\n";
+	oss << "\tint* __restrict__ out = (int* __restrict__)out_ptr;\n";
+	oss << "\tint* __restrict__ var = (int* __restrict__)var_ptr;\n";
 
-	int row_count = lop->backward_lineage[0].size();
+//  if (config.debug) {
+    oss << "\tstd::cout << \"Filter: \" << start << \" \" << end << std::endl;\n";
+  //}
 
-	oss << "\tconst int row_count = " + to_string(row_count) + ";\n";
-
-	if (config.num_worker > 0) {
-		int batch_size = row_count / config.num_worker;
-		if (row_count % config.num_worker > 0)
-			batch_size++;
-		oss << "\tconst int batch_size  = " << batch_size << ";\n";
-		oss << "\tint start = thread_id * batch_size;\n";
-		oss << "\tint end   = start + batch_size;\n";
-		oss << "\tif (end >= row_count) { end = row_count; }\n";
-	} else {
-		oss << "\tint start = 0;\n";
-		oss << "\tint end   = row_count;\n";
-	}
 	oss << R"(
 	for (int i=start; i < end; ++i) {
 		out[i] = var[lineage[i]];
@@ -63,30 +51,15 @@ string JoinCodeAndAllocPredicate(EvalConfig config, PhysicalOperator *op, shared
 	std::ostringstream oss;
 	oss << R"(extern "C" int )"
 	    << fname
-	    << R"((int thread_id, int* lhs_lineage, int* rhs_lineage,  void* __restrict__ lhs_var_ptr,  void* __restrict__ rhs_var_ptr,  void* __restrict__ out_ptr, const int s, const int e) {
+	    << R"((int thread_id, int* lhs_lineage, int* rhs_lineage,  void* __restrict__ lhs_var_ptr,
+void* __restrict__ rhs_var_ptr,  void* __restrict__ out_ptr, const int start, const int end) {
 )";
 
 	oss << "\t int* __restrict__ out = (int* __restrict__)out_ptr;\n";
 	oss << "\t int* __restrict__ rhs_var = (int* __restrict__)rhs_var_ptr;\n";
 	oss << "\t int* __restrict__ lhs_var = (int* __restrict__)lhs_var_ptr;\n";
 
-	int row_count = op->lineage_op->backward_lineage[0].size();
-	oss << "\tconst int row_count = " + to_string(row_count) + ";\n";
 	oss << "\tconst int right_n_interventions = " + to_string(fade_data[op->children[1]->id].n_interventions) + ";\n";
-
-	if (config.num_worker > 0) {
-		int batch_size = row_count / config.num_worker;
-		if (row_count % config.num_worker > 0)
-			batch_size++;
-		oss << "\tconst int batch_size  = " << batch_size << ";\n";
-		oss << "\tint start = thread_id * batch_size;\n";
-		oss << "\tint end   = start + batch_size;\n";
-		oss << "\tif (end >= row_count) { end = row_count; }\n";
-	} else {
-		oss << "\tint start = 0;\n";
-		oss << "\tint end   = row_count;\n";
-	}
-
 	oss << "\tfor (int i=start; i < end; i++) {\n";
 
 
@@ -358,9 +331,9 @@ void GenInterventionPredicate(EvalConfig& config, PhysicalOperator* op,
 
 	if (op->type == PhysicalOperatorType::TABLE_SCAN) {
     string table_name = op->lineage_op->table_name;
+    fade_data[op->id].gen = false;
 		if (columns_spec.find(table_name) == columns_spec.end()) {
-      if (config.debug)
-        std::cout << "skip " << table_name << std::endl;
+      if (config.debug) std::cout << "skip " << table_name << std::endl;
 			return;
 		}
 
@@ -389,24 +362,70 @@ void GenInterventionPredicate(EvalConfig& config, PhysicalOperator* op,
           fprintf(stderr, "read failed");
           exit(EXIT_FAILURE);
         }
-			  fade_data[op->id].annotations = temp;
+			  fade_data[op->id].base_annotations = temp;
 
 			  fade_data[op->id].n_interventions = cols;
+        fade_data[op->id].base_rows = rows;
     } else if (config.n_intervention == 0) {
-			// factorize need access to base table
-      // TODO: check if we need to load from file
-			std::pair<int*, idx_t> res = Fade::factorize(op, op->lineage_op, columns_spec);
-      if (config.debug)
-        std::cout << " annotations: " << res.second << std::endl;
-			fade_data[op->id].annotations = res.first;
-			fade_data[op->id].n_interventions = res.second;
+      // TODO: map annotations to predicate
+      bool use_factorize = false;
+      for (const auto& col : columns_spec[table_name]) {
+        std::ifstream rowsfile((table_name + "_" + col + ".rows").c_str());
+        int rows, n_interventions;
+        if ( rowsfile >> rows >> n_interventions || !(fade_data[op->id].n_interventions > 0 && fade_data[op->id].base_rows != rows) ) {
+            std::cout << "annotations card for " << table_name << " " << col << " has " << rows  << " with  " << n_interventions<< std::endl;
+        } else {
+            std::cerr << "Error opening metadata file or erros in # rows " << fade_data[op->id].n_interventions
+            << " " <<fade_data[op->id].base_rows << " " << rows << std::endl;
+            use_factorize = true;
+            break;
+        }
+
+        rowsfile.close();
+        fade_data[op->id].base_rows = rows;
+        
+        FILE * fname = fopen((table_name + "_" + col + ".npy").c_str(), "r");
+        if (fname == nullptr) {
+          std::cerr << "Error: Unable to open file." << std::endl;
+          use_factorize = true;
+          break;
+        }
+
+        // read the first line to get cardinality
+        int* temp = new int[rows];
+        size_t fbytes = fread(temp, sizeof(int), rows ,  fname);
+        if ( fbytes != rows ) {
+          std::cerr << "Error: Unable to open file." << std::endl;
+          use_factorize = true;
+          break;
+        }
+
+        if (fade_data[op->id].n_interventions > 0) {
+          for (int i = 0 ; i < rows;  ++i) {
+            fade_data[op->id].base_annotations[i] = fade_data[op->id].base_annotations[i] * n_interventions + temp[i];
+          }
+          fade_data[op->id].n_interventions *= n_interventions;
+        } else {
+          fade_data[op->id].base_annotations = temp;
+          fade_data[op->id].n_interventions = n_interventions;
+        }
+      }
+      if (use_factorize) {
+        std::pair<int*, idx_t> res = Fade::factorize(op, op->lineage_op, columns_spec);
+        if (config.debug)
+          std::cout << " annotations: " << res.second << std::endl;
+        fade_data[op->id].base_annotations = res.first;
+        fade_data[op->id].n_interventions = res.second;
+        fade_data[op->id].base_rows =  op->lineage_op->backward_lineage[0].size();
+      }
 		} else {
 			// random need access to  config.n_intervention
       if (config.debug)
         std::cout << "generate random unique: " << config.n_intervention << std::endl;
 			fade_data[op->id].n_interventions = config.n_intervention;
 	    //idx_t row_count = op->lineage_op->log_index->table_size;
-			fade_data[op->id].annotations = Fade::random_unique(op->lineage_op, config.n_intervention);
+			fade_data[op->id].base_annotations = Fade::random_unique(op->lineage_op, config.n_intervention);
+      fade_data[op->id].base_rows =  op->lineage_op->backward_lineage[0].size();
 		}
 	}
 }
@@ -419,20 +438,28 @@ void GenCodeAndAllocPredicate(EvalConfig& config, string& code, PhysicalOperator
 		GenCodeAndAllocPredicate(config, code, op->children[i].get(), fade_data, columns_spec);
 	}
 
+  fade_data[op->id].gen = false;
 	if (op->type == PhysicalOperatorType::TABLE_SCAN) {
-		if (columns_spec.find(op->lineage_op->table_name) == columns_spec.end()) {
-			fade_data[op->id].n_interventions = 1;
-			return;
-		}
-	} else if (op->type == PhysicalOperatorType::FILTER) {
+    if (columns_spec.find(op->lineage_op->table_name) == columns_spec.end()) {
+      fade_data[op->id].n_interventions = 1;
+      return;
+    }
+    if (fade_data[op->id].base_rows > op->lineage_op->backward_lineage[0].size()) {
+      fade_data[op->id].gen = true;
+		  code += FilterCodeAndAllocPredicate(config, op, op->lineage_op, fade_data);
+    }
+    fade_data[op->id].annotations = fade_data[op->id].base_annotations;
+  } else if (op->type == PhysicalOperatorType::FILTER) {
 		fade_data[op->id].n_interventions = fade_data[op->children[0]->id].n_interventions;
 		if ( fade_data[op->id].n_interventions <= 1) {
 			return;
 		}
     // alloc
 		fade_data[op->id].annotations = new int[op->lineage_op->backward_lineage[0].size()];
-		if (config.prune == false)
+		if (config.prune == false) {
+      fade_data[op->id].gen = true;
 		  code += FilterCodeAndAllocPredicate(config, op, op->lineage_op, fade_data);
+    }
 	} else if (op->type == PhysicalOperatorType::HASH_JOIN
 	           || op->type == PhysicalOperatorType::NESTED_LOOP_JOIN
 	           || op->type == PhysicalOperatorType::BLOCKWISE_NL_JOIN
@@ -444,10 +471,12 @@ void GenCodeAndAllocPredicate(EvalConfig& config, string& code, PhysicalOperator
 		if (fade_data[op->id].n_interventions <= 1) return;
 		fade_data[op->id].annotations = new int[op->lineage_op->backward_lineage[0].size()];
 		code += JoinCodeAndAllocPredicate(config, op, op->lineage_op, fade_data);
+    fade_data[op->id].gen = true;
 	} else if (op->type == PhysicalOperatorType::HASH_GROUP_BY ||
       op->type == PhysicalOperatorType::PERFECT_HASH_GROUP_BY ||
 	    op->type == PhysicalOperatorType::UNGROUPED_AGGREGATE
       ) {
+    fade_data[op->id].gen = true;
 		idx_t row_count = op->children[0]->lineage_op->chunk_collection.Count();
 		//fade_data[op->id].annotations = new int[row_count];
 		fade_data[op->id].n_interventions = fade_data[op->children[0]->id].n_interventions;
@@ -481,6 +510,7 @@ void GenCodeAndAllocPredicate(EvalConfig& config, string& code, PhysicalOperator
     config.num_worker = n_threads;
 	}  else if (op->type == PhysicalOperatorType::PROJECTION) {
 		fade_data[op->id].n_interventions = fade_data[op->children[0]->id].n_interventions;
+    fade_data[op->id].annotations = fade_data[op->children[0]->id].annotations;
 	}
 }
 
@@ -490,17 +520,30 @@ void Intervention2DEvalPredicate(int thread_id, EvalConfig& config, void* handle
 		Intervention2DEvalPredicate(thread_id, config, handle, op->children[i].get(), fade_data);
 	}
 
-	if (op->type == PhysicalOperatorType::FILTER) {
-		if (config.prune) {
-		  fade_data[op->id].annotations = fade_data[op->children[0]->id].annotations;
-		  return;
-    	}
-		if (fade_data[op->id].n_interventions <= 1) return;
-		idx_t row_count = op->lineage_op->backward_lineage[0].size();
-		int result = fade_data[op->id].filter_fn(thread_id, op->lineage_op->backward_lineage[0].data(),
-			                                         fade_data[op->children[0]->id].annotations,
-			                                         fade_data[op->id].annotations,
-                                               0, 0);
+	if (op->type == PhysicalOperatorType::TABLE_SCAN || op->type == PhysicalOperatorType::FILTER) {
+    if (!fade_data[op->id].gen || fade_data[op->id].n_interventions <= 1) {
+      if (op->type == PhysicalOperatorType::FILTER) {
+		    fade_data[op->id].annotations = fade_data[op->children[0]->id].annotations;
+      } else {
+		    fade_data[op->id].annotations = fade_data[op->id].base_annotations;
+      }
+    } else {
+      int row_count = op->lineage_op->backward_lineage[0].size();
+      int batch_size = row_count / config.num_worker;
+      if (row_count % config.num_worker > 0)
+        batch_size++;
+      int start = thread_id * batch_size;
+      int end   = start + batch_size;
+      if (end >= row_count)  end = row_count;
+      int* input_annotations = fade_data[op->id].base_annotations;
+      if (op->type == PhysicalOperatorType::FILTER) {
+        input_annotations = fade_data[op->children[0]->id].annotations;
+      }
+      int result = fade_data[op->id].filter_fn(thread_id, op->lineage_op->backward_lineage[0].data(),
+                                                 input_annotations,
+                                                 fade_data[op->id].annotations,
+                                                 start, end);
+    }
 	} else if (op->type == PhysicalOperatorType::HASH_JOIN
 	           || op->type == PhysicalOperatorType::NESTED_LOOP_JOIN
 	           || op->type == PhysicalOperatorType::BLOCKWISE_NL_JOIN
@@ -508,10 +551,17 @@ void Intervention2DEvalPredicate(int thread_id, EvalConfig& config, void* handle
 	           || op->type == PhysicalOperatorType::CROSS_PRODUCT) {
 		if (fade_data[op->id].n_interventions <= 1) return;
 		idx_t row_count = op->lineage_op->backward_lineage[0].size();
+
+    int batch_size = row_count / config.num_worker;
+    if (row_count % config.num_worker > 0)
+      batch_size++;
+    int start = thread_id * batch_size;
+    int end   = start + batch_size;
+    if (end >= row_count) { end = row_count; }
 		int result = fade_data[op->id].join_fn(thread_id, op->lineage_op->backward_lineage[0].data(),
 		                                       op->lineage_op->backward_lineage[1].data(), fade_data[op->children[0]->id].annotations,
 			                                       fade_data[op->children[1]->id].annotations, fade_data[op->id].annotations,
-                                            0, 0);
+                                            start, end);
 	} else if (op->type == PhysicalOperatorType::HASH_GROUP_BY
 	           || op->type == PhysicalOperatorType::PERFECT_HASH_GROUP_BY
 	           || op->type == PhysicalOperatorType::UNGROUPED_AGGREGATE) {
@@ -554,6 +604,11 @@ void Intervention2DEvalPredicate(int thread_id, EvalConfig& config, void* handle
 	}
 }
 
+// TODO: subtract incremental agg value from total agg
+// TODO: add nested agg for sparse implementation
+// TODO: add sparse encoding for ineq predicates
+// TODO: add different ranking metrics
+// TODO: stream results of aggregate if n * siezof(v) * groups * W > mem
 string Fade::PredicateSearch(PhysicalOperator *op, EvalConfig config) {
   std::cout << "Predicate Search" << std::endl;
 	// timing vars
