@@ -951,15 +951,19 @@ void Fade::GenSparseAndAlloc(EvalConfig& config, PhysicalOperator* op,
 	if (op->type == PhysicalOperatorType::TABLE_SCAN) {
 		bool use_random = false;
 		string table_name = op->lineage_op->table_name;
-		if (columns_spec.find(table_name) == columns_spec.end()) return;
+		if (columns_spec.find(table_name) == columns_spec.end()) { 
+	    fade_data[op->id] = std::move(node);
+      return;
+    }
 		int n_interventions = 0;
 		int rows = 0;
 		// iterate over all columns
+		node->n_groups =  op->lineage_op->backward_lineage[0].size();
 		for (auto& col_spec : columns_spec[table_name]) {
 			std::ifstream rowsfile((table_name + "_" + col_spec + ".rows").c_str());
 			if (rowsfile.is_open() && (rowsfile >> rows >> n_interventions) ) {
 			  std::cout << "Annotations card for " << table_name << " " << col_spec << " has " <<
-				  node->rows  << " with  " << n_interventions<< std::endl;
+				  rows  << " with  " << n_interventions<< std::endl;
 			  if (node->n_interventions > 0 && rows != node->rows) {
 					std::cerr << "old rows doesn't match new rows" << std::endl;
 					use_random = true;
@@ -979,32 +983,33 @@ void Fade::GenSparseAndAlloc(EvalConfig& config, PhysicalOperator* op,
 		if (use_random) {
 			if (config.debug) std::cout << "generate random unique: " << config.n_intervention << std::endl;
 			node->n_interventions = config.n_intervention;
-			node->n_groups =  op->lineage_op->backward_lineage[0].size();
 			node->rows =  node->n_groups;
 			node->base_annotations.reset(new int[node->n_groups]);
-			node->annotations.reset(new int[node->n_groups]);
 			Fade::random_unique(node->n_groups, node->base_annotations.get(), config.n_intervention);
 		}
+
+    if (node->rows > node->n_groups) {
+			node->annotations.reset(new int[node->n_groups]);
+    }
 	} else if (op->type == PhysicalOperatorType::FILTER) {
 		node->n_interventions = fade_data[op->children[0]->id]->n_interventions;
 		node->n_groups =  op->lineage_op->backward_lineage[0].size();
 		node->rows =  node->n_groups;
-		// access annotations from child
 		if (config.prune) node->opid = fade_data[op->children[0]->id]->opid;
-		if (config.prune || node->n_interventions <= 1) return;
-		node->annotations.reset(new int[node->n_groups]);
+		if (!config.prune && node->n_interventions > 1) {
+      node->annotations.reset(new int[node->n_groups]);
+    }
 	} else if (op->type == PhysicalOperatorType::HASH_JOIN
 	           || op->type == PhysicalOperatorType::NESTED_LOOP_JOIN
 	           || op->type == PhysicalOperatorType::BLOCKWISE_NL_JOIN
 	           || op->type == PhysicalOperatorType::PIECEWISE_MERGE_JOIN
 	           || op->type == PhysicalOperatorType::CROSS_PRODUCT) {
-		idx_t left_n_interventions =  fade_data[op->children[0]->id]->n_interventions;
-		idx_t right_n_interventions =  fade_data[op->children[1]->id]->n_interventions;
-		node->n_interventions = left_n_interventions * right_n_interventions;
+		idx_t lhs_n =  fade_data[op->children[0]->id]->n_interventions;
+		idx_t rhs_n =  fade_data[op->children[1]->id]->n_interventions;
+    node->n_interventions = (lhs_n > 0) ? lhs_n : rhs_n;
 		node->n_groups =  op->lineage_op->backward_lineage[0].size();
 		node->rows =  node->n_groups;
-		if (node->n_interventions <= 1) return;
-		node->annotations.reset(new int[node->n_groups]);
+		if (node->n_interventions > 1) node->annotations.reset(new int[node->n_groups]);
 	} else if (op->type == PhysicalOperatorType::HASH_GROUP_BY ||
 	           op->type == PhysicalOperatorType::PERFECT_HASH_GROUP_BY ||
 	           op->type == PhysicalOperatorType::UNGROUPED_AGGREGATE) {
@@ -1013,6 +1018,8 @@ void Fade::GenSparseAndAlloc(EvalConfig& config, PhysicalOperator* op,
 		node->GroupByAlloc(config.debug, op->type, op->lineage_op, op);
 	}  else if (op->type == PhysicalOperatorType::PROJECTION) {
 		node->n_interventions = fade_data[op->children[0]->id]->n_interventions;
+		node->n_groups = fade_data[op->children[0]->id]->n_groups;
+		node->rows = fade_data[op->children[0]->id]->rows;
 		node->opid = fade_data[op->children[0]->id]->opid;
 	}
 

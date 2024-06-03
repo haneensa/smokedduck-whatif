@@ -4,8 +4,6 @@
 #include <fstream>
 #include <thread>
 #include <vector>
-#include <condition_variable>
-#include <mutex>
 
 namespace duckdb {
 
@@ -218,6 +216,7 @@ void Fade::InterventionSparseEvalPredicate(int thread_id, EvalConfig& config, Ph
 
 string Fade::WhatIfSparse(PhysicalOperator *op, EvalConfig config) {
   std::cout << "WhatIfSparse" << std::endl;
+  	std::cout << op->ToString() << std::endl;
   std::chrono::steady_clock::time_point start_time, end_time;
   std::chrono::duration<double> time_span;
 
@@ -257,8 +256,8 @@ string Fade::WhatIfSparse(PhysicalOperator *op, EvalConfig config) {
   end_time = std::chrono::steady_clock::now();
   time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
   double eval_time = time_span.count();
-
-  return "SELECT 1";
+  global_fade_node = std::move(fade_data[ fade_data[op->id]->opid ]);
+  return "SELECT * from duckdb_fade()";
 }
 
 } // namespace duckdb

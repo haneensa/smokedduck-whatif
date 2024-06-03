@@ -2,6 +2,7 @@ add_library_unity(
   duckdb_table_func_system
   OBJECT
   duckdb_queries_list.cpp
+  duckdb_fade.cpp
   duckdb_columns.cpp
   duckdb_constraints.cpp
   duckdb_databases.cpp

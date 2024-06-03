@@ -121,6 +121,10 @@ struct DuckDBViewsFun {
 struct DuckDBQueriesListFun {
 	static void RegisterFunction(BuiltinFunctions &set);
 };
+
+struct DuckDBFadeFun {
+	static void RegisterFunction(BuiltinFunctions &set);
+};
 #endif
 
 struct TestType {

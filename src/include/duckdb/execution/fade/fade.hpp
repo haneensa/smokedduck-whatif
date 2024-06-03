@@ -21,12 +21,17 @@
 #include <random>
 #include <queue>
 #include <cmath>
+#include <condition_variable>
+#include <mutex>
 
 namespace duckdb {
 class PhysicalOperator;
+class FadeNode;
 struct EvalConfig;
 
 extern int (*fade_random_fn)(int, int, float, int, void*, int, std::vector<__mmask16>&);
+extern unique_ptr<FadeNode> global_fade_node;
+
 
 class FadeNode {
 public:

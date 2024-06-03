@@ -15,6 +15,9 @@
 
 namespace duckdb {
 
+unique_ptr<FadeNode> global_fade_node;
+
+
 template<class T1, class T2>
 T2* Fade::GetInputVals(PhysicalOperator* op, idx_t col_idx) {
 	idx_t chunk_count = op->children[0]->lineage_op->chunk_collection.ChunkCount();
@@ -291,7 +294,7 @@ bool FadeNodeDense::read_dense_from_file(bool debug, string col_spec, string tab
 	return true;
 }
 
-bool FadeSparseNode::read_annotations(int n_interventions, int rows, string& table_name, string& col_spec, bool debug) {
+bool FadeSparseNode::read_annotations(int new_n_interventions, int rows, string& table_name, string& col_spec, bool debug) {
 	FILE * fname = fopen((table_name + "_" + col_spec + ".npy").c_str(), "r");
 	if (fname == nullptr) {
 		std::cerr << "Error: Unable to open file." << std::endl;
@@ -308,10 +311,12 @@ bool FadeSparseNode::read_annotations(int n_interventions, int rows, string& tab
 
 	if (n_interventions > 0) {
 		for (int i = 0 ; i < rows;  ++i) {
-			base_annotations[i] = base_annotations[i] * n_interventions + temp[i];
+			base_annotations[i] = base_annotations[i] * new_n_interventions + temp[i];
 		}
+    n_interventions *= new_n_interventions;
 	} else {
 		base_annotations = std::move(temp);
+    n_interventions = new_n_interventions;
 	}
 
 	return false;
