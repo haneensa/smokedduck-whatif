@@ -219,7 +219,7 @@ string PragmaPrepareLineage(ClientContext &context, const FunctionParameters &pa
 	int qid = parameters.values[0].GetValue<int>();
 	bool prune = parameters.values[1].GetValue<bool>();
 	bool forward_lineage = parameters.values[2].GetValue<bool>();
-  bool use_gb_backward_lineage = parameters.values[3].GetValue<bool>();
+  	bool use_gb_backward_lineage = parameters.values[3].GetValue<bool>();
 	PhysicalOperator* op = context.client_data->lineage_manager->queryid_to_plan[qid].get();
 	return Fade::PrepareLineage(op, prune, forward_lineage, use_gb_backward_lineage);
 }
@@ -258,15 +258,16 @@ string PragmaWhatif(ClientContext &context, const FunctionParameters &parameters
 	int mask_size = 16;
 	int topk = 0;
 	// takes in query id, attributes to intervene on, conjunctive only or conjunctive and disjunction, or random
+	int rand_count = 65535;
 
 	if (intervention_type == SEARCH) {
 			return Fade::PredicateSearch(op, { batch, mask_size, is_scalar, use_duckdb, debug, prune, incremental,
 		                                  spec, intervention_type, n_interventions, qid, num_workers, prob, topk,
-                                      use_gb_backward_lineage} );
+                                      use_gb_backward_lineage, false, rand_count} );
 	} else {
 		    return Fade::Whatif(op, { batch, mask_size, is_scalar, use_duckdb, debug, prune, incremental,
-											 spec, intervention_type, n_interventions, qid, num_workers, prob, topk,
-                       use_gb_backward_lineage} );
+		                             spec, intervention_type, n_interventions, qid, num_workers, prob, topk,
+                       use_gb_backward_lineage, false, rand_count} );
 	}
 }
 
@@ -287,8 +288,34 @@ string PragmaSA(ClientContext &context, const FunctionParameters &parameters) {
 	int n_interventions = 0;
 	int num_workers = 8;
 	float prob = 1;
+	int rand_count = 65535;
 	return Fade::PredicateSearch(op, { batch, mask_size, is_scalar, use_duckdb, debug, prune, incremental,
-		                                      spec, intervention_type, n_interventions, qid, num_workers, prob, topk} );
+	                                  spec, intervention_type, n_interventions, qid, num_workers, prob, topk,
+	                                 false, false, rand_count} );
+
+}
+
+
+string PragmaWhatIfSparse(ClientContext &context, const FunctionParameters &parameters) {
+	int qid = parameters.values[0].GetValue<int>();
+	int topk = parameters.values[1].GetValue<int>();
+	string spec = parameters.values[2].ToString();
+	bool debug = parameters.values[3].GetValue<bool>();
+	InterventionType intervention_type =  SEARCH;
+	PhysicalOperator* op = context.client_data->lineage_manager->queryid_to_plan[qid].get();
+	int batch = 4;
+	int mask_size = 16;
+	bool is_scalar = true;
+	bool use_duckdb = false;
+	bool prune = false;
+	bool incremental = true;
+	int n_interventions = 10;
+	int num_workers = 1;
+	float prob = 1;
+	int rand_count = 65535;
+	return Fade::WhatIfSparse(op, { batch, mask_size, is_scalar, use_duckdb, debug, prune, incremental,
+	                                  spec, intervention_type,
+	                               n_interventions, qid, num_workers, prob, topk, false, false, rand_count} );
 
 }
 #endif
@@ -325,6 +352,9 @@ void PragmaQueries::RegisterFunction(BuiltinFunctions &set) {
 	                                                                    LogicalType::BOOLEAN, LogicalType::FLOAT,
                                                                       LogicalType::BOOLEAN}));
 
+	set.AddFunction(PragmaFunction::PragmaCall("WhatIfSparse", PragmaWhatIfSparse, {LogicalType::INTEGER,
+	                                                                      LogicalType::INTEGER,
+	                                                                      LogicalType::VARCHAR, LogicalType::BOOLEAN}));
 	set.AddFunction(PragmaFunction::PragmaCall("PrepareLineage", PragmaPrepareLineage, {LogicalType::INTEGER, LogicalType::BOOLEAN, LogicalType::BOOLEAN, LogicalType::BOOLEAN}));
 #endif
 }

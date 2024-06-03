@@ -31,6 +31,14 @@ PRAGMA threads=1;
 
 # qid:INT, Itype:STR, spec:STR, n_interventions:INT, batch:INT, is_scalar:BOOL, use_duckdb:BOOL, threads:INT, debug:BOOL, prune:BOOL, incremental:BOOL, prob:float
 
+
+statement ok
+pragma PrepareLineage(2, false, false, false);
+
+query IIIII
+pragma WhatIfSparse(2, 10, 't1.j', true);
+----
+
 query IIIII
 pragma WhatIf(2, 'SCALE_RANDOM', 't1.j', 1, 1, true, false, 1, true, true, false, 0.05);
 ----
