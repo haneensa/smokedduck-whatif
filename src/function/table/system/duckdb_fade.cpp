@@ -61,20 +61,27 @@ void DuckDBFadeFunction(ClientContext &context, TableFunctionInput &data_p, Data
 			break;
 		}
 		idx_t col = 0;
+    string name = global_fade_node->alloc_vars_funcs[pair.first];
 		for (int i=0; i < global_fade_node->n_interventions; ++i) {
-			if (global_fade_node->alloc_vars_funcs[pair.first] == "count") {
+      // interventions X groups
+			if (name == "count") {
 				int* count_ptr = (int*)global_fade_node->alloc_vars["out_count"][0];
 				int index = data.offset * n_interventions + i;
-				output.SetValue(col++, count,Value::FLOAT( (int)count_ptr[index] ));
-			} else if (global_fade_node->alloc_vars_funcs[pair.first]  == "sum") {
+				output.SetValue(col++, count, Value::FLOAT( (int)count_ptr[index] ));
+			} else if (name  == "sum" || name == "sum_no_overflow") {
 		    void* data_ptr = pair.second[0];
 				int index = data.offset * n_interventions + i;
 				output.SetValue(col++, count,Value::FLOAT( ((float*)data_ptr)[index] ));
-			} else if (global_fade_node->alloc_vars_funcs[pair.first]  == "avg") {
-		    void* data_ptr = pair.second[0];
+			} else if (name  == "avg") {
+        // TODO: check data type
+		    float* data_ptr = (float*)pair.second[0];
 				int* count_ptr = (int*)global_fade_node->alloc_vars["out_count"][0];
 				int index = data.offset * n_interventions + i;
-				output.SetValue(col++, count,Value::FLOAT( ((int*)data_ptr)[index] / (float)count_ptr[index] ));
+        if (count_ptr[index] > 0) {
+				  output.SetValue(col++, count,Value::FLOAT( data_ptr[index] / count_ptr[index] ));
+        } else {
+				  output.SetValue(col++, count,Value::FLOAT( 0 ));
+        }
 			}
 
 		}
