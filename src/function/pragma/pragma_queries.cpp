@@ -257,17 +257,17 @@ string PragmaWhatif(ClientContext &context, const FunctionParameters &parameters
 	PhysicalOperator* op = context.client_data->lineage_manager->queryid_to_plan[qid].get();
 	int mask_size = 16;
 	int topk = 0;
+  int aggid = -1;
 	// takes in query id, attributes to intervene on, conjunctive only or conjunctive and disjunction, or random
-	int rand_count = 65535;
 
 	if (intervention_type == SEARCH) {
 			return Fade::PredicateSearch(op, { batch, mask_size, is_scalar, use_duckdb, debug, prune, incremental,
 		                                  spec, intervention_type, n_interventions, qid, num_workers, prob, topk,
-                                      use_gb_backward_lineage, false, rand_count} );
+                                      use_gb_backward_lineage, false, aggid } );
 	} else {
 		    return Fade::Whatif(op, { batch, mask_size, is_scalar, use_duckdb, debug, prune, incremental,
 		                             spec, intervention_type, n_interventions, qid, num_workers, prob, topk,
-                       use_gb_backward_lineage, false, rand_count} );
+                       use_gb_backward_lineage, false, aggid } );
 	}
 }
 
@@ -288,17 +288,17 @@ string PragmaSA(ClientContext &context, const FunctionParameters &parameters) {
 	int n_interventions = 0;
 	int num_workers = 8;
 	float prob = 1;
-	int rand_count = 65535;
+  int aggid = -1;
 	return Fade::PredicateSearch(op, { batch, mask_size, is_scalar, use_duckdb, debug, prune, incremental,
 	                                  spec, intervention_type, n_interventions, qid, num_workers, prob, topk,
-	                                 false, false, rand_count} );
+	                                 false, false, aggid } );
 
 }
 
 
 string PragmaWhatIfSparse(ClientContext &context, const FunctionParameters &parameters) {
 	int qid = parameters.values[0].GetValue<int>();
-	int topk = parameters.values[1].GetValue<int>();
+	int aggid = parameters.values[1].GetValue<int>();
 	string spec = parameters.values[2].ToString();
 	bool debug = parameters.values[3].GetValue<bool>();
 	InterventionType intervention_type =  SEARCH;
@@ -312,10 +312,11 @@ string PragmaWhatIfSparse(ClientContext &context, const FunctionParameters &para
 	int n_interventions = 10;
 	int num_workers = 1;
 	float prob = 1;
-	int rand_count = 65535;
+  int topk = 0;
 	return Fade::WhatIfSparse(op, { batch, mask_size, is_scalar, use_duckdb, debug, prune, incremental,
-	                                  spec, intervention_type,
-	                               n_interventions, qid, num_workers, prob, topk, false, false, rand_count} );
+	                               spec, intervention_type,
+	                               n_interventions, qid, num_workers, prob,
+                                 topk, false, false, aggid } );
 
 }
 #endif

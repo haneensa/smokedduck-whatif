@@ -34,12 +34,12 @@ extern "C" int fill_random(int thread_id, int row_count, float prob, int n_masks
 	std::mt19937 gen(rd());
 	std::uniform_int_distribution<int> dist(0, rand_count);
 )";
-		config.rand_base.resize(config.rand_count);
-		for (int i = 0; i < config.rand_count; ++i) {
-			config.rand_base[i] = 0x0;
+		global_rand_base.resize(global_rand_count);
+		for (int i = 0; i < global_rand_count; ++i) {
+			global_rand_base[i] = 0x0;
 			for (int k = 0; k < 16; ++k) {
 				if ((((double)rand() / RAND_MAX) < config.probability)) {
-					config.rand_base[i] |= (1 << k);
+					global_rand_base[i] |= (1 << k);
 				}
 			}
 		}

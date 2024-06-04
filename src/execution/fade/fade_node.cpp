@@ -16,6 +16,8 @@
 namespace duckdb {
 
 unique_ptr<FadeNode> global_fade_node;
+int global_rand_count = 65535;
+std::vector<__mmask16> global_rand_base;
 
 
 template<class T1, class T2>
@@ -57,6 +59,7 @@ T2* Fade::GetInputVals(PhysicalOperator* op, idx_t col_idx) {
 			}
 			col = reinterpret_cast<T1*>(new_vec.GetData());
 		}
+    // TODO: handle null values
 		for (idx_t i=0; i < collection_chunk.size(); ++i) {
 			input_values[i+offset] = col[i]; // collection_chunk.data[col_idx].GetValue(i).GetValue<T2>();
 		}
@@ -123,25 +126,28 @@ void FadeNode::GroupByGetCachedData(EvalConfig& config, shared_ptr<OperatorLinea
 void FadeNode::LocalGroupByAlloc(bool debug,
                             shared_ptr<OperatorLineage> lop,
                             PhysicalOperator* op, vector<unique_ptr<Expression>>& aggregates,
-                            int keys_size) {
+                            int keys_size,
+                            int aggid=-1) {
 	if (this->n_groups * this->n_interventions  > this->rows) this->num_worker = 1;
 
 	bool include_count = false;
 	// Populate the aggregate child vectors
 	for (idx_t i=0; i < aggregates.size(); i++) {
 		auto &aggr = aggregates[i]->Cast<BoundAggregateExpression>();
-		vector<idx_t> aggregate_input_idx;
-		for (auto &child_expr : aggr.children) {
-			D_ASSERT(child_expr->type == ExpressionType::BOUND_REF);
-			auto &bound_ref_expr = child_expr->Cast<BoundReferenceExpression>();
-			aggregate_input_idx.push_back(bound_ref_expr.index);
-		}
 		string name = aggr.function.name;
 		if (include_count == false && (name == "count" || name == "count_star")) {
 			include_count = true;
 			continue;
 		} else if (name == "avg") {
 			include_count = true;
+		}
+    if (aggid >= 0 && aggid != i) continue; // skip this agg; we want specific agg
+
+		vector<idx_t> aggregate_input_idx;
+		for (auto &child_expr : aggr.children) {
+			D_ASSERT(child_expr->type == ExpressionType::BOUND_REF);
+			auto &bound_ref_expr = child_expr->Cast<BoundReferenceExpression>();
+			aggregate_input_idx.push_back(bound_ref_expr.index);
 		}
 
 		if (name == "sum" || name == "sum_no_overflow" || name == "avg") {
@@ -193,7 +199,8 @@ void FadeNode::LocalGroupByAlloc(bool debug,
 // if nested, then take the output of the previous agg as input
 void FadeNode::GroupByAlloc(bool debug, PhysicalOperatorType typ,
                             shared_ptr<OperatorLineage> lop,
-                            PhysicalOperator* op) {
+                            PhysicalOperator* op, int aggid=-1) {
+  this->aggid = aggid;
 	// To support nested agg, check if any descendants is an agg
 	PhysicalOperator* cur_op = op->children[0].get();
 	while (cur_op && !cur_op->children.empty() && !(cur_op->type == PhysicalOperatorType::HASH_GROUP_BY
@@ -213,21 +220,21 @@ void FadeNode::GroupByAlloc(bool debug, PhysicalOperatorType typ,
 		auto &aggregates = gb->grouped_aggregate_data.aggregates;
 		this->n_groups = op->lineage_op->log_index->ha_hash_index.size();
 		if (!this->has_agg_child) {
-			this->LocalGroupByAlloc(debug, op->lineage_op, op, aggregates, gb->grouped_aggregate_data.groups.size());
+			this->LocalGroupByAlloc(debug, op->lineage_op, op, aggregates, gb->grouped_aggregate_data.groups.size(), aggid);
 		}
 	} else if (op->type == PhysicalOperatorType::PERFECT_HASH_GROUP_BY) {
 		PhysicalPerfectHashAggregate * gb = dynamic_cast<PhysicalPerfectHashAggregate *>(op);
 		auto &aggregates = gb->aggregates;
 		this->n_groups = op->lineage_op->log_index->pha_hash_index.size();
 		if (!this->has_agg_child) {
-			this->LocalGroupByAlloc(debug, op->lineage_op, op, aggregates, gb->groups.size());
+			this->LocalGroupByAlloc(debug, op->lineage_op, op, aggregates, gb->groups.size(), aggid);
 		}
 	} else {
 		PhysicalUngroupedAggregate * gb = dynamic_cast<PhysicalUngroupedAggregate *>(op);
 		auto &aggregates = gb->aggregates;
 		this->n_groups = 1;
 		if (!this->has_agg_child) {
-			this->LocalGroupByAlloc(debug, op->lineage_op, op, aggregates, 0);
+			this->LocalGroupByAlloc(debug, op->lineage_op, op, aggregates, 0, aggid);
 		}
 	}
 }

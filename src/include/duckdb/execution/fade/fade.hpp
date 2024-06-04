@@ -31,20 +31,22 @@ struct EvalConfig;
 
 extern int (*fade_random_fn)(int, int, float, int, void*, int, std::vector<__mmask16>&);
 extern unique_ptr<FadeNode> global_fade_node;
+extern int global_rand_count;
+extern std::vector<__mmask16> global_rand_base;
 
 
 class FadeNode {
 public:
 	FadeNode(int opid, int n_interventions, int num_worker, int rows, bool debug)
-	    : debug(debug), opid(opid), n_interventions(n_interventions),
+	    : debug(debug), opid(opid), aggid(-1), n_interventions(n_interventions),
 	      num_worker(num_worker), rows(rows), n_groups(0), child_agg_id(-1), has_agg_child(false), counter(0) {};
 
 	void GroupByAlloc(bool debug, PhysicalOperatorType typ, shared_ptr<OperatorLineage> lop,
-	                  PhysicalOperator* op);
+	                  PhysicalOperator* op, int aggid);
 
 	void LocalGroupByAlloc(bool debug, shared_ptr<OperatorLineage> lop,
 	                       PhysicalOperator* op, vector<unique_ptr<Expression>>& aggregates,
-	                       int keys_size);
+	                       int keys_size, int aggid);
 
 	void GroupByGetCachedData(EvalConfig& config, shared_ptr<OperatorLineage> lop,
 	                                 PhysicalOperator* op, vector<unique_ptr<Expression>>& aggregates,
@@ -86,6 +88,7 @@ public:
 public:
 	bool debug;
 	int opid;
+  int aggid;
 	int n_interventions;
 	int num_worker;
 	int rows;
@@ -204,8 +207,7 @@ struct EvalConfig {
 	int topk;
 	bool use_gb_backward_lineage;
 	bool use_preprep_tm;
-	int rand_count;
-	std::vector<__mmask16> rand_base;
+  int aggid;
 };
 
 class Fade {
