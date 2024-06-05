@@ -221,7 +221,7 @@ string Fade::WhatIfSparse(PhysicalOperator *op, EvalConfig config) {
   std::chrono::duration<double> time_span;
 
   // 1. (t.col1|t.col2|..)
-  std::unordered_map<std::string, std::vector<std::string>> columns_spec = parseSpec( config);
+  std::unordered_map<std::string, std::vector<std::string>> columns_spec = parseSpec(config.columns_spec_str);
   std::unordered_map<idx_t, unique_ptr<FadeNode>> fade_data;
 
   std::cout << "gen intervention -- load from disk pre-generated dictionary encoding of columns" << std::endl;
@@ -257,6 +257,7 @@ string Fade::WhatIfSparse(PhysicalOperator *op, EvalConfig config) {
   time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
   double eval_time = time_span.count();
   global_fade_node = std::move(fade_data[ fade_data[op->id]->opid ]);
+  global_config = config;
   return "SELECT * from duckdb_fade()";
 }
 

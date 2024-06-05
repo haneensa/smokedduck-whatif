@@ -864,7 +864,7 @@ string Fade::Whatif(PhysicalOperator *op, EvalConfig config) {
 	std::chrono::steady_clock::time_point start_time, end_time;
 	std::chrono::duration<double> time_span;
 	std::unordered_map<idx_t, unique_ptr<FadeNode>> fade_data;
-	std::unordered_map<std::string, std::vector<std::string>> columns_spec = parseSpec( config);
+  std::unordered_map<std::string, std::vector<std::string>> columns_spec = parseSpec(config.columns_spec_str);
 
   	Fade::Clear(op);
 

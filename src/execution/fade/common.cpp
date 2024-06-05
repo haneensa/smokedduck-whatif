@@ -374,11 +374,11 @@ void* Fade::compile(std::string code, int id) {
 }
 
 // table_name.col_name
-std::unordered_map<std::string, std::vector<std::string>>  Fade::parseSpec(EvalConfig& config) {
+std::unordered_map<std::string, std::vector<std::string>>  Fade::parseSpec(string& columns_spec_str) {
 	std::unordered_map<std::string, std::vector<std::string>> result;
-  if (config.columns_spec_str.empty()) return result;
+  if (columns_spec_str.empty()) return result;
 
-	std::istringstream iss(config.columns_spec_str);
+	std::istringstream iss(columns_spec_str);
 	std::string token;
 
 	while (std::getline(iss, token, '|')) {
@@ -401,6 +401,7 @@ std::unordered_map<std::string, std::vector<std::string>>  Fade::parseSpec(EvalC
 
 void Fade::FillFilterBackwardLineage(PhysicalOperator *op, shared_ptr<OperatorLineage> lop) {
 	bool cache_on = false;
+
 	DataChunk result;
 	idx_t global_count = 0;
 	idx_t local_count = 0;
@@ -962,6 +963,7 @@ void Fade::GenSparseAndAlloc(EvalConfig& config, PhysicalOperator* op,
 		for (auto& col_spec : columns_spec[table_name]) {
 			std::ifstream rowsfile((table_name + "_" + col_spec + ".rows").c_str());
 			if (rowsfile.is_open() && (rowsfile >> rows >> n_interventions) ) {
+        config.specs_stack.push_back(table_name + "_" + col_spec);
 			  std::cout << "Annotations card for " << table_name << " " << col_spec << " has " <<
 				  rows  << " with  " << n_interventions<< std::endl;
 			  if (node->n_interventions > 0 && rows != node->rows) {

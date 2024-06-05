@@ -50,7 +50,15 @@ query_id = con.query_id
 
 pp_timings = con.execute(f"pragma PrepareLineage({query_id}, false, false, false)").df()
 
-q = f"pragma WhatIfSparse({query_id}, {args.aggid}, '{args.specs}', true);"
+q = f"pragma WhatIfSparse({query_id}, {args.aggid}, '{args.specs}', false);"
+res = con.execute(q).fetchdf()
+print(res)
+
+q = f"select * from duckdb_fade() where g0 > 0;"
+res = con.execute(q).fetchdf()
+print(res)
+
+q = f"pragma GetPredicate(0);"
 res = con.execute(q).fetchdf()
 print(res)
 

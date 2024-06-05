@@ -33,6 +33,7 @@ extern int (*fade_random_fn)(int, int, float, int, void*, int, std::vector<__mma
 extern unique_ptr<FadeNode> global_fade_node;
 extern int global_rand_count;
 extern std::vector<__mmask16> global_rand_base;
+extern EvalConfig global_config;
 
 
 class FadeNode {
@@ -208,15 +209,20 @@ struct EvalConfig {
 	bool use_gb_backward_lineage;
 	bool use_preprep_tm;
   int aggid;
+  vector<string> specs_stack;
 };
 
 class Fade {
 public:
 	Fade() {};
 
-  	static int LineageMemory(PhysicalOperator* op);
+  static unordered_map<string, unordered_map<int, string>>  get_codes(vector<string> specs_stack);
+  static vector<string> annotations_to_predicate(vector<string>& specs_stack, int n_interventions);
+  static string get_predicate(vector<string>& spec_stack, unordered_map<string, unordered_map<int, string>>& codes_per_spec,
+    int annotation);
+  static int LineageMemory(PhysicalOperator* op);
 	static string PrepareLineage(PhysicalOperator *op, bool prune, bool forward_lineage, bool use_gb_backward_lineage);
-  	static std::vector<int> rank(PhysicalOperator* op, EvalConfig& config, std::unordered_map<idx_t, unique_ptr<FadeNode>>& fade_data);
+  static std::vector<int> rank(PhysicalOperator* op, EvalConfig& config, std::unordered_map<idx_t, unique_ptr<FadeNode>>& fade_data);
 	static string WhatifDense(PhysicalOperator* op, EvalConfig config);
 	static string WhatifDenseCompile(PhysicalOperator* op, EvalConfig config);
 	static string Whatif(PhysicalOperator* op, EvalConfig config);
@@ -241,7 +247,7 @@ public:
 
 	static void* compile(std::string code, int id);
 
-	static std::unordered_map<std::string, std::vector<std::string>> parseSpec(EvalConfig& config);
+	static std::unordered_map<std::string, std::vector<std::string>> parseSpec(string& string);
 
 	static void GetLineage(PhysicalOperator* op, bool use_gb_backward_lineage);
 	static pair<int, int> get_start_end(int row_count, int thread_id, int num_worker);

@@ -384,7 +384,7 @@ string Fade::PredicateSearch(PhysicalOperator *op, EvalConfig config) {
 	std::chrono::duration<double> time_span;
 
 	// 1. Parse Spec = table_name.col:scale
-	std::unordered_map<std::string, std::vector<std::string>> columns_spec = parseSpec( config);
+  std::unordered_map<std::string, std::vector<std::string>> columns_spec = parseSpec(config.columns_spec_str);
 
 	// holds any extra data needed during exec
 	std::unordered_map<idx_t, unique_ptr<FadeNode>> fade_data;

@@ -74,29 +74,41 @@ void DuckDBFadeFunction(ClientContext &context, TableFunctionInput &data_p, Data
 		// finished returning values
 		return;
 	}
-	idx_t count = 0;
 
   string out_var = data.out_var;
 
   // start returning values
   // either fill up the chunk or return all the remaining columns
-  if (data.offset >= n_interventions && count >= STANDARD_VECTOR_SIZE) {
+  if (data.offset >= n_interventions) {
     return;
   }
   idx_t col = 0;
+
+	idx_t count = 0;
   string name = global_fade_node->alloc_vars_funcs[out_var];
+  int limit = n_interventions-data.offset;
+  if (limit >= STANDARD_VECTOR_SIZE) {
+    limit = STANDARD_VECTOR_SIZE;
+  }
   for (int i=0; i < global_fade_node->n_groups; ++i) {
-    // interventions X groups
     if (name == "count") {
       int* count_ptr = (int*)global_fade_node->alloc_vars["out_count"][0];
       int index = i * n_interventions + data.offset;
-      output.SetValue(col++, count, Value::INTEGER( (int)count_ptr[index] ));
+      // output.SetValue(col++, count, Value::INTEGER( (int)count_ptr[index] ));
+      //count++;
+      Vector in_index(LogicalType::INTEGER,(data_ptr_t)(count_ptr + index));
+      output.data[col++].Reference(in_index);
+      count = limit;
     } else if (name  == "sum" || name == "sum_no_overflow") {
-      void* data_ptr = global_fade_node->alloc_vars[out_var][0];
+      float* data_ptr = (float*)global_fade_node->alloc_vars[out_var][0];
       int index = i * n_interventions + data.offset;
-      output.SetValue(col++, count,Value::FLOAT( ((float*)data_ptr)[index] ));
+      //output.SetValue(col++, count,Value::FLOAT( data_ptr[index] ));
+      //count++;
+      Vector in_index(LogicalType::FLOAT,(data_ptr_t)(data_ptr + index));
+      output.data[col++].Reference(in_index);
+      count = limit;
     } else if (name  == "avg") {
-      // TODO: check data type
+      // TODO: finalize aggregate and then have a pointer to the final result
       float* data_ptr = (float*)global_fade_node->alloc_vars[out_var][0];
       int* count_ptr = (int*)global_fade_node->alloc_vars["out_count"][0];
       int index = i * n_interventions + data.offset;
@@ -105,11 +117,11 @@ void DuckDBFadeFunction(ClientContext &context, TableFunctionInput &data_p, Data
       } else {
         output.SetValue(col++, count,Value::FLOAT( 0 ));
       }
+      count++;
     }
 
   }
-  count++;
-  data.offset++;
+  data.offset += count;
 	output.SetCardinality(count);
 }
 

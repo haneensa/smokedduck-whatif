@@ -296,6 +296,13 @@ string PragmaSA(ClientContext &context, const FunctionParameters &parameters) {
 }
 
 
+string PragmaGetPredicate(ClientContext &context, const FunctionParameters &parameters) {
+	int annotation = parameters.values[0].GetValue<int>();
+  unordered_map<string, unordered_map<int, string>> codes_per_spec = Fade::get_codes(global_config.specs_stack);
+  string predicate = Fade::get_predicate(global_config.specs_stack, codes_per_spec, annotation);
+  return "select '" + predicate + "'";
+}
+
 string PragmaWhatIfSparse(ClientContext &context, const FunctionParameters &parameters) {
 	int qid = parameters.values[0].GetValue<int>();
 	int aggid = parameters.values[1].GetValue<int>();
@@ -357,6 +364,7 @@ void PragmaQueries::RegisterFunction(BuiltinFunctions &set) {
 	                                                                      LogicalType::INTEGER,
 	                                                                      LogicalType::VARCHAR, LogicalType::BOOLEAN}));
 	set.AddFunction(PragmaFunction::PragmaCall("PrepareLineage", PragmaPrepareLineage, {LogicalType::INTEGER, LogicalType::BOOLEAN, LogicalType::BOOLEAN, LogicalType::BOOLEAN}));
+	set.AddFunction(PragmaFunction::PragmaCall("GetPredicate", PragmaGetPredicate, {LogicalType::INTEGER}));
 #endif
 }
 

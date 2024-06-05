@@ -18,7 +18,108 @@ namespace duckdb {
 unique_ptr<FadeNode> global_fade_node;
 int global_rand_count = 65535;
 std::vector<__mmask16> global_rand_base;
+EvalConfig global_config;
 
+unordered_map<string, unordered_map<int, string>>  Fade::get_codes(vector<string> specs_stack) {
+	unordered_map<string, unordered_map<int, string>> codes_per_spec;
+	for (auto& spec : specs_stack) {
+		string filename = spec + "_vals.csv";
+		std::ifstream file(filename);
+		if (!file.is_open()) {
+			std::cerr << "Error opening file: " << filename << std::endl;
+			return codes_per_spec;
+		}
+
+		string line;
+		int i = 0;
+		while (std::getline(file, line)) {
+			vector<string> row;
+			std::stringstream ss(line);
+			std::string field;
+			while (std::getline(ss, field, '\n')) {
+			  codes_per_spec[spec][i++] = field;
+			}
+		}
+		file.close();
+	}
+	return codes_per_spec;
+}
+
+
+
+// the order of spec gives the order of how the annotations were combined
+// [0, 1, 1, 0] * 4 + [0, 1, 2, 3]
+// (0, 0), (1, 0), (2, 0), (3, 0), (0, 1), (1, 1), (2, 1), (3, 1)
+// [0, 5, 6, 3]
+// 5 % 4 = 1; (5 - 1) / 4 = 1
+// 6 % 4 = 2; (6 - 2) / 4 = 1
+// 3 % 3; (3 - 3) / 4 = 1 = 0
+// (t.c1.n1),(t.c2.n2),
+// codes: (lineitem.l_linestatus -> (0, 'O')), (lineitem.l_tax -> (0, '0.01'))
+// specs_stack = [lineitem.l_linestatus, lineitem.l_tax]
+// 7
+// 0, 1, 2, 3, 4, 5, 6, 7
+// 0 % 4, 1 % 4, 2 % 4, 3 % 4, 4 % 4, 5 % 4, 6 % 4, 7 % 4; shift = 0, size=1
+// 0, 1, 2, 3, 0, 1, 2, 3; shift = 4, size=4
+// 0, 1, 2, 3, 4, 5, 6, 7
+// 0, 0, 0, 0, 4-0, 5-1, 6-2, 7-3
+vector<string> Fade::annotations_to_predicate(vector<string>& specs_stack, int n_interventions) {
+	int top = specs_stack.size() - 1;
+	vector<string> predicates(n_interventions);
+	unordered_map<string, unordered_map<int, string>> codes_per_spec = get_codes(specs_stack);
+  string delim = "";
+  int prev_shift = 0;
+	while (top > 0) {
+		for (int i=0; i < n_interventions; ++i) {
+			int cur = i % codes_per_spec[specs_stack[top]].size();
+			predicates[i] +=  delim + specs_stack[top] + "=" + codes_per_spec[specs_stack[top]][cur];
+		}
+		top--;
+    delim = " AND ";
+	  prev_shift = codes_per_spec[specs_stack[top]].size();
+	}
+
+  if (prev_shift == 0) {
+    for (int i=0; i < n_interventions; ++i) {
+      int cur = i;
+      predicates[i] +=   delim + specs_stack[top] + "=" + codes_per_spec[specs_stack[top]][cur];
+    }
+  } else {
+    for (int i=0; i < n_interventions; ++i) {
+      int cur = ((i - (i % prev_shift)) /  prev_shift ) % codes_per_spec[specs_stack[top]].size();
+      predicates[i] +=   delim + specs_stack[top] + "=" + codes_per_spec[specs_stack[top]][cur];
+    }
+  }
+	return predicates;
+}
+
+string Fade::get_predicate(vector<string>& specs_stack,
+    unordered_map<string, unordered_map<int, string>>& codes_per_spec,
+    int annotation) {
+	int top = specs_stack.size() - 1;
+  string delim = "";
+  int prev_shift = 0;
+  string predicate = "";
+	while (top > 0) {
+	  int shift = codes_per_spec[specs_stack[top]].size();
+		int cur = annotation % shift;
+		predicate +=  delim + specs_stack[top] + "=" + codes_per_spec[specs_stack[top]][cur];
+    annotation = (annotation - cur) / shift;
+	  // prev_shift *= codes_per_spec[specs_stack[top]].size();
+		top--;
+    delim = " AND ";
+	}
+
+  int i = annotation;
+  //if (prev_shift == 0) {
+    int cur =i;
+    predicate +=   delim + specs_stack[top] + "=" + codes_per_spec[specs_stack[top]][cur];
+  //} else {
+   // int cur = ((i - (i % prev_shift)) /  prev_shift );
+   // predicate +=   delim + specs_stack[top] + "=" + codes_per_spec[specs_stack[top]][cur];
+ // }
+	return predicate;
+}
 
 template<class T1, class T2>
 T2* Fade::GetInputVals(PhysicalOperator* op, idx_t col_idx) {
