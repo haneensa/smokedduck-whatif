@@ -93,6 +93,7 @@ def runfade(sql, aggid, goodids, badids, query_id=None):
     con = smokedduck.connect('intel.db')
     clear(con)
 
+    allids = goodids + badids
     goodids = list(map(str, goodids ))
     badids = list(map(str, badids ))
     avggood = f"({'+'.join(goodids)})/{len(goodids)}"
@@ -117,8 +118,8 @@ def runfade(sql, aggid, goodids, badids, query_id=None):
         query_id = con.query_id
 
     pp_timings = con.execute(f"pragma PrepareLineage({query_id}, false, false, false)").df()
-
-    q = f"pragma WhatIfSparse({query_id}, {aggid}, '{specs[0]}', false);"
+2
+    q = f"pragma WhatIfSparse({query_id}, {aggid}, {allids}, '{specs[0]}', false);"
     res = con.execute(q).fetchdf()
     print(res)
 
