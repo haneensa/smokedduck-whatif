@@ -4,6 +4,7 @@
 
 import duckdb
 import json
+import contextlib
 import lineage_query
 import provenance_models
 from operators import OperatorFactory
@@ -103,5 +104,7 @@ class SmokedDuck:
         return self._lineage_query(model, None, forward_table, forward_ids)
 
 
+@contextlib.contextmanager
 def connect(database: str = ':memory:', read_only: bool = False, config: dict = None) -> SmokedDuck:
-    return SmokedDuck(duckdb.connect(database, read_only, config if config is not None else {}))
+    with duckdb.connect(database, read_only, config if config is not None else {}) as con:
+        yield SmokedDuck(con)

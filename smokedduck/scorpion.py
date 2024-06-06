@@ -1,3 +1,4 @@
+import pdb
 import json
 import os
 import numpy as np
@@ -10,6 +11,7 @@ import pandas as pd
 try:
     import smokedduck
 except Exception as e:
+    print("couldn't load smokedduck")
     pass
 
 
@@ -78,11 +80,16 @@ def scorpion():
     goodalias = next(iter(goodselection))
     badids = [d['id'] for d in badselection[badalias]]
     goodids = [d['id'] for d in goodselection[goodalias]]
+    badvals = [d['y'] for d in badselection[badalias]]
+    goodvals = [d['y'] for d in goodselection[goodalias]]
     print(sql)
     print(goodids)
     print(badids)
+    print(badvals)
+    print(goodvals)
 
-    ret = runfade(sql, 0, goodids, badids)
+    with smokedduck.connect('intel.db') as con:
+        ret = runscorpion(con, sql, 0, goodids, badids, goodvals, badvals)
     print(ret)
 
   except Exception as e:
@@ -99,26 +106,40 @@ def scorpion():
 
 
 
-def runfade(sql, aggid, goodids, badids, query_id=None):
-
-
-    con = smokedduck.connect('intel.db')
+def runscorpion(con, sql, aggid, goodids, badids, goodvals, badvals, query_id=None):
     clear(con)
-
     allids = goodids + badids
+    mg, mb = np.mean(goodvals), np.mean(badvals)
     goodids = [f"g{id}" for id in goodids]
     badids = [f"g{id}" for id in badids]
-    avggood = f"({'+'.join(goodids)})/{len(goodids)}::float"
-    avgbad = f"({'+'.join(badids)})/{len(badids)}::float"
-    fade_q = f"""select {avggood} as avggood, {avgbad} as avgbad 
-    from duckdb_fade() order by abs({avggood}-{avgbad})  desc LIMIT 10"""
+
+    ges = [f"abs({id}-{val})" for id, val in zip(goodids, goodvals)]
+    maxgood = f"greatest({','.join(ges)})"
+
+    print("badvals", badvals)
+    bes = [f"coalesce(({val}-{id}),0)" for id, val in zip(badids, badvals)]
+    maxbad = f"greatest({','.join(bes)})"
+    minbad = f"least({','.join(bes)})"
+    avgbad = f"({'+'.join(bes)})/{len(badids)}::float"
+    fade_q = f"""WITH tmp AS (
+        SELECT 
+        (row_number() over ())-1 as rowid,
+        {avgbad} as avgbad, 
+        {maxgood} as maxgood, {minbad} as minbad,{maxbad} as maxbad,
+        {len(badids)} as nb  FROM duckdb_fade()
+    )
+    SELECT *, avgbad-maxgood as score
+    FROM tmp
+    WHERE avgbad != 'NaN' and maxgood != 'NaN'
+    ORDER BY (avgbad/{mb}/{len(badids)})-(maxgood/{mg}) DESC
+    LIMIT 10"""
     #fade_q = f"SELECT * FROM duckdb_fade()"
 
     specs = [
         "readings.moteid",
         "readings.voltage",
         "readings.light",
-        "readings.moteid|readings.voltage",
+        #"readings.moteid|readings.voltage",
     ]
 
     if (query_id is None):
@@ -128,36 +149,41 @@ def runfade(sql, aggid, goodids, badids, query_id=None):
         query_timing = end - start
         query_id = con.query_id
 
-    pp_timings = con.execute(f"pragma PrepareLineage({query_id}, false, false, false)").df()
-
+    con.execute(f"pragma PrepareLineage({query_id}, false, false, false)")
     results = []
     for spec in specs:
-        try: 
-            q = f"pragma WhatIfSparse({query_id}, {aggid}, {allids}, '{spec}', false);"
-            res = con.execute(q).fetchdf()
-
-            print("Fade Results")
-            print(fade_q)
-            faderesults = con.execute(fade_q).fetchdf()
-            print(faderesults)
-
-            for i in range(10):
-                g,b = faderesults['avggood'][i], faderesults['avgbad'][i]
-                score = abs(g-b)
-                q = f"pragma GetPredicate({i});"
-                predicate = con.execute(q).fetchdf().iloc[0,0]
-                predicate = predicate.replace("_", ".")
-                clauses = [p.strip() for p in predicate.split("AND")]
-                results.append(dict(score=score, clauses=clauses))
-        except Exception as e:
-            print(e)
+        results.extend(run_fade(con, query_id, aggid, allids, spec, fade_q))
     results.sort(key=lambda d: d['score'], reverse=True)
-    clear(con)
 
     return dict(
         status="final",
         results=results[:5]
     )
+
+def run_fade(con, query_id, aggid, allids, spec, fade_q):
+    print(f"Run fade with spec {spec}")
+    results = []
+    try: 
+        q = f"pragma WhatIfSparse({query_id}, {aggid}, {allids}, '{spec}', false);"
+        print(q)
+        res = con.execute(q).fetchdf()
+
+        print("Fade Results")
+        faderesults = con.execute(fade_q).fetchdf()
+        print(faderesults)
+
+        for i in range(10):
+            score = float(faderesults['score'][i])
+            rowid = faderesults['rowid'][i]
+            q = f"pragma GetPredicate({rowid});"
+            predicate = con.execute(q).fetchdf().iloc[0,0]
+            predicate = predicate.replace("_", ".")
+            clauses = [p.strip() for p in predicate.split("AND")]
+            results.append(dict(score=score, clauses=clauses))
+        return results
+    except Exception as e:
+        print(e)
+        return []
 
     
 
