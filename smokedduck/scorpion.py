@@ -85,18 +85,17 @@ def scorpion():
     ret = runfade(sql, 0, goodids, badids)
     print(ret)
 
-    return jsonify(ret, cls=NumpyEncoder)
   except Exception as e:
       print(e)
-      results = [
+      ret = dict(
+              status="final",
+              results=[
           dict(score=0.1, clauses=["voltage < 0.1"]),
           dict(score=0.2, clauses=["moteid = 18"])
-      ]
-      return jsonify(dict(
-          status="final",
-          results=results
-      ), cls=NumpyEncoder)
+      ])
 
+  response = json.dumps(ret, cls=NumpyEncoder)
+  return response, 200, {'Content-Type': 'application/json'}
 
 
 
@@ -147,6 +146,7 @@ def runfade(sql, aggid, goodids, badids, query_id=None):
         score = abs(g-b)
         q = f"pragma GetPredicate({i});"
         predicate = con.execute(q).fetchdf().iloc[0,0]
+        predicate = predicate.replace("_", ".")
         clauses = [p.strip() for p in predicate.split("AND")]
         results.append(dict(score=score, clauses=clauses))
 
