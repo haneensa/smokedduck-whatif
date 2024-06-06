@@ -134,23 +134,26 @@ def runfade(sql, aggid, goodids, badids, query_id=None):
 
     results = []
     for spec in specs:
-        q = f"pragma WhatIfSparse({query_id}, {aggid}, {allids}, '{spec}', false);"
-        res = con.execute(q).fetchdf()
-        print(res)
+        try: 
+            q = f"pragma WhatIfSparse({query_id}, {aggid}, {allids}, '{spec}', false);"
+            res = con.execute(q).fetchdf()
+            print(res)
 
-        print("Fade Results")
-        print(fade_q)
-        faderesults = con.execute(fade_q).fetchdf()
-        print(faderesults)
+            print("Fade Results")
+            print(fade_q)
+            faderesults = con.execute(fade_q).fetchdf()
+            print(faderesults)
 
-        for i in range(10):
-            g,b = faderesults['avggood'][i], faderesults['avgbad'][i]
-            score = abs(g-b)
-            q = f"pragma GetPredicate({i});"
-            predicate = con.execute(q).fetchdf().iloc[0,0]
-            predicate = predicate.replace("_", ".")
-            clauses = [p.strip() for p in predicate.split("AND")]
-            results.append(dict(score=score, clauses=clauses))
+            for i in range(10):
+                g,b = faderesults['avggood'][i], faderesults['avgbad'][i]
+                score = abs(g-b)
+                q = f"pragma GetPredicate({i});"
+                predicate = con.execute(q).fetchdf().iloc[0,0]
+                predicate = predicate.replace("_", ".")
+                clauses = [p.strip() for p in predicate.split("AND")]
+                results.append(dict(score=score, clauses=clauses))
+        except Exception as e:
+            print(e)
     results.sort(lambda d: d['score'], reverse=True)
     clear(con)
 
