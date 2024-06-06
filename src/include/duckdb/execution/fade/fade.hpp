@@ -209,6 +209,7 @@ struct EvalConfig {
 	bool use_gb_backward_lineage;
 	bool use_preprep_tm;
   int aggid;
+  int groupid;
   vector<string> specs_stack;
 };
 

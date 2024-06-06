@@ -204,7 +204,7 @@ void FadeNode::GroupByGetCachedData(EvalConfig& config, shared_ptr<OperatorLinea
 		}
 		string name = aggr.function.name;
 
-		if (name == "sum" || name == "sum_no_overflow" || name == "avg") {
+		if (name == "sum" || name == "sum_no_overflow" || name == "avg" || name == "stddev") {
 			int col_idx = aggregate_input_idx[0]; //i + keys_size;
 			if (config.use_duckdb == false) {
 				if (op->children[0]->lineage_op->chunk_collection.Types()[col_idx] == LogicalType::INTEGER) {
@@ -232,6 +232,7 @@ void FadeNode::LocalGroupByAlloc(bool debug,
 	if (this->n_groups * this->n_interventions  > this->rows) this->num_worker = 1;
 
 	bool include_count = false;
+  int sum_2_idx = -1;
 	// Populate the aggregate child vectors
 	for (idx_t i=0; i < aggregates.size(); i++) {
 		auto &aggr = aggregates[i]->Cast<BoundAggregateExpression>();
@@ -251,9 +252,11 @@ void FadeNode::LocalGroupByAlloc(bool debug,
 			aggregate_input_idx.push_back(bound_ref_expr.index);
 		}
 
-		if (name == "sum" || name == "sum_no_overflow" || name == "avg") {
+		if (name == "sum" || name == "sum_no_overflow" || name == "avg" || name == "stddev") {
 			int col_idx = aggregate_input_idx[0]; //i + keys_size;
-			string input_type = "float";
+      if (name == "stddev") sum_2_idx = i;
+      if (name == "sum_no_overflow") name = "sum";
+      string input_type = "float";
 			string output_type = "float";
 			if (op->children[0]->lineage_op->chunk_collection.Types()[col_idx] == LogicalType::INTEGER ) {
 				input_type = "int";
@@ -270,6 +273,7 @@ void FadeNode::LocalGroupByAlloc(bool debug,
 			string in_arr = "col_" + to_string(i);  // input arrays
 			string in_val = "val_" + to_string(i);  // input values val = col_x[i]
 			alloc_vars[out_var].resize(this->num_worker);
+
 			alloc_vars_funcs[out_var] = name;
 			for (int t=0; t < this->num_worker; ++t) {
 				if (op->children[0]->lineage_op->chunk_collection.Types()[col_idx] == LogicalType::INTEGER ||
@@ -286,7 +290,18 @@ void FadeNode::LocalGroupByAlloc(bool debug,
 		}
 	}
 
-	if (include_count == true) {
+	if (sum_2_idx > -1) {
+		string out_var = "out_sum_2";
+		alloc_vars_funcs[out_var] = "sum_2";
+		alloc_vars[out_var].resize(this->num_worker);
+		for (int t=0; t < this->num_worker; ++t) {
+			this->allocate_agg_output<float>("float", t, n_interventions, out_var);
+		}
+		alloc_vars_index[out_var] = sum_2_idx;
+    include_count = true;
+	}
+
+  if (include_count == true) {
 		string out_var = "out_count";
 		alloc_vars_funcs[out_var] = "count";
 		alloc_vars[out_var].resize(this->num_worker);

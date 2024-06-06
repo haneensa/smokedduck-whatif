@@ -26,7 +26,8 @@ for t in tables["name"]:
 parser = argparse.ArgumentParser()
 parser.add_argument("--specs", help="|table.col", type=str, default="intel.moteid")
 parser.add_argument("--sql", help="sql", type=str, default="select hr, count() as count from intel group by hr")
-parser.add_argument("--aggid", help="agg_name", type=str, default=0)
+parser.add_argument("--aggid", help="agg_id", type=str, default=0)
+parser.add_argument("--groupid", help="group_id", type=str, default=-1)
 args = parser.parse_args()
 
 specs_tokens = args.specs.split('|')
@@ -50,7 +51,7 @@ query_id = con.query_id
 
 pp_timings = con.execute(f"pragma PrepareLineage({query_id}, false, false, false)").df()
 
-q = f"pragma WhatIfSparse({query_id}, {args.aggid}, '{args.specs}', false);"
+q = f"pragma WhatIfSparse({query_id}, {args.aggid}, {args.groupid}, '{args.specs}', false);"
 res = con.execute(q).fetchdf()
 print(res)
 

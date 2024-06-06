@@ -258,16 +258,17 @@ string PragmaWhatif(ClientContext &context, const FunctionParameters &parameters
 	int mask_size = 16;
 	int topk = 0;
   int aggid = -1;
+  int groupid =  -1;
 	// takes in query id, attributes to intervene on, conjunctive only or conjunctive and disjunction, or random
 
 	if (intervention_type == SEARCH) {
 			return Fade::PredicateSearch(op, { batch, mask_size, is_scalar, use_duckdb, debug, prune, incremental,
 		                                  spec, intervention_type, n_interventions, qid, num_workers, prob, topk,
-                                      use_gb_backward_lineage, false, aggid } );
+                                      use_gb_backward_lineage, false, aggid, groupid } );
 	} else {
 		    return Fade::Whatif(op, { batch, mask_size, is_scalar, use_duckdb, debug, prune, incremental,
 		                             spec, intervention_type, n_interventions, qid, num_workers, prob, topk,
-                       use_gb_backward_lineage, false, aggid } );
+                       use_gb_backward_lineage, false, aggid, groupid } );
 	}
 }
 
@@ -289,9 +290,10 @@ string PragmaSA(ClientContext &context, const FunctionParameters &parameters) {
 	int num_workers = 8;
 	float prob = 1;
   int aggid = -1;
+  int groupid =  -1;
 	return Fade::PredicateSearch(op, { batch, mask_size, is_scalar, use_duckdb, debug, prune, incremental,
 	                                  spec, intervention_type, n_interventions, qid, num_workers, prob, topk,
-	                                 false, false, aggid } );
+	                                 false, false, aggid, -1 } );
 
 }
 
@@ -306,8 +308,9 @@ string PragmaGetPredicate(ClientContext &context, const FunctionParameters &para
 string PragmaWhatIfSparse(ClientContext &context, const FunctionParameters &parameters) {
 	int qid = parameters.values[0].GetValue<int>();
 	int aggid = parameters.values[1].GetValue<int>();
-	string spec = parameters.values[2].ToString();
-	bool debug = parameters.values[3].GetValue<bool>();
+	int group_id = parameters.values[2].GetValue<int>();
+	string spec = parameters.values[3].ToString();
+	bool debug = parameters.values[4].GetValue<bool>();
 	InterventionType intervention_type =  SEARCH;
 	PhysicalOperator* op = context.client_data->lineage_manager->queryid_to_plan[qid].get();
 	int batch = 4;
@@ -323,7 +326,7 @@ string PragmaWhatIfSparse(ClientContext &context, const FunctionParameters &para
 	return Fade::WhatIfSparse(op, { batch, mask_size, is_scalar, use_duckdb, debug, prune, incremental,
 	                               spec, intervention_type,
 	                               n_interventions, qid, num_workers, prob,
-                                 topk, false, false, aggid } );
+                                 topk, false, false, aggid, group_id } );
 
 }
 #endif
@@ -361,7 +364,7 @@ void PragmaQueries::RegisterFunction(BuiltinFunctions &set) {
                                                                       LogicalType::BOOLEAN}));
 
 	set.AddFunction(PragmaFunction::PragmaCall("WhatIfSparse", PragmaWhatIfSparse, {LogicalType::INTEGER,
-	                                                                      LogicalType::INTEGER,
+	                                                                      LogicalType::INTEGER, LogicalType::INTEGER,
 	                                                                      LogicalType::VARCHAR, LogicalType::BOOLEAN}));
 	set.AddFunction(PragmaFunction::PragmaCall("PrepareLineage", PragmaPrepareLineage, {LogicalType::INTEGER, LogicalType::BOOLEAN, LogicalType::BOOLEAN, LogicalType::BOOLEAN}));
 	set.AddFunction(PragmaFunction::PragmaCall("GetPredicate", PragmaGetPredicate, {LogicalType::INTEGER}));

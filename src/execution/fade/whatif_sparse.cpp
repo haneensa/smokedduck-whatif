@@ -63,7 +63,7 @@ int groupby_agg_incremental_arr(int* lineage, int* __restrict__ var_0,
 			int row = var_0[i];
 			out_int[col + row] += 1;
 		}
-	} else { // sum
+	} else if (func == "sum" || func == "avg" || func == "stddev") { // sum
 		if (typ == "int") {
 			int* __restrict__  out_int = (int*)out;
 			int *in_arr = reinterpret_cast<int *>(input_data_map[col_idx]);
@@ -83,7 +83,16 @@ int groupby_agg_incremental_arr(int* lineage, int* __restrict__ var_0,
 				out_float[col + row] += in_arr[i];
 			}
 		}
-	}
+	} else if (func == "sum_2") {
+			float* __restrict__  out_float = (float*)out;
+			float *in_arr = reinterpret_cast<float *>(input_data_map[col_idx]);
+			for (int i=start; i < end; ++i) {
+				int oid = lineage[i];
+				int col = oid * n_interventions;
+				int row = var_0[i];
+				out_float[col + row] += (in_arr[i] * in_arr[i]);
+			}
+  }
 	return 0;
 }
 
