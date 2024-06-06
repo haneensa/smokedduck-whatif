@@ -49,6 +49,11 @@ def scorpion():
     data =  json.loads(str(request.form['json']))
     requestid = request.form.get('requestid')
     print("running scorpion")
+
+
+    # get query
+    # get good group ids
+    # get bad groups ids
     results = scorpionutil.scorpion_run(g.db, data, requestid)
     return results
   except:
@@ -59,113 +64,53 @@ def scorpion():
   return ret
 
 
+def runfade(sql, aggid, goodids, badids, query_id=None):
+    con = smokedduck.connect('intel.db')
+    clear(con)
 
-@app.route('/api/query/', methods=['POST', 'GET'])
-@returns_json
-def api_query():
-  ret = { }
-  jsonstr = request.args.get('json')
-  if not jsonstr:
-    print "query: no json string.  giving up"
-    return ret
+    #parser = argparse.ArgumentParser()
+    #parser.add_argument("--specs", help="|table.col", type=str, default="intel.moteid")
+    #parser.add_argument("--sql", help="sql", type=str, default="select hrint, count() as count from intel group by hrint")
+    #parser.add_argument("--aggid", help="agg_name", type=str, default=0)
+    #args = parser.parse_args()
+    
+    intervened_attrs_list = [
+        ["moteid"],
+        ["voltage"],
+        ["light"],
+        ["moteid", "voltage"]
+    ]
 
-  args = json.loads(jsonstr)
-  dbname = args.get('db')
-  table = args.get('table')
+    if (query_id is None):
+        start = time.time()
+        out = con.execute(sql, capture_lineage='lineageAll').df()
+        end = time.time()
+        print(out)
+        query_timing = end - start
+        print(query_timing)
+        query_id = con.query_id
 
-  o, params = create_sql_obj(g.db, args)
-  o.limit = 10000;
-  query = str(o)
-  print query
-  print params
+    pp_timings = con.execute(f"pragma PrepareLineage({query_id}, false, false, false)").df()
 
-  if not dbname or not table or not query:
-    print "query: no db/table/query.  giving up"
-    return ret
+    q = f"pragma WhatIfSparse({query_id}, {aggid}, '{args.specs}', false);"
+    res = con.execute(q).fetchdf()
+    print(res)
 
-  try:
-    conn = g.db
-    cur = conn.execute(query, [params])
-    rows = cur.fetchall()
-    cur.close()
+    goodids = list(map(str, goodids ))
+    badids = list(map(str, badids ))
+    avggood = f"({'+'.join(goodids)})/{len(goodids)}"
+    avgbad = f"({'+'.join(badids)})/{len(badids)}"
+    q = f"""select {avggood} as avggood, {avgbad} as avgbad 
+    from duckdb_fade() order by {abs({avggood}-{avgbad})}"""
+    res = con.execute(q).fetchdf()
+    print(res)
 
-    data = [dict(zip(cur.keys(), vals)) for vals in rows]
-    ret['data'] = data
-    ret['schema'] = get_schema(g.db, table)
+    q = f"pragma GetPredicate(0);"
+    res = con.execute(q).fetchdf()
+    print(res)
+    clear(con)
 
-  except Exception as e:
-    traceback.print_exc()
-    ret = {}
-
-  print "%d points returned" % len(ret.get('data', []))
-  return ret
-
-
-
-con = smokedduck.connect('intel.db')
-clear(con)
-
-
-
-tables = con.execute("PRAGMA show_tables").fetchdf()
-
-for t in tables["name"]:
-    print(t)
-    print(con.execute(f"pragma table_info('{t}')"))
-
-parser = argparse.ArgumentParser()
-parser.add_argument("--specs", help="|table.col", type=str, default="intel.moteid")
-parser.add_argument("--sql", help="sql", type=str, default="select hrint, count() as count from intel group by hrint")
-parser.add_argument("--aggid", help="agg_name", type=str, default=0)
-args = parser.parse_args()
-
-specs_tokens = args.specs.split('|')
-
-cols = []
-for token in specs_tokens:
-    table_col = token.split('.')
-    table = table_col[0]
-    col = table_col[1]
-    cols.append(col)
-
-print(args.sql)
-
-start = time.time()
-out = con.execute(args.sql, capture_lineage='lineageAll').df()
-end = time.time()
-print(out)
-query_timing = end - start
-print(query_timing)
-query_id = con.query_id
-
-pp_timings = con.execute(f"pragma PrepareLineage({query_id}, false, false, false)").df()
-
-q = f"pragma WhatIfSparse({query_id}, {args.aggid}, '{args.specs}', false);"
-res = con.execute(q).fetchdf()
-print(res)
-
-q = f"select * from duckdb_fade() where g0 > 0;"
-res = con.execute(q).fetchdf()
-print(res)
-
-q = f"pragma GetPredicate(0);"
-res = con.execute(q).fetchdf()
-print(res)
-
-clear(con)
-
-#cols_str = ",".join(cols)
-#args.sql += ", " + cols_str
-#args.sql += " order by " + cols_str
-#
-#sql = args.sql.lower().replace("select", "select " + cols_str + ",")
-#print(sql)
-#print(cols_str)
-#
-#out = con.execute(sql).fetchdf()
-#print(out)
-
-
+    
 
 if __name__ == "__main__":
 
