@@ -6,13 +6,13 @@ import smokedduck
 import pandas as pd
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--specs", help="|table.col", type=str, default="intel.moteid|intel.temp|intel.voltage")
+parser.add_argument("--specs", help="|table.col", type=str, default="readings.moteid|readings.temp|readings.voltage")
 args = parser.parse_args()
 specs = args.specs
 
 con = smokedduck.connect('intel.db')
-con.execute("drop table if exists intel")
-create_sql = """CREATE TABLE intel as SELECT * FROM 'intel.csv'"""
+con.execute("drop table if exists readings")
+create_sql = """CREATE TABLE readings as SELECT * FROM 'intel.csv'"""
 #(
 #    date date,
 #    tstamp time without time zone,
@@ -29,17 +29,17 @@ create_sql = """CREATE TABLE intel as SELECT * FROM 'intel.csv'"""
 con.execute(create_sql)
 
 #con.execute("COPY intel FROM 'intel.csv' WITH (HEADER true, DELIMITER '\t', nullstr '\\N');")
-print(con.execute("select * from intel").df())
+print(con.execute("select * from readings").df())
 
 
 # hack since we don't have guards for null values
-con.execute("""UPDATE intel SET temp = COALESCE(temp, 0);""")
-con.execute("""UPDATE intel SET light = COALESCE(light, 0);""")
-con.execute("""UPDATE intel SET voltage = COALESCE(voltage, 0);""")
-con.execute("""UPDATE intel SET humidity = COALESCE(humidity, 0);""")
+con.execute("""UPDATE readings SET temp = COALESCE(temp, 0);""")
+con.execute("""UPDATE readings SET light = COALESCE(light, 0);""")
+con.execute("""UPDATE readings SET voltage = COALESCE(voltage, 0);""")
+con.execute("""UPDATE readings SET humidity = COALESCE(humidity, 0);""")
 
-con.execute("""UPDATE intel SET moteid = COALESCE(moteid, -1);""")
-print(con.execute("select * from intel").df())
+con.execute("""UPDATE readings SET moteid = COALESCE(moteid, -1);""")
+print(con.execute("select * from readings").df())
 
 specs_tokens = specs.split('|')
 cols = []

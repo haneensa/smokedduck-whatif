@@ -62,6 +62,7 @@ print(res)
 q = f"pragma GetPredicate(0);"
 res = con.execute(q).fetchdf()
 print(res)
+import pdb; pdb.set_trace()
 
 clear(con)
 
