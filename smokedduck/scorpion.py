@@ -22,6 +22,15 @@ from flask import Flask, request, render_template, g, redirect, Response, jsonif
 from flask_compress import Compress
 from flask_cors import CORS, cross_origin
 
+class NumpyEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super(NumpyEncoder, self).default(obj)
 
 
 tmpl_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates')
@@ -76,17 +85,17 @@ def scorpion():
     ret = runfade(sql, 0, goodids, badids)
     print(ret)
 
-    return jsonify(ret)
+    return jsonify(ret, cls=NumpyEncoder)
   except Exception as e:
       print(e)
       results = [
           dict(score=0.1, clauses=["voltage < 0.1"]),
           dict(score=0.2, clauses=["moteid = 18"])
       ]
-      return dict(
+      return jsonify(dict(
           status="final",
           results=results
-      )
+      ), cls=NumpyEncoder)
 
 
 
