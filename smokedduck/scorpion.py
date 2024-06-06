@@ -93,18 +93,19 @@ def runfade(sql, aggid, goodids, badids, query_id=None):
     con = smokedduck.connect('intel.db')
     clear(con)
 
-    goodids = list(map(str, goodids ))
-    badids = list(map(str, badids ))
-    avggood = f"({'+'.join(goodids)})/{len(goodids)}"
-    avgbad = f"({'+'.join(badids)})/{len(badids)}"
+    goodids = [f"g{id}" for id in goodids]
+    badids = [f"g{id}" for id in badids]
+    avggood = f"({'+'.join(goodids)})/{len(goodids)}::float"
+    avgbad = f"({'+'.join(badids)})/{len(badids)}::float"
     fade_q = f"""select {avggood} as avggood, {avgbad} as avgbad 
-    from duckdb_fade() order by abs({avggood}-{avgbad})"""
+    from duckdb_fade() order by abs({avggood}-{avgbad})  desc LIMIT 10"""
+    #fade_q = f"SELECT * FROM duckdb_fade()"
 
     specs = [
+        "readings.moteid|readings.voltage",
         "readings.moteid",
         "readings.voltage",
         "readings.light",
-        "readings.moteid|readings.voltage"
     ]
 
     if (query_id is None):
@@ -119,10 +120,14 @@ def runfade(sql, aggid, goodids, badids, query_id=None):
     pp_timings = con.execute(f"pragma PrepareLineage({query_id}, false, false, false)").df()
 
     q = f"pragma WhatIfSparse({query_id}, {aggid}, '{specs[0]}', false);"
+    print(q)
     res = con.execute(q).fetchdf()
     print(res)
 
+    print("Fade Results")
+    print(fade_q)
     faderesults = con.execute(fade_q).fetchdf()
+    print(faderesults)
 
     results = []
     for i in range(10):
