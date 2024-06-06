@@ -125,9 +125,7 @@ def runfade(sql, aggid, goodids, badids, query_id=None):
         start = time.time()
         out = con.execute(sql, capture_lineage='lineageAll').df()
         end = time.time()
-        print(out)
         query_timing = end - start
-        print(query_timing)
         query_id = con.query_id
 
     pp_timings = con.execute(f"pragma PrepareLineage({query_id}, false, false, false)").df()
@@ -137,7 +135,6 @@ def runfade(sql, aggid, goodids, badids, query_id=None):
         try: 
             q = f"pragma WhatIfSparse({query_id}, {aggid}, {allids}, '{spec}', false);"
             res = con.execute(q).fetchdf()
-            print(res)
 
             print("Fade Results")
             print(fade_q)
