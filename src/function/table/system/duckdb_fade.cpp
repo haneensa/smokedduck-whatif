@@ -36,22 +36,20 @@ static unique_ptr<FunctionData> DuckDBFadeBind(ClientContext &context, TableFunc
   names.emplace_back("pid");
 	return_types.emplace_back(LogicalType::INTEGER);
 
-  if (global_config.groupid > -1) {
-      names.emplace_back("g" + to_string(global_config.groupid));
-      if (name == "count") {
-        return_types.emplace_back(LogicalType::INTEGER);
-      } else {
-        return_types.emplace_back(LogicalType::FLOAT);
-      }
+  // restriction: single agg at a time
+  auto logical_typ = LogicalType::FLOAT;
+  if (name == "count") {
+    logical_typ = LogicalType::INTEGER;
+  }
+  if (!global_config.groups.empty()) {
+    for (int i=0; i < global_config.groups.size(); i++) {
+      names.emplace_back("g" + to_string(global_config.groups[i]));
+      return_types.emplace_back(logical_typ);
+    }
   } else {
-    // restriction: single agg at a time
     for (int i=0; i < global_fade_node->n_groups; ++i) {
         names.emplace_back("g" + to_string(i));
-        if (name == "count") {
-          return_types.emplace_back(LogicalType::INTEGER);
-        } else {
-          return_types.emplace_back(LogicalType::FLOAT);
-        }
+        return_types.emplace_back(logical_typ);
     }
   }
 

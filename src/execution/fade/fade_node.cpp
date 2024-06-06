@@ -315,7 +315,7 @@ void FadeNode::LocalGroupByAlloc(bool debug,
 // if nested, then take the output of the previous agg as input
 void FadeNode::GroupByAlloc(bool debug, PhysicalOperatorType typ,
                             shared_ptr<OperatorLineage> lop,
-                            PhysicalOperator* op, int aggid, int groupid) {
+                            PhysicalOperator* op, int aggid, vector<int>& groups) {
   this->aggid = aggid;
 	// To support nested agg, check if any descendants is an agg
 	PhysicalOperator* cur_op = op->children[0].get();
@@ -334,16 +334,16 @@ void FadeNode::GroupByAlloc(bool debug, PhysicalOperatorType typ,
 	if (op->type == PhysicalOperatorType::HASH_GROUP_BY) {
 		PhysicalHashAggregate * gb = dynamic_cast<PhysicalHashAggregate *>(op);
 		auto &aggregates = gb->grouped_aggregate_data.aggregates;
-		if (groupid < 0) this->n_groups = op->lineage_op->log_index->ha_hash_index.size();
-    else this->n_groups = 1;
+		if (groups.empty()) this->n_groups = op->lineage_op->log_index->ha_hash_index.size();
+    else this->n_groups = groups.size();
 		if (!this->has_agg_child) {
 			this->LocalGroupByAlloc(debug, op->lineage_op, op, aggregates, gb->grouped_aggregate_data.groups.size(), aggid);
 		}
 	} else if (op->type == PhysicalOperatorType::PERFECT_HASH_GROUP_BY) {
 		PhysicalPerfectHashAggregate * gb = dynamic_cast<PhysicalPerfectHashAggregate *>(op);
 		auto &aggregates = gb->aggregates;
-		if (groupid < 0) this->n_groups = op->lineage_op->log_index->pha_hash_index.size();
-    else this->n_groups = 1;
+		if (groups.empty()) this->n_groups = op->lineage_op->log_index->pha_hash_index.size();
+    else this->n_groups = groups.size();
 		if (!this->has_agg_child) {
 			this->LocalGroupByAlloc(debug, op->lineage_op, op, aggregates, gb->groups.size(), aggid);
 		}
