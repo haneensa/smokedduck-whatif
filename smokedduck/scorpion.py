@@ -14,6 +14,7 @@ except Exception as e:
 
 
 
+
 from functools import wraps
 from collections import *
 from datetime import datetime
@@ -26,7 +27,7 @@ from flask_cors import CORS, cross_origin
 tmpl_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates')
 print(tmpl_dir)
 app = Flask(__name__, template_folder=tmpl_dir)
-CORS(app, supports_credentials=True)
+CORS(app)#, supports_credentials=True)
 
 
 def build_preflight_response():
@@ -53,8 +54,12 @@ def clear(c):
 #@cross_origin(origins="*")
 def scorpion():
   try:
-    data =  json.loads(str(request.form['json']))
-    requestid = request.form.get('requestid')
+    if request.method == "GET":
+      data =  json.loads(str(request.args['json']))
+    else:
+      data =  json.loads(str(request.form['json']))
+
+    print(data)
     print("running scorpion")
 
     sql = data['sql']
@@ -64,17 +69,16 @@ def scorpion():
     goodalias = next(iter(goodselection))
     badids = [d['id'] for d in badselection[badalias]]
     goodids = [d['id'] for d in goodselection[goodalias]]
+    print(sql)
+    print(goodids)
+    print(badids)
 
-    ret = runfade(sql, 1, goodids, badids)
+    ret = runfade(sql, 0, goodids, badids)
     print(ret)
 
     return jsonify(ret)
   except Exception as e:
       print(e)
-      print(sql)
-      print(aggid)
-      print(goodids)
-      print(badids)
       results = [
           dict(score=0.1, clauses=["voltage < 0.1"]),
           dict(score=0.2, clauses=["moteid = 18"])
