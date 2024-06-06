@@ -98,7 +98,7 @@ def runfade(sql, aggid, goodids, badids, query_id=None):
     avggood = f"({'+'.join(goodids)})/{len(goodids)}"
     avgbad = f"({'+'.join(badids)})/{len(badids)}"
     fade_q = f"""select {avggood} as avggood, {avgbad} as avgbad 
-    from duckdb_fade() order by {abs({avggood}-{avgbad})}"""
+    from duckdb_fade() order by abs({{avggood}-{avgbad}})"""
 
     specs = [
         "readings.moteid",
