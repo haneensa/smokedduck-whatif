@@ -826,7 +826,7 @@ void Fade::AllocSingle(EvalConfig& config, PhysicalOperator* op,
 		node->gen = true;
 		node->rows  = op->children[0]->lineage_op->chunk_collection.Count();
 		node->n_interventions = fade_data[op->children[0]->id]->n_interventions;
-		node->GroupByAlloc(config.debug, op->type, op->lineage_op, op, config.aggid);
+		node->GroupByAlloc(config.debug, op->type, op->lineage_op, op, config.aggid, config.groupid);
 	}  else if (op->type == PhysicalOperatorType::PROJECTION) {
 		node->opid = fade_data[op->children[0]->id]->opid;
 		node->n_interventions = fade_data[op->children[0]->id]->n_interventions;
@@ -923,7 +923,7 @@ void Fade::AllocDense(EvalConfig& config, PhysicalOperator* op,
 		node->rows  = op->children[0]->lineage_op->chunk_collection.Count();
 		node->n_masks = dynamic_cast<FadeNodeDenseCompile*>(fade_data[op->children[0]->id].get())->n_masks;
 		node->n_interventions = fade_data[op->children[0]->id]->n_interventions;
-		node->GroupByAlloc(config.debug, op->type, op->lineage_op, op, config.aggid);
+		node->GroupByAlloc(config.debug, op->type, op->lineage_op, op, config.aggid, config.groupid);
 	}  else if (op->type == PhysicalOperatorType::PROJECTION) {
 		node->opid = fade_data[op->children[0]->id]->opid;
 		node->n_masks  = dynamic_cast<FadeNodeDenseCompile*>(fade_data[op->children[0]->id].get())->n_masks;
@@ -1017,7 +1017,7 @@ void Fade::GenSparseAndAlloc(EvalConfig& config, PhysicalOperator* op,
 	           op->type == PhysicalOperatorType::UNGROUPED_AGGREGATE) {
 		node->rows  = op->children[0]->lineage_op->chunk_collection.Count();
 		node->n_interventions = fade_data[op->children[0]->id]->n_interventions;
-		node->GroupByAlloc(config.debug, op->type, op->lineage_op, op, config.aggid);
+		node->GroupByAlloc(config.debug, op->type, op->lineage_op, op, config.aggid, config.groupid);
 	}  else if (op->type == PhysicalOperatorType::PROJECTION) {
 		node->n_interventions = fade_data[op->children[0]->id]->n_interventions;
 		node->n_groups = fade_data[op->children[0]->id]->n_groups;

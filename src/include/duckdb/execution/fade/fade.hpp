@@ -43,7 +43,7 @@ public:
 	      num_worker(num_worker), rows(rows), n_groups(0), child_agg_id(-1), has_agg_child(false), counter(0) {};
 
 	void GroupByAlloc(bool debug, PhysicalOperatorType typ, shared_ptr<OperatorLineage> lop,
-	                  PhysicalOperator* op, int aggid);
+	                  PhysicalOperator* op, int aggid, int groupid);
 
 	void LocalGroupByAlloc(bool debug, shared_ptr<OperatorLineage> lop,
 	                       PhysicalOperator* op, vector<unique_ptr<Expression>>& aggregates,

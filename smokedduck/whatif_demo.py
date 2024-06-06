@@ -55,12 +55,16 @@ q = f"pragma WhatIfSparse({query_id}, {args.aggid}, {args.groupid}, '{args.specs
 res = con.execute(q).fetchdf()
 print(res)
 
-q = f"select * from duckdb_fade() where g0 > 0;"
+if args.groupid == -1:
+    q = f"select * from duckdb_fade() where g0 > 0;"
+    qp = f"pragma getpredicate(0);"
+else:
+    q = f"select * from duckdb_fade() where g{args.groupid} > 0;"
+    qp = f"pragma GetPredicate({args.groupid});"
 res = con.execute(q).fetchdf()
 print(res)
 
-q = f"pragma GetPredicate(0);"
-res = con.execute(q).fetchdf()
+res = con.execute(qp).fetchdf()
 print(res)
 
 clear(con)
