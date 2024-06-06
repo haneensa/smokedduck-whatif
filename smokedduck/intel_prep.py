@@ -11,22 +11,24 @@ args = parser.parse_args()
 specs = args.specs
 
 con = smokedduck.connect('intel.db')
-create_sql = """CREATE TABLE intel (
-    date date,
-    tstamp time without time zone,
-    epoch integer,
-    moteid integer,
-    temp float,
-    humidity float,
-    light float,
-    voltage float,
-    id integer NOT NULL,
-    hr timestamp without time zone
-);"""
+con.execute("drop table if exists intel")
+create_sql = """CREATE TABLE intel as SELECT * FROM 'intel.csv'"""
+#(
+#    date date,
+#    tstamp time without time zone,
+#    epoch integer,
+#    moteid integer,
+#    temp float,
+#    humidity float,
+#    light float,
+#    voltage float,
+#    id integer NOT NULL,
+#    hr timestamp without time zone
+#);"""
 
 con.execute(create_sql)
 
-con.execute("COPY intel FROM 'intel.csv' WITH (HEADER true, DELIMITER '\t', nullstr '\\N');")
+#con.execute("COPY intel FROM 'intel.csv' WITH (HEADER true, DELIMITER '\t', nullstr '\\N');")
 print(con.execute("select * from intel").df())
 
 

@@ -17,6 +17,7 @@ def clear(c):
     c.execute("PRAGMA clear_lineage")
 
 con = smokedduck.connect('intel.db')
+clear(con)
 tables = con.execute("PRAGMA show_tables").fetchdf()
 
 for t in tables["name"]:
@@ -25,7 +26,7 @@ for t in tables["name"]:
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--specs", help="|table.col", type=str, default="intel.moteid")
-parser.add_argument("--sql", help="sql", type=str, default="select hr, count() as count from intel group by hr")
+parser.add_argument("--sql", help="sql", type=str, default="select hrint, count() as count from intel group by hrint")
 parser.add_argument("--aggid", help="agg_name", type=str, default=0)
 args = parser.parse_args()
 
@@ -64,13 +65,13 @@ print(res)
 
 clear(con)
 
-cols_str = ",".join(cols)
-args.sql += ", " + cols_str
-args.sql += " order by " + cols_str
-
-sql = args.sql.lower().replace("select", "select " + cols_str + ",")
-print(sql)
-print(cols_str)
-
-out = con.execute(sql).fetchdf()
-print(out)
+#cols_str = ",".join(cols)
+#args.sql += ", " + cols_str
+#args.sql += " order by " + cols_str
+#
+#sql = args.sql.lower().replace("select", "select " + cols_str + ",")
+#print(sql)
+#print(cols_str)
+#
+#out = con.execute(sql).fetchdf()
+#print(out)

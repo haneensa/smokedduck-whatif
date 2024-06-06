@@ -159,7 +159,7 @@ if platform.system() == 'Darwin':
 if platform.system() == 'Windows':
     toolchain_args.extend(['-DDUCKDB_BUILD_LIBRARY', '-DWIN32'])
 
-if "BUILD_LINEAGE" in os.environ:
+if True or "BUILD_LINEAGE" in os.environ:
     toolchain_args.extend(['-DLINEAGE=1'])
 
 if 'BUILD_HTTPFS' in os.environ:
