@@ -115,10 +115,10 @@ def runfade(sql, aggid, goodids, badids, query_id=None):
     #fade_q = f"SELECT * FROM duckdb_fade()"
 
     specs = [
-        "readings.moteid|readings.voltage",
         "readings.moteid",
         "readings.voltage",
         "readings.light",
+        "readings.moteid|readings.voltage",
     ]
 
     if (query_id is None):
@@ -131,31 +131,32 @@ def runfade(sql, aggid, goodids, badids, query_id=None):
         query_id = con.query_id
 
     pp_timings = con.execute(f"pragma PrepareLineage({query_id}, false, false, false)").df()
-    q = f"pragma WhatIfSparse({query_id}, {aggid}, {allids}, '{specs[0]}', false);"
-    res = con.execute(q).fetchdf()
-    print(res)
-
-    print("Fade Results")
-    print(fade_q)
-    faderesults = con.execute(fade_q).fetchdf()
-    print(faderesults)
 
     results = []
-    for i in range(10):
-        g,b = faderesults['avggood'][i], faderesults['avgbad'][i]
-        score = abs(g-b)
-        q = f"pragma GetPredicate({i});"
-        predicate = con.execute(q).fetchdf().iloc[0,0]
-        predicate = predicate.replace("_", ".")
-        clauses = [p.strip() for p in predicate.split("AND")]
-        results.append(dict(score=score, clauses=clauses))
+    for spec in specs:
+        q = f"pragma WhatIfSparse({query_id}, {aggid}, {allids}, '{spec}', false);"
+        res = con.execute(q).fetchdf()
+        print(res)
 
+        print("Fade Results")
+        print(fade_q)
+        faderesults = con.execute(fade_q).fetchdf()
+        print(faderesults)
 
+        for i in range(10):
+            g,b = faderesults['avggood'][i], faderesults['avgbad'][i]
+            score = abs(g-b)
+            q = f"pragma GetPredicate({i});"
+            predicate = con.execute(q).fetchdf().iloc[0,0]
+            predicate = predicate.replace("_", ".")
+            clauses = [p.strip() for p in predicate.split("AND")]
+            results.append(dict(score=score, clauses=clauses))
+    results.sort(lambda d: d['score'], reverse=True)
     clear(con)
 
     return dict(
         status="final",
-        results=results
+        results=results[:5]
     )
 
     
