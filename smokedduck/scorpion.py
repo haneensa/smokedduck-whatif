@@ -151,7 +151,7 @@ def runfade(sql, aggid, goodids, badids, query_id=None):
                 results.append(dict(score=score, clauses=clauses))
         except Exception as e:
             print(e)
-    results.sort(lambda d: d['score'], reverse=True)
+    results.sort(key=lambda d: d['score'], reverse=True)
     clear(con)
 
     return dict(
