@@ -26,22 +26,32 @@ static unique_ptr<FunctionData> DuckDBFadeBind(ClientContext &context, TableFunc
 	for (auto &pair : global_fade_node->alloc_vars_index) {
     out_var = pair.first;
     if (global_fade_node->aggid < 0) break;
+    if (out_var == "out_sum_2") continue;
     if (global_fade_node->aggid == pair.second) {
       break;
     }
   }
 
   string name = global_fade_node->alloc_vars_funcs[out_var];
+  names.emplace_back("pid");
+	return_types.emplace_back(LogicalType::INTEGER);
 
-	// restriction: single agg at a time
-	for (int i=0; i < global_fade_node->n_groups; ++i) {
-			names.emplace_back("g" + to_string(i));
-      if (name == "count") {
-			  return_types.emplace_back(LogicalType::INTEGER);
-      } else {
-			  return_types.emplace_back(LogicalType::FLOAT);
-      }
-	}
+  // restriction: single agg at a time
+  auto logical_typ = LogicalType::FLOAT;
+  if (name == "count") {
+    logical_typ = LogicalType::INTEGER;
+  }
+  if (!global_config.groups.empty()) {
+    for (int i=0; i < global_config.groups.size(); i++) {
+      names.emplace_back("g" + to_string(global_config.groups[i]));
+      return_types.emplace_back(logical_typ);
+    }
+  } else {
+    for (int i=0; i < global_fade_node->n_groups; ++i) {
+        names.emplace_back("g" + to_string(i));
+        return_types.emplace_back(logical_typ);
+    }
+  }
 
 	return nullptr;
 }
@@ -51,6 +61,7 @@ unique_ptr<GlobalTableFunctionState> DuckDBFadeInit(ClientContext &context, Tabl
 	for (auto &pair : global_fade_node->alloc_vars_index) {
     out_var = pair.first;
     if (global_fade_node->aggid < 0) break;
+    if (out_var == "out_sum_2") continue;
     if (global_fade_node->aggid == pair.second) {
       break;
     }
@@ -82,7 +93,7 @@ void DuckDBFadeFunction(ClientContext &context, TableFunctionInput &data_p, Data
   if (data.offset >= n_interventions) {
     return;
   }
-  idx_t col = 0;
+  idx_t col = 1;
 
 	idx_t count = 0;
   string name = global_fade_node->alloc_vars_funcs[out_var];
@@ -118,9 +129,24 @@ void DuckDBFadeFunction(ClientContext &context, TableFunctionInput &data_p, Data
         output.SetValue(col++, count,Value::FLOAT( 0 ));
       }
       count++;
+    } else if (name == "stddev") {
+      //  sum(x^2)/n - sum(x)^2/n^2
+      float* sum_ptr = (float*)global_fade_node->alloc_vars[out_var][0];
+      float* sum_2_ptr = (float*)global_fade_node->alloc_vars["out_sum_2"][0];
+      int* count_ptr = (int*)global_fade_node->alloc_vars["out_count"][0];
+      int index = i * n_interventions + data.offset;
+      if (count_ptr[index] > 1) {
+        output.SetValue(col++, count,Value::FLOAT( std::sqrt(sum_2_ptr[index] / count_ptr[index]  - (sum_ptr[index]*sum_ptr[index])/(count_ptr[index]*count_ptr[index]) )));
+      } else {
+        output.SetValue(col++, count,Value::FLOAT( 0 ));
+      }
+      count++;
     }
 
   }
+  
+  output.data[0].Sequence(data.offset, 1, count);
+
   data.offset += count;
 	output.SetCardinality(count);
 }

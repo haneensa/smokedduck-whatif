@@ -1,6 +1,5 @@
-# TODO: 
-# 1. map intervention ids to actual predicates
-# 3. optimize retrieving the final results (check)
+# TODO: (2) implement batching (compute 2K interventions at a time) and return the results
+#       (3) retune the new aggregate results excluding the removed tuples (instead of returning the agg results on the excluded tuples)
 import numpy as np
 import time
 import csv
@@ -26,8 +25,9 @@ for t in tables["name"]:
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--specs", help="|table.col", type=str, default="intel.moteid")
-parser.add_argument("--sql", help="sql", type=str, default="select hrint, count() as count from intel group by hrint")
-parser.add_argument("--aggid", help="agg_name", type=str, default=0)
+parser.add_argument("--sql", help="sql", type=str, default="select hr, count() as count from intel group by hr")
+parser.add_argument("--aggid", help="agg_id", type=str, default=0)
+parser.add_argument('--groups', type=int, nargs='+', help='a list of groups', default=[])
 args = parser.parse_args()
 
 specs_tokens = args.specs.split('|')
@@ -39,8 +39,6 @@ for token in specs_tokens:
     col = table_col[1]
     cols.append(col)
 
-print(args.sql)
-
 start = time.time()
 out = con.execute(args.sql, capture_lineage='lineageAll').df()
 end = time.time()
@@ -50,17 +48,22 @@ print(query_timing)
 query_id = con.query_id
 
 pp_timings = con.execute(f"pragma PrepareLineage({query_id}, false, false, false)").df()
+print(args.groups)
 
-q = f"pragma WhatIfSparse({query_id}, {args.aggid}, '{args.specs}', false);"
+q = f"pragma WhatIfSparse({query_id}, {args.aggid}, {args.groups}, '{args.specs}', false);"
 res = con.execute(q).fetchdf()
 print(res)
 
-q = f"select * from duckdb_fade() where g0 > 0;"
+if len(args.groups) == 0:
+    q = f"select * from duckdb_fade() where g0 > 0;"
+    qp = f"pragma getpredicate(0);"
+else:
+    q = f"select * from duckdb_fade() where g{args.groups[0]} > 0;"
+    qp = f"pragma GetPredicate({args.groups[0]});"
 res = con.execute(q).fetchdf()
 print(res)
 
-q = f"pragma GetPredicate(0);"
-res = con.execute(q).fetchdf()
+res = con.execute(qp).fetchdf()
 print(res)
 import pdb; pdb.set_trace()
 
