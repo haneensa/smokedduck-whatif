@@ -252,8 +252,6 @@ void Fade::InterventionSparseEvalPredicate(int thread_id, EvalConfig& config, Ph
             }
           }
         }
-        start_end_pair.first=0;
-        start_end_pair.second= filtered_annotations[0].size();
       }
 			for (auto& out_var : cur_node->alloc_vars_funcs) {
 				string func = cur_node->alloc_vars_funcs[out_var.first];
@@ -272,7 +270,7 @@ void Fade::InterventionSparseEvalPredicate(int thread_id, EvalConfig& config, Ph
             groupby_agg_incremental_arr_single_group(g, filtered_annotations[g].data(),
                                         cur_node->alloc_vars[out_var.first][thread_id],
                                         cur_node->input_data_map,
-                                        start_end_pair.first, start_end_pair.second, cur_node->n_interventions,
+                                        0, filtered_annotations[g].size(), cur_node->n_interventions,
                                         col_idx, func, typ);
           }
         }
@@ -291,6 +289,7 @@ void Fade::InterventionSparseEvalPredicate(int thread_id, EvalConfig& config, Ph
 }
 
 string Fade::WhatIfSparse(PhysicalOperator *op, EvalConfig config) {
+  global_fade_node = nullptr;
   std::cout << "WhatIfSparse" << std::endl;
   	std::cout << op->ToString() << std::endl;
   std::chrono::steady_clock::time_point start_time, end_time;
@@ -300,7 +299,6 @@ string Fade::WhatIfSparse(PhysicalOperator *op, EvalConfig config) {
   std::unordered_map<std::string, std::vector<std::string>> columns_spec = parseSpec(config.columns_spec_str);
   std::unordered_map<idx_t, unique_ptr<FadeNode>> fade_data;
 
-  std::cout << "gen intervention -- load from disk pre-generated dictionary encoding of columns" << std::endl;
   start_time = std::chrono::steady_clock::now();
   bool compile = false;
   Fade::GenSparseAndAlloc(config, op, fade_data, columns_spec, compile);
@@ -334,7 +332,7 @@ string Fade::WhatIfSparse(PhysicalOperator *op, EvalConfig config) {
   double eval_time = time_span.count();
   global_fade_node = std::move(fade_data[ fade_data[op->id]->opid ]);
   global_config = config;
-  return "SELECT * from duckdb_fade()";
+  return "SELECT 1"; // from duckdb_fade()";
 }
 
 } // namespace duckdb

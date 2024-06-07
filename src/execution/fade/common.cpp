@@ -27,7 +27,7 @@ int fill_random_single(int thread_id, int row_count, float prob, int n_masks,
 		del_interventions[i] = (((double)rand() / RAND_MAX) < prob);
 	}
 
-	std::cout << thread_id << " random done-> start: "  << start << ", end: " << end <<  ", count: " << count << std::endl;
+	// std::cout << thread_id << " random done-> start: "  << start << ", end: " << end <<  ", count: " << count << std::endl;
 	return 0;
 }
 
@@ -58,7 +58,7 @@ int fill_random_dense(int thread_id, int row_count, float prob, int n_masks,
 		}
 	}
 
-	std::cout << thread_id << " random done-> start: "  << start << ", end: " << end <<  ", count: " << count << std::endl;
+	// std::cout << thread_id << " random done-> start: "  << start << ", end: " << end <<  ", count: " << count << std::endl;
 	return 0;
 }
 
@@ -129,13 +129,13 @@ string Fade::PrepareLineage(PhysicalOperator *op, bool prune, bool forward_linea
 	std::chrono::duration<double> time_span;
 
 	// 1. Post Process
-	std::cout << "start post process " << std::endl;
+	//std::cout << "start post process " << std::endl;
 	start_time = std::chrono::steady_clock::now();
 	LineageManager::PostProcess(op);
 	end_time = std::chrono::steady_clock::now();
 	time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
 	double post_processing_time = time_span.count();
-	std::cout << "end post process " << post_processing_time <<std::endl;
+	//std::cout << "end post process " << post_processing_time <<std::endl;
 
 	// 2. retrieve lineage
 	start_time = std::chrono::steady_clock::now();
@@ -168,7 +168,7 @@ string Fade::PrepareLineage(PhysicalOperator *op, bool prune, bool forward_linea
 		forward_lineage_time = time_span.count();
 	}
 
-  std::cout << "after prune:" << std::endl;
+  // std::cout << "after prune:" << std::endl;
   int lineage_count_prune = LineageMemory(op);
   float lineage_size_mb_prune = sizeof(int) * (lineage_count_prune / (1024.0*1024.0));
 
@@ -197,7 +197,7 @@ void Fade::FillForwardLineage(PhysicalOperator* op, bool prune) {
 			}
 			if (cur_op && cur_op->lineage_op && !cur_op->lineage_op->backward_lineage[0].empty()) {
         forward_row_count =  cur_op->lineage_op->backward_lineage[0].size();
-        std::cout << "get lineage using bl for " << cur_op->id << " " << forward_row_count << std::endl;
+        // std::cout << "get lineage using bl for " << cur_op->id << " " << forward_row_count << std::endl;
       }
 		} else {
       forward_row_count = op->lineage_op->log_index->table_size;
@@ -689,7 +689,7 @@ int Fade::LineageMemory(PhysicalOperator* op) {
     int backward_size = op->lineage_op->backward_lineage[0].size();
     int forward_size = op->lineage_op->forward_lineage[0].size();
 
-    std::cout << op->id << " LineageMemory: " << backward_size << " " << forward_size << std::endl;
+    // std::cout << op->id << " LineageMemory: " << backward_size << " " << forward_size << std::endl;
     total_size = backward_size + forward_size;
   }
 
@@ -972,8 +972,8 @@ void Fade::GenSparseAndAlloc(EvalConfig& config, PhysicalOperator* op,
 					break;
 			  }
 			} else {
-			  std::cerr << "Error opening metadata file or erros in # rows " << n_interventions
-				        << " " << rows << " " << node->rows << std::endl;
+			  std::cerr << "Error opening metadata file or erros in # rows " <<
+          rowsfile.is_open() << " " << n_interventions << " " << rows << " " << node->rows << std::endl;
 			  use_random = true;
 			  break;
 			}

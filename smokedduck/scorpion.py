@@ -123,7 +123,7 @@ def runscorpion(con, sql, aggid, goodids, badids, goodvals, badvals, query_id=No
     avgbad = f"({'+'.join(bes)})/{len(badids)}::float"
     fade_q = f"""WITH tmp AS (
         SELECT 
-        (row_number() over ())-1 as rowid,
+        pid,
         {avgbad} as avgbad, 
         {maxgood} as maxgood, {minbad} as minbad,{maxbad} as maxbad,
         {len(badids)} as nb  FROM duckdb_fade()
@@ -133,13 +133,15 @@ def runscorpion(con, sql, aggid, goodids, badids, goodvals, badvals, query_id=No
     WHERE avgbad != 'NaN' and maxgood != 'NaN'
     ORDER BY (avgbad/{mb}/{len(badids)})-(maxgood/{mg}) DESC
     LIMIT 10"""
-    #fade_q = f"SELECT * FROM duckdb_fade()"
 
     specs = [
         "readings.moteid",
         "readings.voltage",
         "readings.light",
-        #"readings.moteid|readings.voltage",
+        "readings.moteid|readings.voltage",
+        "readings.moteid|readings.light",
+        "readings.voltage|readings.light",
+        # "readings.moteid|readings.light|readings.voltage",
     ]
 
     if (query_id is None):
@@ -154,34 +156,34 @@ def runscorpion(con, sql, aggid, goodids, badids, goodvals, badvals, query_id=No
     for spec in specs:
         results.extend(run_fade(con, query_id, aggid, allids, spec, fade_q))
     results.sort(key=lambda d: d['score'], reverse=True)
-
+    print(results)
     return dict(
         status="final",
         results=results[:5]
     )
 
 def run_fade(con, query_id, aggid, allids, spec, fade_q):
+    print(fade_q)
     print(f"Run fade with spec {spec}")
     results = []
     try: 
         q = f"pragma WhatIfSparse({query_id}, {aggid}, {allids}, '{spec}', false);"
         print(q)
-        res = con.execute(q).fetchdf()
-
-        print("Fade Results")
+        con.execute(q).fetchdf()
         faderesults = con.execute(fade_q).fetchdf()
         print(faderesults)
 
         for i in range(10):
             score = float(faderesults['score'][i])
-            rowid = faderesults['rowid'][i]
-            q = f"pragma GetPredicate({rowid});"
+            pid = faderesults['pid'][i]
+            q = f"pragma GetPredicate({pid});"
             predicate = con.execute(q).fetchdf().iloc[0,0]
             predicate = predicate.replace("_", ".")
             clauses = [p.strip() for p in predicate.split("AND")]
             results.append(dict(score=score, clauses=clauses))
         return results
     except Exception as e:
+        print("exception")
         print(e)
         return []
 

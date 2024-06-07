@@ -124,11 +124,12 @@ void DuckDBFadeFunction(ClientContext &context, TableFunctionInput &data_p, Data
       int* count_ptr = (int*)global_fade_node->alloc_vars["out_count"][0];
       int index = i * n_interventions + data.offset;
       if (count_ptr[index] > 0) {
-        output.SetValue(col++, count,Value::FLOAT( data_ptr[index] / count_ptr[index] ));
+        //std::cout << col << " " << i << " " << n_interventions << " " << data.offset << " " << data_ptr[index] << " " << count_ptr[index] << " " << data_ptr[index]/count_ptr[index] << std::endl;
+        output.SetValue(col++, 0, Value::FLOAT( data_ptr[index] / count_ptr[index] ));
       } else {
-        output.SetValue(col++, count,Value::FLOAT( 0 ));
+        output.SetValue(col++, 0, Value::FLOAT( 0 ));
       }
-      count++;
+      count = 1;
     } else if (name == "stddev") {
       //  sum(x^2)/n - sum(x)^2/n^2
       float* sum_ptr = (float*)global_fade_node->alloc_vars[out_var][0];
@@ -136,11 +137,11 @@ void DuckDBFadeFunction(ClientContext &context, TableFunctionInput &data_p, Data
       int* count_ptr = (int*)global_fade_node->alloc_vars["out_count"][0];
       int index = i * n_interventions + data.offset;
       if (count_ptr[index] > 1) {
-        output.SetValue(col++, count,Value::FLOAT( std::sqrt(sum_2_ptr[index] / count_ptr[index]  - (sum_ptr[index]*sum_ptr[index])/(count_ptr[index]*count_ptr[index]) )));
+        output.SetValue(col++, 0, Value::FLOAT( std::sqrt(sum_2_ptr[index] / count_ptr[index]  - (sum_ptr[index]*sum_ptr[index])/(count_ptr[index]*count_ptr[index]) )));
       } else {
-        output.SetValue(col++, count,Value::FLOAT( 0 ));
+        output.SetValue(col++, 0, Value::FLOAT( 0 ));
       }
-      count++;
+      count = 1;
     }
 
   }
@@ -149,6 +150,7 @@ void DuckDBFadeFunction(ClientContext &context, TableFunctionInput &data_p, Data
 
   data.offset += count;
 	output.SetCardinality(count);
+  // std::cout << output.ToString() << std::endl;
 }
 
 void DuckDBFadeFun::RegisterFunction(BuiltinFunctions &set) {
