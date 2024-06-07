@@ -211,6 +211,11 @@ struct EvalConfig {
   int aggid;
   vector<int> groups;
   vector<string> specs_stack;
+  // gather these if avg included
+  vector<int> groups_count;
+  vector<float> groups_sum;
+  // gather this if stddev is included
+  vector<float> groups_sum_2;
 };
 
 class Fade {

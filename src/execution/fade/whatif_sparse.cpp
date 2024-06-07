@@ -49,7 +49,7 @@ int whatif_sparse_join(int* lhs_lineage, int* rhs_lineage,
 	return 0;
 }
 
-int groupby_agg_incremental_arr_single_group(int oid, int* __restrict__ var_0,
+int groupby_agg_incremental_arr_single_group(int g, int gid, int* lineage, int* __restrict__ var_0,
                                 void* __restrict__  out,
                                 std::unordered_map<int, void*>& input_data_map,
                                 const int start, const int end,
@@ -57,35 +57,39 @@ int groupby_agg_incremental_arr_single_group(int oid, int* __restrict__ var_0,
 	if (func == "count") {
 		int* __restrict__ out_int = (int*)out;
 		for (int i=start; i < end; ++i) {
+			int oid = lineage[i];
 			int row = var_0[i];
-			int col = oid * n_interventions;
-			out_int[col + row] += 1;
+			int col = g * n_interventions;
+			out_int[col + row] += (gid == oid);
 		}
 	} else if (func == "sum" || func == "avg" || func == "stddev") { // sum
 		if (typ == "int") {
 			int* __restrict__  out_int = (int*)out;
 			int *in_arr = reinterpret_cast<int *>(input_data_map[col_idx]);
 			for (int i=start; i < end; ++i) {
-			  int col = oid * n_interventions;
+			  int oid = lineage[i];
+			  int col = g * n_interventions;
 				int row = var_0[i];
-				out_int[col + row] += in_arr[i];
+				out_int[col + row] += in_arr[i] * (gid == oid);
 			}
 		} else {
 			float* __restrict__  out_float = (float*)out;
 			float *in_arr = reinterpret_cast<float *>(input_data_map[col_idx]);
 			for (int i=start; i < end; ++i) {
-			  int col = oid * n_interventions;
+			  int oid = lineage[i];
+			  int col = g * n_interventions;
 				int row = var_0[i];
-				out_float[col + row] += in_arr[i];
+				out_float[col + row] += in_arr[i] * (gid == oid);
 			}
 		}
 	} else if (func == "sum_2") {
 			float* __restrict__  out_float = (float*)out;
 			float *in_arr = reinterpret_cast<float *>(input_data_map[col_idx]);
 			for (int i=start; i < end; ++i) {
-			  int col = oid * n_interventions;
+			  int oid = lineage[i];
+			  int col = g * n_interventions;
 				int row = var_0[i];
-				out_float[col + row] += (in_arr[i] * in_arr[i]);
+				out_float[col + row] += (in_arr[i] * in_arr[i]) * (gid == oid);
 			}
   }
 	return 0;
@@ -241,14 +245,51 @@ void Fade::InterventionSparseEvalPredicate(int thread_id, EvalConfig& config, Ph
 		} else {
       int* forward_lineage_ptr = op->lineage_op->forward_lineage[0].data();
       int* annotations_ptr = dynamic_cast<FadeSparseNode*>(fade_data[fade_data[op->children[0]->id]->opid].get())->annotations.get();
-      vector<vector<int>> filtered_annotations;
-      if (!config.groups.empty()) {
-        for (int g=0; g < config.groups.size(); ++g) {
-          int gid = config.groups[g];
-          filtered_annotations.emplace_back();
-          for (int i=start_end_pair.first; i < start_end_pair.second; ++i) {
-            if (forward_lineage_ptr[i] == gid) {
-              filtered_annotations.back().push_back(annotations_ptr[i]);
+			for (auto& out_var : cur_node->alloc_vars_funcs) {
+				string func = cur_node->alloc_vars_funcs[out_var.first];
+				int col_idx = cur_node->alloc_vars_index[out_var.first];
+				string typ = cur_node->alloc_vars_types[out_var.first];
+        if (config.groups.empty()) {
+          if (func == "count") {
+            for (int i=start_end_pair.first; i < start_end_pair.second; ++i) {
+              int oid = forward_lineage_ptr[i];
+               config.groups_count[oid]++;
+            }
+          } else if (func == "avg" || func == "stddev" || func == "sum") {
+            float *in_arr = reinterpret_cast<float *>(cur_node->input_data_map[col_idx]);
+            for (int i=start_end_pair.first; i < start_end_pair.second; ++i) {
+              int oid = forward_lineage_ptr[i];
+               config.groups_sum[oid] += in_arr[i];
+            }
+            if (func == "stddev") {
+              float *in_arr = reinterpret_cast<float *>(cur_node->input_data_map[col_idx]);
+              for (int i=start_end_pair.first; i < start_end_pair.second; ++i) {
+                int oid = forward_lineage_ptr[i];
+                config.groups_sum_2[oid] += (in_arr[i] * in_arr[i]);
+              }
+            }
+          }
+        } else {
+          for (int g=0; g < config.groups.size(); ++g) {
+            int gid = config.groups[g];
+            if (func == "count") {
+              for (int i=start_end_pair.first; i < start_end_pair.second; ++i) {
+                int oid = forward_lineage_ptr[i];
+                config.groups_count[g] += (oid==gid);
+              }
+            } else if (func == "avg" || func == "stddev" || func == "sum") {
+              float *in_arr = reinterpret_cast<float *>(cur_node->input_data_map[col_idx]);
+              for (int i=start_end_pair.first; i < start_end_pair.second; ++i) {
+                int oid = forward_lineage_ptr[i];
+                 config.groups_sum[g] += in_arr[i] * (oid==gid);
+              }
+              if (func == "stddev") {
+                float *in_arr = reinterpret_cast<float *>(cur_node->input_data_map[col_idx]);
+                for (int i=start_end_pair.first; i < start_end_pair.second; ++i) {
+                  int oid = forward_lineage_ptr[i];
+                  config.groups_sum_2[g] += (oid==gid) * (in_arr[i] * in_arr[i]);
+                }
+              }
             }
           }
         }
@@ -257,7 +298,6 @@ void Fade::InterventionSparseEvalPredicate(int thread_id, EvalConfig& config, Ph
 				string func = cur_node->alloc_vars_funcs[out_var.first];
 				int col_idx = cur_node->alloc_vars_index[out_var.first];
 				string typ = cur_node->alloc_vars_types[out_var.first];
-
         if (config.groups.empty()) {
           groupby_agg_incremental_arr(forward_lineage_ptr,
                                       annotations_ptr,
@@ -267,10 +307,10 @@ void Fade::InterventionSparseEvalPredicate(int thread_id, EvalConfig& config, Ph
                                       col_idx, func, typ);
         } else {
           for (int g=0; g < config.groups.size(); ++g) {
-            groupby_agg_incremental_arr_single_group(g, filtered_annotations[g].data(),
+            groupby_agg_incremental_arr_single_group(g, config.groups[g], forward_lineage_ptr, annotations_ptr,
                                         cur_node->alloc_vars[out_var.first][thread_id],
                                         cur_node->input_data_map,
-                                        0, filtered_annotations[g].size(), cur_node->n_interventions,
+                                        start_end_pair.first, start_end_pair.second, cur_node->n_interventions,
                                         col_idx, func, typ);
           }
         }

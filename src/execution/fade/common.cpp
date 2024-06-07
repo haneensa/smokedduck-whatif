@@ -1018,6 +1018,19 @@ void Fade::GenSparseAndAlloc(EvalConfig& config, PhysicalOperator* op,
 		node->rows  = op->children[0]->lineage_op->chunk_collection.Count();
 		node->n_interventions = fade_data[op->children[0]->id]->n_interventions;
 		node->GroupByAlloc(config.debug, op->type, op->lineage_op, op, config.aggid, config.groups);
+		for (auto& out_var : node->alloc_vars_funcs) {
+				string func = node->alloc_vars_funcs[out_var.first];
+        std::cout << "groups: " << node->n_groups << std::endl;
+        if (func == "count") {
+          config.groups_count.assign(node->n_groups, 0);
+        }
+        if (func == "avg" || func == "stddev" || func == "sum") {
+          config.groups_sum.assign(node->n_groups, 0);
+          if (func == "stddev") {
+            config.groups_sum_2.assign(node->n_groups, 0);
+          }
+        }
+    }
 	}  else if (op->type == PhysicalOperatorType::PROJECTION) {
 		node->n_interventions = fade_data[op->children[0]->id]->n_interventions;
 		node->n_groups = fade_data[op->children[0]->id]->n_groups;

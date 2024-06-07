@@ -80,16 +80,12 @@ def scorpion():
     goodalias = next(iter(goodselection))
     badids = [d['id'] for d in badselection[badalias]]
     goodids = [d['id'] for d in goodselection[goodalias]]
-    badvals = [d['y'] for d in badselection[badalias]]
-    goodvals = [d['y'] for d in goodselection[goodalias]]
     print(sql)
     print(goodids)
     print(badids)
-    print(badvals)
-    print(goodvals)
 
     with smokedduck.connect('intel.db') as con:
-        ret = runscorpion(con, sql, 0, goodids, badids, goodvals, badvals)
+        ret = runscorpion(con, sql, 0, goodids, badids)
     print(ret)
 
   except Exception as e:
@@ -106,9 +102,23 @@ def scorpion():
 
 
 
-def runscorpion(con, sql, aggid, goodids, badids, goodvals, badvals, query_id=None):
+def runscorpion(con, sql, aggid, goodids, badids, query_id=None):
     clear(con)
     allids = goodids + badids
+
+    if (query_id is None):
+        start = time.time()
+        out = con.execute(sql, capture_lineage='lineageAll').df()
+        end = time.time()
+        query_timing = end - start
+        query_id = con.query_id
+        goodvals = out.loc[goodids, 'agg'+str(aggid)]
+        badvals = out.loc[badids, 'agg'+str(aggid)]
+        print(out)
+        print(out.loc[goodids])
+        print(out.loc[badids])
+
+
     mg, mb = np.mean(goodvals), np.mean(badvals)
     goodids = [f"g{id}" for id in goodids]
     badids = [f"g{id}" for id in badids]
@@ -141,15 +151,9 @@ def runscorpion(con, sql, aggid, goodids, badids, goodvals, badvals, query_id=No
         "readings.moteid|readings.voltage",
         "readings.moteid|readings.light",
         "readings.voltage|readings.light",
-        # "readings.moteid|readings.light|readings.voltage",
+        #"readings.moteid|readings.light|readings.voltage",
     ]
 
-    if (query_id is None):
-        start = time.time()
-        out = con.execute(sql, capture_lineage='lineageAll').df()
-        end = time.time()
-        query_timing = end - start
-        query_id = con.query_id
 
     con.execute(f"pragma PrepareLineage({query_id}, false, false, false)")
     results = []
@@ -170,6 +174,7 @@ def run_fade(con, query_id, aggid, allids, spec, fade_q):
         q = f"pragma WhatIfSparse({query_id}, {aggid}, {allids}, '{spec}', false);"
         print(q)
         con.execute(q).fetchdf()
+        #print(con.execute("select * from duckdb_fade()").df())
         faderesults = con.execute(fade_q).fetchdf()
         print(faderesults)
 
