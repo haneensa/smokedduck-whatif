@@ -49,6 +49,48 @@ int whatif_sparse_join(int* lhs_lineage, int* rhs_lineage,
 	return 0;
 }
 
+int groupby_agg_incremental_arr_single_group(int oid, int* __restrict__ var_0,
+                                void* __restrict__  out,
+                                std::unordered_map<int, void*>& input_data_map,
+                                const int start, const int end,
+                                int n_interventions, int col_idx, string func, string typ) {
+	if (func == "count") {
+		int* __restrict__ out_int = (int*)out;
+		for (int i=start; i < end; ++i) {
+			int row = var_0[i];
+			int col = oid * n_interventions;
+			out_int[col + row] += 1;
+		}
+	} else if (func == "sum" || func == "avg" || func == "stddev") { // sum
+		if (typ == "int") {
+			int* __restrict__  out_int = (int*)out;
+			int *in_arr = reinterpret_cast<int *>(input_data_map[col_idx]);
+			for (int i=start; i < end; ++i) {
+			  int col = oid * n_interventions;
+				int row = var_0[i];
+				out_int[col + row] += in_arr[i];
+			}
+		} else {
+			float* __restrict__  out_float = (float*)out;
+			float *in_arr = reinterpret_cast<float *>(input_data_map[col_idx]);
+			for (int i=start; i < end; ++i) {
+			  int col = oid * n_interventions;
+				int row = var_0[i];
+				out_float[col + row] += in_arr[i];
+			}
+		}
+	} else if (func == "sum_2") {
+			float* __restrict__  out_float = (float*)out;
+			float *in_arr = reinterpret_cast<float *>(input_data_map[col_idx]);
+			for (int i=start; i < end; ++i) {
+			  int col = oid * n_interventions;
+				int row = var_0[i];
+				out_float[col + row] += (in_arr[i] * in_arr[i]);
+			}
+  }
+	return 0;
+}
+
 
 int groupby_agg_incremental_arr(int* lineage, int* __restrict__ var_0,
                                 void* __restrict__  out,
@@ -63,7 +105,7 @@ int groupby_agg_incremental_arr(int* lineage, int* __restrict__ var_0,
 			int row = var_0[i];
 			out_int[col + row] += 1;
 		}
-	} else { // sum
+	} else if (func == "sum" || func == "avg" || func == "stddev") { // sum
 		if (typ == "int") {
 			int* __restrict__  out_int = (int*)out;
 			int *in_arr = reinterpret_cast<int *>(input_data_map[col_idx]);
@@ -83,7 +125,16 @@ int groupby_agg_incremental_arr(int* lineage, int* __restrict__ var_0,
 				out_float[col + row] += in_arr[i];
 			}
 		}
-	}
+	} else if (func == "sum_2") {
+			float* __restrict__  out_float = (float*)out;
+			float *in_arr = reinterpret_cast<float *>(input_data_map[col_idx]);
+			for (int i=start; i < end; ++i) {
+				int oid = lineage[i];
+				int col = oid * n_interventions;
+				int row = var_0[i];
+				out_float[col + row] += (in_arr[i] * in_arr[i]);
+			}
+  }
 	return 0;
 }
 
@@ -188,20 +239,45 @@ void Fade::InterventionSparseEvalPredicate(int thread_id, EvalConfig& config, Ph
 			                 cur_node->input_data_map,
 			                 start_end_pair.first, start_end_pair.second);
 		} else {
+      int* forward_lineage_ptr = op->lineage_op->forward_lineage[0].data();
+      int* annotations_ptr = dynamic_cast<FadeSparseNode*>(fade_data[fade_data[op->children[0]->id]->opid].get())->annotations.get();
+      vector<vector<int>> filtered_annotations;
+      if (!config.groups.empty()) {
+        for (int g=0; g < config.groups.size(); ++g) {
+          int gid = config.groups[g];
+          filtered_annotations.emplace_back();
+          for (int i=start_end_pair.first; i < start_end_pair.second; ++i) {
+            if (forward_lineage_ptr[i] == gid) {
+              filtered_annotations.back().push_back(annotations_ptr[i]);
+            }
+          }
+        }
+        start_end_pair.first=0;
+        start_end_pair.second= filtered_annotations[0].size();
+      }
 			for (auto& out_var : cur_node->alloc_vars_funcs) {
 				string func = cur_node->alloc_vars_funcs[out_var.first];
 				int col_idx = cur_node->alloc_vars_index[out_var.first];
 				string typ = cur_node->alloc_vars_types[out_var.first];
-				std::cout << out_var.first << " " << cur_node->alloc_vars[out_var.first][thread_id] << std::endl;
-				groupby_agg_incremental_arr(op->lineage_op->forward_lineage[0].data(),
-				                            dynamic_cast<FadeSparseNode*>(fade_data[fade_data[op->children[0]->id]->opid].get())->annotations.get(),
-				                            cur_node->alloc_vars[out_var.first][thread_id],
-				                            cur_node->input_data_map,
-				                            start_end_pair.first, start_end_pair.second, cur_node->n_interventions,
-				                            col_idx, func, typ);
+
+        if (config.groups.empty()) {
+          groupby_agg_incremental_arr(forward_lineage_ptr,
+                                      annotations_ptr,
+                                      cur_node->alloc_vars[out_var.first][thread_id],
+                                      cur_node->input_data_map,
+                                      start_end_pair.first, start_end_pair.second, cur_node->n_interventions,
+                                      col_idx, func, typ);
+        } else {
+          for (int g=0; g < config.groups.size(); ++g) {
+            groupby_agg_incremental_arr_single_group(g, filtered_annotations[g].data(),
+                                        cur_node->alloc_vars[out_var.first][thread_id],
+                                        cur_node->input_data_map,
+                                        start_end_pair.first, start_end_pair.second, cur_node->n_interventions,
+                                        col_idx, func, typ);
+          }
+        }
 				if (cur_node->num_worker > 1) {
 					// combine into partition 0
-
 					std::unique_lock<std::mutex> lock(cur_node->mtx);
 					if (++cur_node->counter < cur_node->num_worker) {
 						cur_node->cv.wait(lock, [cur_node] { return cur_node->counter  >= cur_node->num_worker; });

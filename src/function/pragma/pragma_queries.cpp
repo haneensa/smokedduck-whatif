@@ -291,7 +291,7 @@ string PragmaSA(ClientContext &context, const FunctionParameters &parameters) {
   int aggid = -1;
 	return Fade::PredicateSearch(op, { batch, mask_size, is_scalar, use_duckdb, debug, prune, incremental,
 	                                  spec, intervention_type, n_interventions, qid, num_workers, prob, topk,
-	                                 false, false, aggid } );
+	                                 false, false, aggid} );
 
 }
 
@@ -306,8 +306,15 @@ string PragmaGetPredicate(ClientContext &context, const FunctionParameters &para
 string PragmaWhatIfSparse(ClientContext &context, const FunctionParameters &parameters) {
 	int qid = parameters.values[0].GetValue<int>();
 	int aggid = parameters.values[1].GetValue<int>();
-	string spec = parameters.values[2].ToString();
-	bool debug = parameters.values[3].GetValue<bool>();
+	// int group_id = parameters.values[2].GetValue<int>();
+  auto list_values = ListValue::GetChildren(parameters.values[2]) ;
+  vector<int> groups;
+	for (idx_t i = 0; i < list_values.size(); i++) {
+		auto &child = list_values[i];
+		groups.push_back(child.GetValue<int>());
+	}
+	string spec = parameters.values[3].ToString();
+	bool debug = parameters.values[4].GetValue<bool>();
 	InterventionType intervention_type =  SEARCH;
 	PhysicalOperator* op = context.client_data->lineage_manager->queryid_to_plan[qid].get();
 	int batch = 4;
@@ -323,7 +330,7 @@ string PragmaWhatIfSparse(ClientContext &context, const FunctionParameters &para
 	return Fade::WhatIfSparse(op, { batch, mask_size, is_scalar, use_duckdb, debug, prune, incremental,
 	                               spec, intervention_type,
 	                               n_interventions, qid, num_workers, prob,
-                                 topk, false, false, aggid } );
+                                 topk, false, false, aggid, groups } );
 
 }
 #endif
@@ -362,6 +369,7 @@ void PragmaQueries::RegisterFunction(BuiltinFunctions &set) {
 
 	set.AddFunction(PragmaFunction::PragmaCall("WhatIfSparse", PragmaWhatIfSparse, {LogicalType::INTEGER,
 	                                                                      LogicalType::INTEGER,
+                                                                        LogicalType::LIST(LogicalType::INTEGER),
 	                                                                      LogicalType::VARCHAR, LogicalType::BOOLEAN}));
 	set.AddFunction(PragmaFunction::PragmaCall("PrepareLineage", PragmaPrepareLineage, {LogicalType::INTEGER, LogicalType::BOOLEAN, LogicalType::BOOLEAN, LogicalType::BOOLEAN}));
 	set.AddFunction(PragmaFunction::PragmaCall("GetPredicate", PragmaGetPredicate, {LogicalType::INTEGER}));
