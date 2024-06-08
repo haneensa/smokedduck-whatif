@@ -126,12 +126,15 @@ def runscorpion(con, sql, aggid, goodids, badids, goodvals, badvals, query_id=No
         (row_number() over ())-1 as rowid,
         {avgbad} as avgbad, 
         {maxgood} as maxgood, {minbad} as minbad,{maxbad} as maxbad,
-        {len(badids)} as nb  FROM duckdb_fade()
+        {len(badids)} as nb ,
+        -- (avgbad/{mb}/{len(badids)})-(maxgood/{mg}) as score
+        maxbad as score
+        FROM duckdb_fade()
     )
-    SELECT *, avgbad-maxgood as score
+    SELECT *
     FROM tmp
     WHERE avgbad != 'NaN' and maxgood != 'NaN'
-    ORDER BY (avgbad/{mb}/{len(badids)})-(maxgood/{mg}) DESC
+    ORDER BY score desc 
     LIMIT 20"""
     #fade_q = f"SELECT * FROM duckdb_fade()"
 
@@ -154,6 +157,11 @@ def runscorpion(con, sql, aggid, goodids, badids, goodvals, badvals, query_id=No
     for spec in specs:
         results.extend(run_fade(con, query_id, aggid, allids, spec, fade_q))
     results.sort(key=lambda d: d['score'], reverse=True)
+
+
+    for res in results[:10]:
+        print(res['score'])
+        print(res['clauses'])
 
     return dict(
         status="final",

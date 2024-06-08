@@ -24,6 +24,7 @@ goodvals = [2.0906440689561396, 2.4038032833689593, 2.5845578016293906, 2.590362
 
 with smokedduck.connect("intel.db") as con:
     o = runscorpion(con, sql, aggid, goodids, badids, goodvals, badvals)
+    print()
     for r in o['results']:
         print(r['score'])
         print(r['clauses'])
