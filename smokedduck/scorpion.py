@@ -137,8 +137,8 @@ def runscorpion(con, sql, aggid, goodids, badids, goodvals, badvals, query_id=No
 
     specs = [
         "readings.moteid",
-        "readings.voltage",
-        "readings.light",
+        #"readings.voltage",
+        #"readings.light",
         #"readings.moteid|readings.voltage",
     ]
 
