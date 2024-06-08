@@ -327,10 +327,11 @@ string PragmaWhatIfSparse(ClientContext &context, const FunctionParameters &para
 	int num_workers = 1;
 	float prob = 1;
   int topk = 0;
+  bool use_gb_backward_lineage = true;
 	return Fade::WhatIfSparse(op, { batch, mask_size, is_scalar, use_duckdb, debug, prune, incremental,
 	                               spec, intervention_type,
 	                               n_interventions, qid, num_workers, prob,
-                                 topk, false, false, aggid, groups } );
+                                 topk, use_gb_backward_lineage, false, aggid, groups } );
 
 }
 #endif
