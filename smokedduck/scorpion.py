@@ -145,18 +145,6 @@ def runscorpion(con, sql, aggid, goodids, badids, query_id=None):
 
     specs = [
         "readings.moteid",
-<<<<<<< HEAD
-        "readings.voltage",
-        "readings.light",
-        "readings.moteid|readings.voltage",
-        "readings.moteid|readings.light",
-        "readings.voltage|readings.light",
-        #"readings.moteid|readings.light|readings.voltage",
-    ]
-
-
-    con.execute(f"pragma PrepareLineage({query_id}, false, false, false)")
-=======
         #"readings.voltage",
         #"readings.light",
         #"readings.moteid|readings.voltage",
@@ -165,9 +153,10 @@ def runscorpion(con, sql, aggid, goodids, badids, query_id=None):
         #"readings.moteid|readings.light|readings.voltage",
     ]
 
-    use_gb_backward_lineage = 'true'
-    con.execute(f"pragma PrepareLineage({query_id}, false, false, {use_gb_backward_lineage})")
->>>>>>> whatif-refactored
+
+    con.execute(f"pragma PrepareLineage({query_id}, false, false, false)")
+    #use_gb_backward_lineage = 'true'
+    #con.execute(f"pragma PrepareLineage({query_id}, false, false, {use_gb_backward_lineage})")
     results = []
     for spec in specs:
         results.extend(run_fade(con, query_id, aggid, allids, spec, fade_q))
