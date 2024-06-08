@@ -132,7 +132,7 @@ def runscorpion(con, sql, aggid, goodids, badids, goodvals, badvals, query_id=No
     FROM tmp
     WHERE avgbad != 'NaN' and maxgood != 'NaN'
     ORDER BY (avgbad/{mb}/{len(badids)})-(maxgood/{mg}) DESC
-    LIMIT 10"""
+    LIMIT 20"""
     #fade_q = f"SELECT * FROM duckdb_fade()"
 
     specs = [
