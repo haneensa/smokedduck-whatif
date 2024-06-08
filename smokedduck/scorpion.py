@@ -80,14 +80,12 @@ def scorpion():
     goodalias = next(iter(goodselection))
     badids = [d['id'] for d in badselection[badalias]]
     goodids = [d['id'] for d in goodselection[goodalias]]
-    badvals = [d['y'] for d in badselection[badalias]]
-    goodvals = [d['y'] for d in goodselection[goodalias]]
     print(sql)
     print(goodids)
     print(badids)
 
     with smokedduck.connect('intel.db') as con:
-        ret = runscorpion(con, sql, 0, goodids, badids, goodvals, badvals)
+        ret = runscorpion(con, sql, 0, goodids, badids)
     print(ret)
 
   except Exception as e:
@@ -104,7 +102,7 @@ def scorpion():
 
 
 
-def runscorpion(con, sql, aggid, goodids, badids, goodvals, badvals, query_id=None):
+def runscorpion(con, sql, aggid, goodids, badids, query_id=None):
     clear(con)
     allids = goodids + badids
 
@@ -142,12 +140,12 @@ def runscorpion(con, sql, aggid, goodids, badids, goodvals, badvals, query_id=No
     )
     SELECT *, avgbad-maxgood as score
     FROM tmp
-    WHERE avgbad != 'NaN' and maxgood != 'NaN'
-    ORDER BY (avgbad/{mb}/{len(badids)})-(maxgood/{mg}) DESC
+    ORDER BY score desc
     LIMIT 10"""
 
     specs = [
         "readings.moteid",
+<<<<<<< HEAD
         "readings.voltage",
         "readings.light",
         "readings.moteid|readings.voltage",
@@ -158,6 +156,18 @@ def runscorpion(con, sql, aggid, goodids, badids, goodvals, badvals, query_id=No
 
 
     con.execute(f"pragma PrepareLineage({query_id}, false, false, false)")
+=======
+        #"readings.voltage",
+        #"readings.light",
+        #"readings.moteid|readings.voltage",
+        #"readings.moteid|readings.light",
+        #"readings.voltage|readings.light",
+        #"readings.moteid|readings.light|readings.voltage",
+    ]
+
+    use_gb_backward_lineage = 'true'
+    con.execute(f"pragma PrepareLineage({query_id}, false, false, {use_gb_backward_lineage})")
+>>>>>>> whatif-refactored
     results = []
     for spec in specs:
         results.extend(run_fade(con, query_id, aggid, allids, spec, fade_q))

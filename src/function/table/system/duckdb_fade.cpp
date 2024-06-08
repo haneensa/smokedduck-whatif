@@ -103,44 +103,62 @@ void DuckDBFadeFunction(ClientContext &context, TableFunctionInput &data_p, Data
   }
   for (int i=0; i < global_fade_node->n_groups; ++i) {
     if (name == "count") {
+      int count_val = global_config.groups_count[i];
       int* count_ptr = (int*)global_fade_node->alloc_vars["out_count"][0];
       int index = i * n_interventions + data.offset;
-      // output.SetValue(col++, count, Value::INTEGER( (int)count_ptr[index] ));
+      output.SetValue(col++, 0, Value::INTEGER( count_val-count_ptr[index] ));
       //count++;
-      Vector in_index(LogicalType::INTEGER,(data_ptr_t)(count_ptr + index));
-      output.data[col++].Reference(in_index);
-      count = limit;
+      // Vector in_index(LogicalType::INTEGER,(data_ptr_t)(count_ptr + index));
+      // output.data[col++].Reference(in_index);
+      // count = limit;
+      count = 1;
     } else if (name  == "sum" || name == "sum_no_overflow") {
       float* data_ptr = (float*)global_fade_node->alloc_vars[out_var][0];
+      float sum = global_config.groups_sum[i];
       int index = i * n_interventions + data.offset;
-      //output.SetValue(col++, count,Value::FLOAT( data_ptr[index] ));
-      //count++;
-      Vector in_index(LogicalType::FLOAT,(data_ptr_t)(data_ptr + index));
-      output.data[col++].Reference(in_index);
-      count = limit;
+      output.SetValue(col++, 0, Value::FLOAT( sum - data_ptr[index] ));
+      count = 1;
+      //Vector in_index(LogicalType::FLOAT,(data_ptr_t)(data_ptr + index));
+      //output.data[col++].Reference(in_index);
+      //count = limit;
     } else if (name  == "avg") {
       // TODO: finalize aggregate and then have a pointer to the final result
       float* data_ptr = (float*)global_fade_node->alloc_vars[out_var][0];
       int* count_ptr = (int*)global_fade_node->alloc_vars["out_count"][0];
       int index = i * n_interventions + data.offset;
-      if (count_ptr[index] > 0) {
-        output.SetValue(col++, count,Value::FLOAT( data_ptr[index] / count_ptr[index] ));
+      float new_sum = global_config.groups_sum[i] - data_ptr[index];
+      int new_count = global_config.groups_count[i] - count_ptr[index];
+      if (new_count  > 0) {
+        //std::cout << new_sum / new_count << " " << global_config.groups_sum[i]/global_config.groups_count[i] << " " << 
+        //  global_config.groups_sum[i] << " " << global_config.groups_count[i] << " " << col << " " << i << " " << n_interventions << 
+        //  " " << data.offset << " " << data_ptr[index] << " " << count_ptr[index] << " " << data_ptr[index]/count_ptr[index] << std::endl;
+        output.SetValue(col++, 0, Value::FLOAT( new_sum  / new_count ));
       } else {
-        output.SetValue(col++, count,Value::FLOAT( 0 ));
+        output.SetValue(col++, 0, Value::FLOAT( 0 ));
       }
-      count++;
+      count = 1;
     } else if (name == "stddev") {
       //  sum(x^2)/n - sum(x)^2/n^2
+      //  (sum(x^2) - sum(x_remove^2))/(n - n_remove) - (sum(x) - sum(x_remove))^2/(n - n_remove)^2
       float* sum_ptr = (float*)global_fade_node->alloc_vars[out_var][0];
       float* sum_2_ptr = (float*)global_fade_node->alloc_vars["out_sum_2"][0];
       int* count_ptr = (int*)global_fade_node->alloc_vars["out_count"][0];
       int index = i * n_interventions + data.offset;
-      if (count_ptr[index] > 1) {
-        output.SetValue(col++, count,Value::FLOAT( std::sqrt(sum_2_ptr[index] / count_ptr[index]  - (sum_ptr[index]*sum_ptr[index])/(count_ptr[index]*count_ptr[index]) )));
+      float sum_2_removed = sum_2_ptr[index];
+      float sum_2 = global_config.groups_sum_2[i];
+      float sum_removed = sum_ptr[index];
+      float sum = global_config.groups_sum[i];
+      int count_removed = count_ptr[index];
+      int count_val = global_config.groups_count[i];
+      float sum_base = sum - sum_removed;
+      int count_base = count_val - count_removed; 
+      if (count_base > 0) {
+        output.SetValue(col++, 0, Value::FLOAT( std::sqrt( (sum_2 - sum_2_removed) / count_base  - (sum_base*sum_base)/(count_base*count_base) )));
       } else {
-        output.SetValue(col++, count,Value::FLOAT( 0 ));
+        //output.SetValue(col++, 0, Value(nullptr));
+        output.SetValue(col++, 0, Value::FLOAT( 0 ));
       }
-      count++;
+      count = 1;
     }
 
   }
@@ -149,6 +167,7 @@ void DuckDBFadeFunction(ClientContext &context, TableFunctionInput &data_p, Data
 
   data.offset += count;
 	output.SetCardinality(count);
+  // std::cout << output.ToString() << std::endl;
 }
 
 void DuckDBFadeFun::RegisterFunction(BuiltinFunctions &set) {
