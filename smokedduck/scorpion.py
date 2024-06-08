@@ -104,7 +104,6 @@ def scorpion():
 
 def runscorpion(con, sql, aggid, goodids, badids, query_id=None):
     clear(con)
-    allids = goodids + badids
 
     if (query_id is None):
         start = time.time()
@@ -112,12 +111,16 @@ def runscorpion(con, sql, aggid, goodids, badids, query_id=None):
         end = time.time()
         query_timing = end - start
         query_id = con.query_id
+        sorted_index = out['hr'].sort_values().index
+        goodids = [sorted_index[i] for i in goodids]
+        badids = [sorted_index[i] for i in badids]
         goodvals = out.loc[goodids, 'agg'+str(aggid)]
         badvals = out.loc[badids, 'agg'+str(aggid)]
         print(out)
         print(out.loc[goodids])
         print(out.loc[badids])
 
+    allids = goodids + badids
 
     mg, mb = np.mean(goodvals), np.mean(badvals)
     goodids = [f"g{id}" for id in goodids]
@@ -153,8 +156,7 @@ def runscorpion(con, sql, aggid, goodids, badids, query_id=None):
         #"readings.moteid|readings.light|readings.voltage",
     ]
 
-    use_gb_backward_lineage = 'true'
-    con.execute(f"pragma PrepareLineage({query_id}, false, false, {use_gb_backward_lineage})")
+    con.execute(f"pragma PrepareLineage({query_id}, false, false, true)")
     results = []
     for spec in specs:
         results.extend(run_fade(con, query_id, aggid, allids, spec, fade_q))
@@ -173,6 +175,7 @@ def run_fade(con, query_id, aggid, allids, spec, fade_q):
         q = f"pragma WhatIfSparse({query_id}, {aggid}, {allids}, '{spec}', false);"
         print(q)
         con.execute(q).fetchdf()
+        print("done")
         #print(con.execute("select * from duckdb_fade()").df())
         faderesults = con.execute(fade_q).fetchdf()
         print(faderesults)

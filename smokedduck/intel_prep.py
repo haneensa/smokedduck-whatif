@@ -12,25 +12,10 @@ specs = args.specs
 
 with smokedduck.connect("intel.db") as con:
     con.execute("drop table if exists readings")
-    #create_sql = """CREATE TABLE readings as SELECT * FROM 'intel.csv'"""
-    create_sql = """CREATE TABLE readings (
-        date date,
-        tstamp time without time zone,
-        epoch integer,
-        moteid integer,
-        temp float,
-        humidity float,
-        light float,
-        voltage float,
-        id integer NOT NULL,
-        hr timestamp without time zone
-    );"""
-
+    create_sql = """CREATE TABLE readings as SELECT * FROM 'intel.csv'"""
     con.execute(create_sql)
 
-    con.execute("COPY readings FROM 'intel.csv' WITH (HEADER true, DELIMITER '\t', nullstr '\\N');")
     print(con.execute("select * from readings").df())
-
 
     # hack since we don't have guards for null values
     con.execute("""UPDATE readings SET temp = COALESCE(temp, 0);""")
