@@ -146,11 +146,11 @@ def runscorpion(con, sql, aggid, goodids, badids, query_id=None):
 
     specs = [
         "readings.moteid",
-        "readings.voltage",
-        "readings.light",
-        "readings.moteid|readings.voltage",
-        "readings.moteid|readings.light",
-        "readings.voltage|readings.light",
+        #"readings.voltage",
+        #"readings.light",
+        #"readings.moteid|readings.voltage",
+        #"readings.moteid|readings.light",
+        #"readings.voltage|readings.light",
         #"readings.moteid|readings.light|readings.voltage",
     ]
 
@@ -163,7 +163,7 @@ def runscorpion(con, sql, aggid, goodids, badids, query_id=None):
     print(results)
     return dict(
         status="final",
-        results=results[:5]
+        results=results[:10]
     )
 
 def run_fade(con, query_id, aggid, allids, spec, fade_q):
