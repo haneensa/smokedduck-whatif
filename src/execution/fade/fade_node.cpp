@@ -193,6 +193,11 @@ void FadeNode::allocate_agg_output(string typ, int t, int n_interventions, strin
 void FadeNode::GroupByGetCachedData(EvalConfig& config, shared_ptr<OperatorLineage> lop,
                                 PhysicalOperator* op, vector<unique_ptr<Expression>>& aggregates,
                                 int keys_size) {
+  if (config.qid == global_config.qid && global_fade_node != nullptr) {
+    input_data_map = std::move(global_fade_node->input_data_map);
+    global_fade_node->input_data_map.clear();
+    return;
+  } 
 	// Populate the aggregate child vectors
 	for (idx_t i=0; i < aggregates.size(); i++) {
 		auto &aggr = aggregates[i]->Cast<BoundAggregateExpression>();

@@ -326,9 +326,9 @@ void Fade::InterventionSparseEvalPredicate(int thread_id, EvalConfig& config, Ph
 }
 
 string Fade::WhatIfSparse(PhysicalOperator *op, EvalConfig config) {
-  global_fade_node = nullptr;
+  // TODO: cache intermediatees if this is called multiple times on the same lineage
   std::cout << "WhatIfSparse" << std::endl;
-  	std::cout << op->ToString() << std::endl;
+  std::cout << op->ToString() << std::endl;
   std::chrono::steady_clock::time_point start_time, end_time;
   std::chrono::duration<double> time_span;
 
@@ -343,7 +343,7 @@ string Fade::WhatIfSparse(PhysicalOperator *op, EvalConfig config) {
   time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
   double gen_time = time_span.count();
 
-  // Load data from cached execution
+  // Load data from cached execution -- TODO: only if there is any decimal data type
   start_time = std::chrono::steady_clock::now();
   Fade::GetCachedData(config, op, fade_data, columns_spec);
   end_time = std::chrono::steady_clock::now();
@@ -367,6 +367,7 @@ string Fade::WhatIfSparse(PhysicalOperator *op, EvalConfig config) {
   end_time = std::chrono::steady_clock::now();
   time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
   double eval_time = time_span.count();
+  global_fade_node = nullptr;
   global_fade_node = std::move(fade_data[ fade_data[op->id]->opid ]);
   global_config = config;
   return "SELECT 1"; // from duckdb_fade()";
