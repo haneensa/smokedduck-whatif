@@ -40,7 +40,7 @@ public:
 	//! from the zero and incrementing it for the lowest levels of the tree
 	//! 2.  call CreateOperatorLineage to allocate lineage_op for main thread
 	//! TODO: understand multi-threading and support it
-	void InitOperatorPlan(ClientContext &context, PhysicalOperator *op);
+	void InitOperatorPlan(ClientContext &context, PhysicalOperator *op, vector<string> names);
 	void CreateOperatorLineage(ClientContext &context, PhysicalOperator *op, bool trace_lineage);
 	void CreateLineageTables(ClientContext &context, PhysicalOperator *op, idx_t query_id);
 	void StoreQueryLineage(ClientContext &context, unique_ptr<PhysicalOperator> op, string query);

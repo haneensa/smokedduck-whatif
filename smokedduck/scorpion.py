@@ -102,7 +102,7 @@ def scorpion():
 
 
 
-def runscorpion(con, sql, aggid, goodids, badids, query_id=None):
+def runscorpion(con, sql, agg_alias, goodids, badids, query_id=None):
     clear(con)
 
     if (query_id is None):
@@ -114,8 +114,8 @@ def runscorpion(con, sql, aggid, goodids, badids, query_id=None):
         sorted_index = out['hr'].sort_values().index
         goodids = [sorted_index[i] for i in goodids]
         badids = [sorted_index[i] for i in badids]
-        goodvals = out.loc[goodids, 'agg'+str(aggid)]
-        badvals = out.loc[badids, 'agg'+str(aggid)]
+        goodvals = out.loc[goodids, agg_alias]
+        badvals = out.loc[badids, agg_alias]
         print(out)
         print(out.loc[goodids])
         print(out.loc[badids])
@@ -159,7 +159,7 @@ def runscorpion(con, sql, aggid, goodids, badids, query_id=None):
     con.execute(f"pragma PrepareLineage({query_id}, false, false, true)")
     results = []
     for spec in specs:
-        results.extend(run_fade(con, query_id, aggid, allids, spec, fade_q))
+        results.extend(run_fade(con, query_id, agg_alias, allids, spec, fade_q))
     results.sort(key=lambda d: d['score'], reverse=True)
     print(results)
     return dict(
@@ -167,12 +167,12 @@ def runscorpion(con, sql, aggid, goodids, badids, query_id=None):
         results=results[:5]
     )
 
-def run_fade(con, query_id, aggid, allids, spec, fade_q):
+def run_fade(con, query_id, agg_alias, allids, spec, fade_q):
     print(fade_q)
     print(f"Run fade with spec {spec}")
     results = []
     try: 
-        q = f"pragma WhatIfSparse({query_id}, {aggid}, {allids}, '{spec}', false);"
+        q = f"pragma WhatIfSparse({query_id}, {agg_alias}, {allids}, '{spec}', false);"
         print(q)
         con.execute(q).fetchdf()
         print("done")

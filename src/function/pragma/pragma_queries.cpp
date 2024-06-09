@@ -305,8 +305,8 @@ string PragmaGetPredicate(ClientContext &context, const FunctionParameters &para
 
 string PragmaWhatIfSparse(ClientContext &context, const FunctionParameters &parameters) {
 	int qid = parameters.values[0].GetValue<int>();
-	int aggid = parameters.values[1].GetValue<int>();
-	// int group_id = parameters.values[2].GetValue<int>();
+	string agg_alias = parameters.values[1].ToString();
+  int aggid = 0;
   auto list_values = ListValue::GetChildren(parameters.values[2]) ;
   vector<int> groups;
 	for (idx_t i = 0; i < list_values.size(); i++) {
@@ -317,6 +317,15 @@ string PragmaWhatIfSparse(ClientContext &context, const FunctionParameters &para
 	bool debug = parameters.values[4].GetValue<bool>();
 	InterventionType intervention_type =  SEARCH;
 	PhysicalOperator* op = context.client_data->lineage_manager->queryid_to_plan[qid].get();
+  
+  std::cout << "WhatifSparse -> " << op->lineage_op->names.size() << std::endl;
+  for (int i=0; i < op->lineage_op->names.size(); i++) {
+    if (agg_alias == op->lineage_op->names[i]) {
+      aggid = i;
+      std::cout <<aggid << " " << op->lineage_op->names[i] << std::endl;
+    }
+  }
+
 	int batch = 4;
 	int mask_size = 16;
 	bool is_scalar = true;
@@ -369,7 +378,7 @@ void PragmaQueries::RegisterFunction(BuiltinFunctions &set) {
                                                                       LogicalType::BOOLEAN}));
 
 	set.AddFunction(PragmaFunction::PragmaCall("WhatIfSparse", PragmaWhatIfSparse, {LogicalType::INTEGER,
-	                                                                      LogicalType::INTEGER,
+	                                                                      LogicalType::VARCHAR,
                                                                         LogicalType::LIST(LogicalType::INTEGER),
 	                                                                      LogicalType::VARCHAR, LogicalType::BOOLEAN}));
 	set.AddFunction(PragmaFunction::PragmaCall("PrepareLineage", PragmaPrepareLineage, {LogicalType::INTEGER, LogicalType::BOOLEAN, LogicalType::BOOLEAN, LogicalType::BOOLEAN}));

@@ -72,6 +72,7 @@ public:
   std::vector<std::vector<int>> gb_backward_lineage;
 
   std::unordered_map<int, std::vector<int>> forward_lineage_list[2];
+  vector<string> names;
 };
 
 

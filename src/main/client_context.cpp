@@ -422,7 +422,7 @@ unique_ptr<PendingQueryResult> ClientContext::PendingPreparedStatement(ClientCon
 	}
 #ifdef LINEAGE
 	// Always annotate plan with lineage
-	client_data->lineage_manager->InitOperatorPlan(*this, statement.plan.get());
+	client_data->lineage_manager->InitOperatorPlan(*this, statement.plan.get(), statement.names);
 #endif
 	auto stream_result = parameters.allow_stream_result && statement.properties.allow_stream_result;
 	if (!stream_result && statement.properties.return_type == StatementReturnType::QUERY_RESULT) {
