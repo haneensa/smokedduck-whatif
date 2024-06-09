@@ -148,12 +148,12 @@ def runscorpion(con, sql, aggid, goodids, badids, query_id=None):
 
     specs = [
         "readings.moteid",
-        #"readings.voltage",
-        #"readings.light",
-        #"readings.moteid|readings.voltage",
-        #"readings.moteid|readings.light",
-        #"readings.voltage|readings.light",
-        #"readings.moteid|readings.light|readings.voltage",
+        "readings.voltage",
+        "readings.light",
+        "readings.moteid|readings.voltage",
+        "readings.moteid|readings.light",
+        "readings.voltage|readings.light",
+        "readings.moteid|readings.light|readings.voltage",
     ]
 
     con.execute(f"pragma PrepareLineage({query_id}, false, false, true)")
@@ -176,7 +176,7 @@ def run_fade(con, query_id, aggid, allids, spec, fade_q):
         print(q)
         con.execute(q).fetchdf()
         print("done")
-        #print(con.execute("select * from duckdb_fade()").df())
+        # print(con.execute("select * from duckdb_fade()").df())
         faderesults = con.execute(fade_q).fetchdf()
         print(faderesults)
 
