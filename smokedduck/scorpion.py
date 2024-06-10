@@ -85,7 +85,7 @@ def scorpion():
     print(badids)
 
     with smokedduck.connect('intel.db') as con:
-        ret = runscorpion(con, sql, 0, goodids, badids)
+        ret = runscorpion(con, sql, badalias, goodids, badids)
     print(ret)
 
   except Exception as e:
