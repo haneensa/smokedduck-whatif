@@ -89,6 +89,8 @@ def scorpion():
     print(ret)
 
   except Exception as e:
+      import traceback
+      traceback.print_exc()
       print(e)
       ret = dict(
               status="final",
@@ -104,7 +106,6 @@ def scorpion():
 
 def runscorpion(con, sql, aggid, goodids, badids, query_id=None):
     clear(con)
-    allids = goodids + badids
 
     if (query_id is None):
         start = time.time()
@@ -112,9 +113,18 @@ def runscorpion(con, sql, aggid, goodids, badids, query_id=None):
         end = time.time()
         query_timing = end - start
         query_id = con.query_id
-        goodvals = out.loc[goodids, 'agg'+str(aggid)]
-        badvals = out.loc[badids, 'agg'+str(aggid)]
+        sorted_index = out['hrint'].sort_values().index
+        goodids = [sorted_index[i] for i in goodids]
+        badids = [sorted_index[i] for i in badids]
+        allids = goodids + badids
+        goodvals = out.loc[goodids, 'temp']#agg'+str(aggid)]
+        badvals = out.loc[badids, 'temp']#agg'+str(aggid)]
         print(out)
+        print("badids, goodids")
+        print(badids)
+        print(goodids)
+        print(badvals)
+        print(goodvals)
         print(out.loc[goodids])
         print(out.loc[badids])
 
@@ -136,20 +146,24 @@ def runscorpion(con, sql, aggid, goodids, badids, query_id=None):
         pid,
         {avgbad} as avgbad, 
         {maxgood} as maxgood, {minbad} as minbad,{maxbad} as maxbad,
-        {len(badids)} as nb  FROM duckdb_fade()
+        {len(badids)} as nb,
+        FROM duckdb_fade()
+    ), tmp2 as (
+    select *, (avgbad/{mb}/{len(badids)})-(maxgood/{mg}) as score
+    from tmp
     )
-    SELECT *, avgbad-maxgood as score
-    FROM tmp
+    SELECT *
+    FROM tmp2
     WHERE avgbad != 'NaN' and maxgood != 'NaN'
-    ORDER BY (avgbad/{mb}/{len(badids)})-(maxgood/{mg}) DESC
+    ORDER BY score desc
     LIMIT 10"""
 
     specs = [
         "readings.moteid",
-        #"readings.voltage",
-        #"readings.light",
-        #"readings.moteid|readings.voltage",
-        #"readings.moteid|readings.light",
+        "readings.voltage",
+        "readings.light",
+        "readings.moteid|readings.voltage",
+        "readings.moteid|readings.light",
         #"readings.voltage|readings.light",
         #"readings.moteid|readings.light|readings.voltage",
     ]
@@ -174,9 +188,10 @@ def run_fade(con, query_id, aggid, allids, spec, fade_q):
         q = f"pragma WhatIfSparse({query_id}, {aggid}, {allids}, '{spec}', false);"
         print(q)
         con.execute(q).fetchdf()
-        #print(con.execute("select * from duckdb_fade()").df())
+        print(con.execute("select * from duckdb_fade() limit 10").df())
         faderesults = con.execute(fade_q).fetchdf()
         print(faderesults)
+
 
         for i in range(10):
             score = float(faderesults['score'][i])
