@@ -78,12 +78,15 @@ idx_t PlanAnnotator(PhysicalOperator *op, idx_t counter) {
 	return counter + 1;
 }
 
-void LineageManager::InitOperatorPlan(ClientContext &context, PhysicalOperator *op) {
+void LineageManager::InitOperatorPlan(ClientContext &context, PhysicalOperator *op, vector<string> names) {
 	if (op->type == PhysicalOperatorType::EXECUTE) {
-		InitOperatorPlan(context, &dynamic_cast<PhysicalExecute*>(op)->plan);
+		InitOperatorPlan(context, &dynamic_cast<PhysicalExecute*>(op)->plan, names);
 	}
 	PlanAnnotator(op, 0);
 	CreateOperatorLineage(context, op, trace_lineage);
+  if (op->lineage_op) {
+    op->lineage_op->names = std::move(names);
+  }
 }
 
 void LineageManager::CreateLineageTables(ClientContext &context, PhysicalOperator *op, idx_t query_id) {

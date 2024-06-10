@@ -94,55 +94,6 @@ int groupby_agg_incremental_arr_single_group_bw(int g, std::vector<int>& bw_line
 	return 0;
 }
 
-
-
-int groupby_agg_incremental_arr_single_group(int g, int gid, int* lineage, int* __restrict__ var_0,
-                                void* __restrict__  out,
-                                std::unordered_map<int, void*>& input_data_map,
-                                const int start, const int end,
-                                int n_interventions, int col_idx, string func, string typ) {
-	if (func == "count") {
-		int* __restrict__ out_int = (int*)out;
-		for (int i=start; i < end; ++i) {
-			int oid = lineage[i];
-			int row = var_0[i];
-			int col = g * n_interventions;
-			out_int[col + row] += (gid == oid);
-		}
-	} else if (func == "sum" || func == "avg" || func == "stddev") { // sum
-		if (typ == "int") {
-			int* __restrict__  out_int = (int*)out;
-			int *in_arr = reinterpret_cast<int *>(input_data_map[col_idx]);
-			for (int i=start; i < end; ++i) {
-			  int oid = lineage[i];
-			  int col = g * n_interventions;
-				int row = var_0[i];
-				out_int[col + row] += in_arr[i] * (gid == oid);
-			}
-		} else {
-			float* __restrict__  out_float = (float*)out;
-			float *in_arr = reinterpret_cast<float *>(input_data_map[col_idx]);
-			for (int i=start; i < end; ++i) {
-			  int oid = lineage[i];
-			  int col = g * n_interventions;
-				int row = var_0[i];
-				out_float[col + row] += in_arr[i] * (gid == oid);
-			}
-		}
-	} else if (func == "sum_2") {
-			float* __restrict__  out_float = (float*)out;
-			float *in_arr = reinterpret_cast<float *>(input_data_map[col_idx]);
-			for (int i=start; i < end; ++i) {
-			  int oid = lineage[i];
-			  int col = g * n_interventions;
-				int row = var_0[i];
-				out_float[col + row] += (in_arr[i] * in_arr[i]) * (gid == oid);
-			}
-  }
-	return 0;
-}
-
-
 int groupby_agg_incremental_arr(int* lineage, int* __restrict__ var_0,
                                 void* __restrict__  out,
                                 std::unordered_map<int, void*>& input_data_map,
@@ -317,47 +268,22 @@ void Fade::InterventionSparseEvalPredicate(int thread_id, EvalConfig& config, Ph
             }
           }
         } else {
-          if (config.use_gb_backward_lineage) {
-            for (int g=0; g < config.groups.size(); ++g) {
-              int gid = config.groups[g];
-              std::vector<int>& bw_lineage = op->lineage_op->gb_backward_lineage[gid];
-              if (func == "count") {
-                config.groups_count[g] = bw_lineage.size();
-              } else if (func == "avg" || func == "stddev" || func == "sum") {
+          for (int g=0; g < config.groups.size(); ++g) {
+            int gid = config.groups[g];
+            std::vector<int>& bw_lineage = op->lineage_op->gb_backward_lineage[gid];
+            if (func == "count") {
+              config.groups_count[g] = bw_lineage.size();
+            } else if (func == "avg" || func == "stddev" || func == "sum") {
+              float *in_arr = reinterpret_cast<float *>(cur_node->input_data_map[col_idx]);
+              for (int i=0; i < bw_lineage.size(); ++i) {
+                int iid = bw_lineage[i];
+                 config.groups_sum[g] += in_arr[iid];
+              }
+              if (func == "stddev") {
                 float *in_arr = reinterpret_cast<float *>(cur_node->input_data_map[col_idx]);
                 for (int i=0; i < bw_lineage.size(); ++i) {
                   int iid = bw_lineage[i];
-                   config.groups_sum[g] += in_arr[iid];
-                }
-                if (func == "stddev") {
-                  float *in_arr = reinterpret_cast<float *>(cur_node->input_data_map[col_idx]);
-                  for (int i=0; i < bw_lineage.size(); ++i) {
-                    int iid = bw_lineage[i];
-                    config.groups_sum_2[g] += (in_arr[iid] * in_arr[iid]);
-                  }
-                }
-              }
-            }
-          } else {
-               for (int g=0; g < config.groups.size(); ++g) {
-              int gid = config.groups[g];
-              if (func == "count") {
-                for (int i=start_end_pair.first; i < start_end_pair.second; ++i) {
-                  int oid = forward_lineage_ptr[i];
-                  config.groups_count[g] += (oid==gid);
-                }
-              } else if (func == "avg" || func == "stddev" || func == "sum") {
-                float *in_arr = reinterpret_cast<float *>(cur_node->input_data_map[col_idx]);
-                for (int i=start_end_pair.first; i < start_end_pair.second; ++i) {
-                  int oid = forward_lineage_ptr[i];
-                   config.groups_sum[g] += in_arr[i] * (oid==gid);
-                }
-                if (func == "stddev") {
-                  float *in_arr = reinterpret_cast<float *>(cur_node->input_data_map[col_idx]);
-                  for (int i=start_end_pair.first; i < start_end_pair.second; ++i) {
-                    int oid = forward_lineage_ptr[i];
-                    config.groups_sum_2[g] += (oid==gid) * (in_arr[i] * in_arr[i]);
-                  }
+                  config.groups_sum_2[g] += (in_arr[iid] * in_arr[iid]);
                 }
               }
             }
@@ -377,20 +303,12 @@ void Fade::InterventionSparseEvalPredicate(int thread_id, EvalConfig& config, Ph
                                       col_idx, func, typ);
         } else {
           for (int g=0; g < config.groups.size(); ++g) {
-            if (config.use_gb_backward_lineage) {
-              int gid = config.groups[g];
-              groupby_agg_incremental_arr_single_group_bw(g, op->lineage_op->gb_backward_lineage[gid], annotations_ptr,
-                                          cur_node->alloc_vars[out_var.first][thread_id],
-                                          cur_node->input_data_map,
-                                          cur_node->n_interventions,
-                                          col_idx, func, typ);
-            } else {
-              groupby_agg_incremental_arr_single_group(g, config.groups[g], forward_lineage_ptr, annotations_ptr,
-                                          cur_node->alloc_vars[out_var.first][thread_id],
-                                          cur_node->input_data_map,
-                                          start_end_pair.first, start_end_pair.second, cur_node->n_interventions,
-                                          col_idx, func, typ);
-            }
+            int gid = config.groups[g];
+            groupby_agg_incremental_arr_single_group_bw(g, op->lineage_op->gb_backward_lineage[gid], annotations_ptr,
+                                        cur_node->alloc_vars[out_var.first][thread_id],
+                                        cur_node->input_data_map,
+                                        cur_node->n_interventions,
+                                        col_idx, func, typ);
           }
         }
 				if (cur_node->num_worker > 1) {
@@ -408,9 +326,9 @@ void Fade::InterventionSparseEvalPredicate(int thread_id, EvalConfig& config, Ph
 }
 
 string Fade::WhatIfSparse(PhysicalOperator *op, EvalConfig config) {
-  global_fade_node = nullptr;
+  // TODO: cache intermediatees if this is called multiple times on the same lineage
   std::cout << "WhatIfSparse" << std::endl;
-  	std::cout << op->ToString() << std::endl;
+  std::cout << op->ToString() << std::endl;
   std::chrono::steady_clock::time_point start_time, end_time;
   std::chrono::duration<double> time_span;
 
@@ -425,7 +343,7 @@ string Fade::WhatIfSparse(PhysicalOperator *op, EvalConfig config) {
   time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
   double gen_time = time_span.count();
 
-  // Load data from cached execution
+  // Load data from cached execution -- TODO: only if there is any decimal data type
   start_time = std::chrono::steady_clock::now();
   Fade::GetCachedData(config, op, fade_data, columns_spec);
   end_time = std::chrono::steady_clock::now();
@@ -449,6 +367,7 @@ string Fade::WhatIfSparse(PhysicalOperator *op, EvalConfig config) {
   end_time = std::chrono::steady_clock::now();
   time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
   double eval_time = time_span.count();
+  global_fade_node = nullptr;
   global_fade_node = std::move(fade_data[ fade_data[op->id]->opid ]);
   global_config = config;
   return "SELECT 1"; // from duckdb_fade()";

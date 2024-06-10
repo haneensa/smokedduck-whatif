@@ -15,9 +15,7 @@ with smokedduck.connect("intel.db") as con:
     create_sql = """CREATE TABLE readings as SELECT * FROM 'intel.csv'"""
     con.execute(create_sql)
 
-    #con.execute("COPY readings FROM 'intel.csv' WITH (HEADER true, DELIMITER '\t', nullstr '\\N');")
-    #print(con.execute("select * from readings").df())
-
+    print(con.execute("select * from readings").df())
 
     # hack since we don't have guards for null values
     con.execute("""UPDATE readings SET temp = COALESCE(temp, 0);""")

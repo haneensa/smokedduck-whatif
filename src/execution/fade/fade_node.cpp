@@ -63,36 +63,6 @@ unordered_map<string, unordered_map<int, string>>  Fade::get_codes(vector<string
 // 0, 1, 2, 3, 0, 1, 2, 3; shift = 4, size=4
 // 0, 1, 2, 3, 4, 5, 6, 7
 // 0, 0, 0, 0, 4-0, 5-1, 6-2, 7-3
-vector<string> Fade::annotations_to_predicate(vector<string>& specs_stack, int n_interventions) {
-	int top = specs_stack.size() - 1;
-	vector<string> predicates(n_interventions);
-	unordered_map<string, unordered_map<int, string>> codes_per_spec = get_codes(specs_stack);
-  string delim = "";
-  int prev_shift = 0;
-	while (top > 0) {
-		for (int i=0; i < n_interventions; ++i) {
-			int cur = i % codes_per_spec[specs_stack[top]].size();
-			predicates[i] +=  delim + specs_stack[top] + "=" + codes_per_spec[specs_stack[top]][cur];
-		}
-		top--;
-    delim = " AND ";
-	  prev_shift = codes_per_spec[specs_stack[top]].size();
-	}
-
-  if (prev_shift == 0) {
-    for (int i=0; i < n_interventions; ++i) {
-      int cur = i;
-      predicates[i] +=   delim + specs_stack[top] + "=" + codes_per_spec[specs_stack[top]][cur];
-    }
-  } else {
-    for (int i=0; i < n_interventions; ++i) {
-      int cur = ((i - (i % prev_shift)) /  prev_shift ) % codes_per_spec[specs_stack[top]].size();
-      predicates[i] +=   delim + specs_stack[top] + "=" + codes_per_spec[specs_stack[top]][cur];
-    }
-  }
-	return predicates;
-}
-
 string Fade::get_predicate(vector<string>& specs_stack,
     unordered_map<string, unordered_map<int, string>>& codes_per_spec,
     int annotation) {
@@ -105,19 +75,11 @@ string Fade::get_predicate(vector<string>& specs_stack,
 		int cur = annotation % shift;
 		predicate +=  delim + specs_stack[top] + "=" + codes_per_spec[specs_stack[top]][cur];
     annotation = (annotation - cur) / shift;
-	  // prev_shift *= codes_per_spec[specs_stack[top]].size();
 		top--;
     delim = " AND ";
 	}
 
-  int i = annotation;
-  //if (prev_shift == 0) {
-    int cur =i;
-    predicate +=   delim + specs_stack[top] + "=" + codes_per_spec[specs_stack[top]][cur];
-  //} else {
-   // int cur = ((i - (i % prev_shift)) /  prev_shift );
-   // predicate +=   delim + specs_stack[top] + "=" + codes_per_spec[specs_stack[top]][cur];
- // }
+  predicate +=   delim + specs_stack[top] + "=" + codes_per_spec[specs_stack[top]][ annotation ];
 	return predicate;
 }
 
@@ -193,6 +155,11 @@ void FadeNode::allocate_agg_output(string typ, int t, int n_interventions, strin
 void FadeNode::GroupByGetCachedData(EvalConfig& config, shared_ptr<OperatorLineage> lop,
                                 PhysicalOperator* op, vector<unique_ptr<Expression>>& aggregates,
                                 int keys_size) {
+  if (config.qid == global_config.qid && global_fade_node != nullptr) {
+    input_data_map = std::move(global_fade_node->input_data_map);
+    global_fade_node->input_data_map.clear();
+    return;
+  } 
 	// Populate the aggregate child vectors
 	for (idx_t i=0; i < aggregates.size(); i++) {
 		auto &aggr = aggregates[i]->Cast<BoundAggregateExpression>();
@@ -237,6 +204,7 @@ void FadeNode::LocalGroupByAlloc(bool debug,
 	for (idx_t i=0; i < aggregates.size(); i++) {
 		auto &aggr = aggregates[i]->Cast<BoundAggregateExpression>();
 		string name = aggr.function.name;
+
 		if (include_count == false && (name == "count" || name == "count_star")) {
 			include_count = true;
 			continue;
@@ -334,18 +302,22 @@ void FadeNode::GroupByAlloc(bool debug, PhysicalOperatorType typ,
 	if (op->type == PhysicalOperatorType::HASH_GROUP_BY) {
 		PhysicalHashAggregate * gb = dynamic_cast<PhysicalHashAggregate *>(op);
 		auto &aggregates = gb->grouped_aggregate_data.aggregates;
+    int keys_size = gb->grouped_aggregate_data.groups.size();
+    this->aggid -= keys_size;
 		if (groups.empty()) this->n_groups = op->lineage_op->log_index->ha_hash_index.size();
     else this->n_groups = groups.size();
 		if (!this->has_agg_child) {
-			this->LocalGroupByAlloc(debug, op->lineage_op, op, aggregates, gb->grouped_aggregate_data.groups.size(), aggid);
+			this->LocalGroupByAlloc(debug, op->lineage_op, op, aggregates, keys_size, this->aggid);
 		}
 	} else if (op->type == PhysicalOperatorType::PERFECT_HASH_GROUP_BY) {
 		PhysicalPerfectHashAggregate * gb = dynamic_cast<PhysicalPerfectHashAggregate *>(op);
 		auto &aggregates = gb->aggregates;
+    int keys_size = gb->groups.size();
+    this->aggid -= keys_size;
 		if (groups.empty()) this->n_groups = op->lineage_op->log_index->pha_hash_index.size();
     else this->n_groups = groups.size();
 		if (!this->has_agg_child) {
-			this->LocalGroupByAlloc(debug, op->lineage_op, op, aggregates, gb->groups.size(), aggid);
+			this->LocalGroupByAlloc(debug, op->lineage_op, op, aggregates, keys_size, this->aggid);
 		}
 	} else {
 		PhysicalUngroupedAggregate * gb = dynamic_cast<PhysicalUngroupedAggregate *>(op);

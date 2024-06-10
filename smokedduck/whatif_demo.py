@@ -1,5 +1,4 @@
 # TODO: (2) implement batching (compute 2K interventions at a time) and return the results
-#       (3) retune the new aggregate results excluding the removed tuples (instead of returning the agg results on the excluded tuples)
 import numpy as np
 import time
 import csv
