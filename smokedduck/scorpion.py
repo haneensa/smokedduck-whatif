@@ -76,16 +76,16 @@ def scorpion():
     sql = data['sql']
     badselection = data['badselection']
     goodselection = data['goodselection']
-    badalias = next(iter(badselection))
-    goodalias = next(iter(goodselection))
-    badids = [d['id'] for d in badselection[badalias]]
-    goodids = [d['id'] for d in goodselection[goodalias]]
+    alias = data['alias']
+    badids = [d['id'] for d in badselection[alias]]
+    goodids = [d['id'] for d in goodselection[alias]]
     print(sql)
+    print("alias", alias)
     print(goodids)
     print(badids)
 
     with smokedduck.connect('intel.db') as con:
-        ret = runscorpion(con, sql, badalias, goodids, badids)
+        ret = runscorpion(con, sql, alias, goodids, badids)
     print(ret)
 
   except Exception as e:
@@ -131,33 +131,55 @@ def runscorpion(con, sql, agg_alias, goodids, badids, query_id=None):
     allids = goodids + badids
 
     mg, mb = np.mean(goodvals), np.mean(badvals)
+    ng, nb = len(goodvals), len(badvals)
     goodids = [f"g{id}" for id in goodids]
     badids = [f"g{id}" for id in badids]
 
-    ges = [f"abs({id}-{val})" for id, val in zip(goodids, goodvals)]
-    maxgood = f"greatest({','.join(ges)})"
-
-    print("badvals", badvals)
-    bes = [f"coalesce(({val}-{id}),0)" for id, val in zip(badids, badvals)]
-    maxbad = f"greatest({','.join(bes)})"
-    minbad = f"least({','.join(bes)})"
-    avgbad = f"({'+'.join(bes)})/{len(badids)}::float"
-    fade_q = f"""WITH tmp AS (
-        SELECT 
-        pid,
-        {avgbad} as avgbad, 
-        {maxgood} as maxgood, {minbad} as minbad,{maxbad} as maxbad,
-        {len(badids)} as nb,
-        FROM duckdb_fade()
-    ), tmp2 as (
-    select *, (avgbad/{mb}/{len(badids)})-(maxgood/{mg}) as score
-    from tmp
+    ges = [f"abs({id}-{val})**0.5" for id, val in zip(goodids, goodvals)]
+    bes = [f"coalesce(({val}-{id}),0)**2" for id, val in zip(badids, badvals)]
+    fade_q = f"""
+    WITH faderes AS ( 
+        SELECT * FROM duckdb_fade() 
+    ) , good AS (
+        SELECT pid, unnest([{','.join(ges)}]) as y
+        FROM faderes
+    ), bad AS (
+        SELECT pid, unnest([{','.join(bes)}]) as y
+        FROM faderes
+    ), good2 AS (
+        SELECT pid, max(y) as y
+        FROM good
+        GROUP BY pid
+    ), bad2 AS (
+        SELECT pid, 
+        median(y) AS y50,
+        avg(y) AS avgy,
+        min(y) as miny, max(y) as maxy
+        FROM bad
+        GROUP BY pid
+    ), scorpion AS (
+        SELECT g.pid, y50/{mb}/{nb} - g.y/{mg} as score
+        FROM good2 as g, bad2 as b
+        WHERE g.pid = b.pid
     )
-    SELECT *
-    FROM tmp2
-    WHERE avgbad != 'NaN' and maxgood != 'NaN'
-    ORDER BY score desc
-    LIMIT 10"""
+    SELECT * from scorpion ORDER BY score desc LIMIT 20
+    """
+    #    fade_q = f"""WITH tmp AS (
+    #        SELECT 
+    #        pid,
+    #        {avgbad} as avgbad, 
+    #        {maxgood} as maxgood, {minbad} as minbad,{maxbad} as maxbad,
+    #        {len(badids)} as nb,
+    #        FROM duckdb_fade()
+    #    ), tmp2 as (
+    #    select *, (avgbad/{mb}/{len(badids)})-(maxgood/{mg}) as score
+    #    from tmp
+    #    )
+    #    SELECT *
+    #    FROM tmp2
+    #    WHERE avgbad != 'NaN' and maxgood != 'NaN'
+    #    ORDER BY score desc
+    #    LIMIT 10"""
 
     specs = [
         "readings.moteid",
@@ -165,12 +187,13 @@ def runscorpion(con, sql, agg_alias, goodids, badids, query_id=None):
         "readings.light",
         "readings.moteid|readings.voltage",
         "readings.moteid|readings.light",
-        #"readings.voltage|readings.light",
+        "readings.voltage|readings.light",
         #"readings.moteid|readings.light|readings.voltage",
     ]
 
 
-    con.execute(f"pragma PrepareLineage({query_id}, false, false, false)")
+    use_gb_backward_lineage = True
+    con.execute(f"pragma PrepareLineage({query_id}, false, false, {use_gb_backward_lineage})")
     results = []
     for spec in specs:
         results.extend(run_fade(con, query_id, agg_alias, allids, spec, fade_q))
