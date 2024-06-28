@@ -142,7 +142,7 @@ int groupby_agg_incremental_arr(int* lineage, int* __restrict__ var_0,
 
 void Fade::InterventionSparseEvalPredicate(int thread_id, EvalConfig& config, PhysicalOperator* op,
                                      std::unordered_map<idx_t, unique_ptr<FadeNode>>& fade_data,
-                                     bool use_compiled=false) {
+                                     bool use_compile=false) {
 	for (idx_t i = 0; i < op->children.size(); i++) {
 		InterventionSparseEvalPredicate(thread_id, config, op->children[i].get(), fade_data);
 	}
@@ -153,7 +153,7 @@ void Fade::InterventionSparseEvalPredicate(int thread_id, EvalConfig& config, Ph
 		// what indicates there is a filter? cur_node->gen?
 		if (cur_node->rows > cur_node->n_groups) {
 			pair<int, int> start_end_pair = Fade::get_start_end(op->lineage_op->backward_lineage[0].size(), thread_id, config.num_worker);
-			if (use_compiled) {
+			if (use_compile) {
 				dynamic_cast<FadeNodeSparseCompile*>(fade_data[op->id].get())->filter_fn(thread_id, op->lineage_op->backward_lineage[0].data(),
 				                    cur_node->base_annotations.get(), cur_node->annotations.get(),
 				                    start_end_pair.first, start_end_pair.second);
@@ -179,7 +179,7 @@ void Fade::InterventionSparseEvalPredicate(int thread_id, EvalConfig& config, Ph
 		if (config.prune) return;
 		if (cur_node->n_interventions <= 1) return;
 		pair<int, int> start_end_pair = Fade::get_start_end(cur_node->rows, thread_id, config.num_worker);
-		if (use_compiled) {
+		if (use_compile) {
 			dynamic_cast<FadeNodeSparseCompile*>(fade_data[op->id].get())->filter_fn(thread_id, op->lineage_op->backward_lineage[0].data(),
 			                    dynamic_cast<FadeNodeSparseCompile*>(fade_data[fade_data[op->children[0]->id]->opid].get())->annotations.get(),
 			                    cur_node->annotations.get(),
@@ -203,7 +203,7 @@ void Fade::InterventionSparseEvalPredicate(int thread_id, EvalConfig& config, Ph
 		if (cur_node->n_interventions <= 1) return;
 		// if (!cur_node->gen) return;
 		pair<int, int> start_end_pair = Fade::get_start_end(cur_node->rows, thread_id, config.num_worker);
-		if (use_compiled) {
+		if (use_compile) {
 			dynamic_cast<FadeNodeSparseCompile*>(fade_data[op->id].get())->join_fn(thread_id, op->lineage_op->backward_lineage[0].data(),
 			                  op->lineage_op->backward_lineage[1].data(),
 			                  dynamic_cast<FadeSparseNode*>(fade_data[fade_data[op->children[0]->id]->opid].get())->annotations.get(),
@@ -234,7 +234,7 @@ void Fade::InterventionSparseEvalPredicate(int thread_id, EvalConfig& config, Ph
 		idx_t row_count = op->children[0]->lineage_op->chunk_collection.Count();
 		pair<int, int> start_end_pair = Fade::get_start_end(row_count, thread_id, cur_node->num_worker);
 		if (config.debug)  std::cout << "Count summary: " << row_count   << " " << start_end_pair.first << " " << start_end_pair.second << std::endl;
-		if (use_compiled) {
+		if (use_compile) {
 			dynamic_cast<FadeNodeSparseCompile*>(fade_data[op->id].get())->agg_fn(thread_id, op->lineage_op->forward_lineage[0].data(),
 			                 dynamic_cast<FadeSparseNode*>(fade_data[fade_data[op->children[0]->id]->opid].get())->annotations.get(),
 			                 cur_node->alloc_vars,

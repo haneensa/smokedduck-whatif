@@ -2,7 +2,7 @@
 
 # deletion, dense, sparse
 
-export DUCKDB_LIB_PATH=/ProvEnhance/third_party/smokedduck-whatif/build/release/src
+export DUCKDB_LIB_PATH=/smokedduck-whatif/build/release/src
 
 # forward vs backward as we vary threads
 
@@ -10,13 +10,14 @@ export DUCKDB_LIB_PATH=/ProvEnhance/third_party/smokedduck-whatif/build/release/
 query_nums=("1" "3" "5" "7" "9"  "10" "12")
 sf_values=("1") #"5" "10") #"1" "5" "10") # "10")  # "0.2" "0.4") # "5.0" "10.0") # (# "3.0" "4.0")
 # ADD 64, 256
-distinct=("1" "64" "256" "512" "1024" "2048")
+distinct=("1") # "64" "1024")  # "64") "256" "512" "1024" "2048")
 threads_num=("1" "2" "4" "8")
-prune_binary=("true"  "false")
-is_scalar_binary=("true"  "false") 
-csv="all.csv" 
+prune_binary=("false"  "true")
+is_scalar_binary=("false"  "true") 
+csv="test.csv" 
 debug="false"
-itype_list=("SCALE_RANDOM" "DENSE_DELETE" "SEARCH" "DENSE_SPEC")
+compile="true"
+itype_list=("DENSE_DELETE") #"SCALE_RANDOM" "DENSE_DELETE" "SEARCH" "DENSE_SPEC")
 spec='""'
 batch_list=("4") 
 use_duckdb="false"
@@ -67,13 +68,13 @@ do
                   do
                     for prob in "${prob_list[@]}"
                     do
-                      python3 smokedduck/test_whatif.py  --spec ${spec} --batch ${batch} --prune ${prune} --sf ${sf} --csv ${csv} --i ${query_num} --use-gb-bw-lineage ${use_gb_bw_lineage} --use-duckdb ${use_duckdb} --t ${thread} --is-scalar ${is_scalar} --debug ${debug} --interventions ${n} --itype ${itype} --prob ${prob} --incremental "false"
+                      python3 smokedduck/test_whatif.py  --spec ${spec} --batch ${batch} --compile ${compile} --prune ${prune} --sf ${sf} --csv ${csv} --i ${query_num} --use-gb-bw-lineage ${use_gb_bw_lineage} --use-duckdb ${use_duckdb} --t ${thread} --is-scalar ${is_scalar} --debug ${debug} --interventions ${n} --itype ${itype} --prob ${prob} --incremental "false"
                       if [ "$itype" = "SEARCH" ] ; then
                         if [ "$itype" = "SEARCH" ] && [ "$is_scalar" = "false" ]; then
                           echo "skip because itype==SEARCH is set and SIMD is set"
                           continue
                         fi
-                        python3 smokedduck/test_whatif.py  --spec ${spec} --batch ${batch} --prune ${prune} --sf ${sf} --csv ${csv} --i ${query_num} --use-duckdb ${use_duckdb} --t ${thread} --is-scalar ${is_scalar} --debug ${debug} --interventions ${n} --itype ${itype} --prob ${prob} --incremental "true"
+                        python3 smokedduck/test_whatif.py  --spec ${spec} --batch ${batch} --compile ${compile} --prune ${prune} --sf ${sf} --csv ${csv} --i ${query_num} --use-duckdb ${use_duckdb} --t ${thread} --is-scalar ${is_scalar} --debug ${debug} --interventions ${n} --itype ${itype} --prob ${prob} --incremental "true"
                       fi
                     done # prob
                   done

@@ -219,14 +219,13 @@ string PragmaPrepareLineage(ClientContext &context, const FunctionParameters &pa
 	int qid = parameters.values[0].GetValue<int>();
 	bool prune = parameters.values[1].GetValue<bool>();
 	bool forward_lineage = parameters.values[2].GetValue<bool>();
-  	bool use_gb_backward_lineage = parameters.values[3].GetValue<bool>();
+  bool use_gb_backward_lineage = parameters.values[3].GetValue<bool>();
 	PhysicalOperator* op = context.client_data->lineage_manager->queryid_to_plan[qid].get();
 	return Fade::PrepareLineage(op, prune, forward_lineage, use_gb_backward_lineage);
 }
 
 string PragmaWhatif(ClientContext &context, const FunctionParameters &parameters) {
 	// # qid:INT, Itype:STR, spec:STR, n_interventions:INT, batch:INT, is_scalar:BOOL, use_duckdb:BOOL, threads:INT, debug:BOOL, prune:BOOL, incremental:BOOL, prob:float
-
 	int qid = parameters.values[0].GetValue<int>();
 	string intervention_type_str = parameters.values[1].ToString();
 	InterventionType intervention_type =  DENSE_DELETE;
@@ -249,6 +248,7 @@ string PragmaWhatif(ClientContext &context, const FunctionParameters &parameters
 	bool incremental = parameters.values[10].GetValue<bool>();
 	float prob = parameters.values[11].GetValue<float>();
   bool use_gb_backward_lineage = parameters.values[12].GetValue<bool>();
+  bool compile = parameters.values[13].GetValue<bool>();
 
 	std::cout << "\nPragmaWhatif " << qid << " " << intervention_type_str << " " <<  spec << " " <<
 	    n_interventions << " " << batch << " "<< is_scalar << " " << use_duckdb << " " <<
@@ -261,35 +261,49 @@ string PragmaWhatif(ClientContext &context, const FunctionParameters &parameters
 	// takes in query id, attributes to intervene on, conjunctive only or conjunctive and disjunction, or random
 
 	if (intervention_type == SEARCH) {
-			return Fade::PredicateSearch(op, { batch, mask_size, is_scalar, use_duckdb, debug, prune, incremental,
+			return Fade::WhatIfSparseCompile(op, { batch, mask_size, is_scalar, use_duckdb, debug, prune, incremental,
 		                                  spec, intervention_type, n_interventions, qid, num_workers, prob, topk,
                                       use_gb_backward_lineage, false, aggid } );
+	} else if (compile) {
+		  return Fade::Whatif(op, { batch, mask_size, is_scalar, use_duckdb, debug, prune, incremental,
+		                            spec, intervention_type, n_interventions, qid, num_workers, prob, topk,
+                                use_gb_backward_lineage, false, aggid } );
 	} else {
-		    return Fade::Whatif(op, { batch, mask_size, is_scalar, use_duckdb, debug, prune, incremental,
-		                             spec, intervention_type, n_interventions, qid, num_workers, prob, topk,
-                       use_gb_backward_lineage, false, aggid } );
-	}
+		  return Fade::WhatifDense(op, { batch, mask_size, is_scalar, use_duckdb, debug, prune, incremental,
+		                            spec, intervention_type, n_interventions, qid, num_workers, prob, topk,
+                                use_gb_backward_lineage, false, aggid } );
+  }
 }
 
 
-string PragmaSA(ClientContext &context, const FunctionParameters &parameters) {
+string PragmaWhatIfSparseCompile(ClientContext &context, const FunctionParameters &parameters) {
 	int qid = parameters.values[0].GetValue<int>();
-	int topk = parameters.values[1].GetValue<int>();
+	string agg_alias = parameters.values[1].ToString();
+  int aggid = 0;
 	string spec = parameters.values[2].ToString();
-	bool debug = parameters.values[3].GetValue<bool>();
+	int num_workers = parameters.values[3].GetValue<int>();
+	bool prune = parameters.values[4].GetValue<bool>();
+	bool incremental = parameters.values[5].GetValue<bool>();
+	bool debug = parameters.values[6].GetValue<bool>();
+
 	InterventionType intervention_type =  SEARCH;
 	PhysicalOperator* op = context.client_data->lineage_manager->queryid_to_plan[qid].get();
+
+  std::cout << "WhatifSparseCompile -> " << op->lineage_op->names.size() << std::endl;
+  for (int i=0; i < op->lineage_op->names.size(); i++) {
+    if (agg_alias == op->lineage_op->names[i]) {
+      aggid = i;
+      std::cout <<aggid << " " << op->lineage_op->names[i] << std::endl;
+    }
+  }
 	int batch = 4;
 	int mask_size = 16;
 	bool is_scalar = true;
 	bool use_duckdb = false;
-	bool prune = true;
-	bool incremental = true;
 	int n_interventions = 0;
-	int num_workers = 8;
+  int topk = 0;
 	float prob = 1;
-  int aggid = -1;
-	return Fade::PredicateSearch(op, { batch, mask_size, is_scalar, use_duckdb, debug, prune, incremental,
+	return Fade::WhatIfSparseCompile(op, { batch, mask_size, is_scalar, use_duckdb, debug, prune, incremental,
 	                                  spec, intervention_type, n_interventions, qid, num_workers, prob, topk,
 	                                 false, false, aggid} );
 
@@ -365,9 +379,13 @@ void PragmaQueries::RegisterFunction(BuiltinFunctions &set) {
 	set.AddFunction(PragmaFunction::PragmaStatement("all_profiling_output", PragmaAllProfiling));
 	set.AddFunction(PragmaFunction::PragmaStatement("user_agent", PragmaUserAgent));
 #ifdef LINEAGE
-	set.AddFunction(PragmaFunction::PragmaCall("SA", PragmaSA, {LogicalType::INTEGER,
+	set.AddFunction(PragmaFunction::PragmaCall("WhatIfSparseCompile", PragmaWhatIfSparseCompile, {LogicalType::INTEGER,
+	                                                                    LogicalType::VARCHAR,
+	                                                                    LogicalType::VARCHAR,
 	                                                                    LogicalType::INTEGER,
-	                                                                    LogicalType::VARCHAR, LogicalType::BOOLEAN}));
+	                                                                    LogicalType::BOOLEAN,
+	                                                                    LogicalType::BOOLEAN,
+                                                                      LogicalType::BOOLEAN}));
 
 	set.AddFunction(PragmaFunction::PragmaCall("WhatIf", PragmaWhatif, {LogicalType::INTEGER,
 	                                                                    LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::INTEGER,
@@ -375,7 +393,9 @@ void PragmaQueries::RegisterFunction(BuiltinFunctions &set) {
 	                                                                    LogicalType::BOOLEAN, LogicalType::INTEGER,
 	                                                                    LogicalType::BOOLEAN, LogicalType::BOOLEAN,
 	                                                                    LogicalType::BOOLEAN, LogicalType::FLOAT,
-                                                                      LogicalType::BOOLEAN}));
+                                                                      LogicalType::BOOLEAN,
+                                                                      LogicalType::BOOLEAN,
+                                                                      }));
 
 	set.AddFunction(PragmaFunction::PragmaCall("WhatIfSparse", PragmaWhatIfSparse, {LogicalType::INTEGER,
 	                                                                      LogicalType::VARCHAR,

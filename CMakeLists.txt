@@ -221,6 +221,8 @@ if(${EXPLICIT_EXCEPTIONS})
   set(CXX_EXTRA "${CXX_EXTRA} -fexceptions")
 endif()
 
+set(CXX_EXTRA "${CXX_EXTRA}  -mavx512f ")
+
 if (ENABLE_EXTENSION_AUTOLOADING)
   add_definitions(-DDUCKDB_EXTENSION_AUTOLOAD_DEFAULT=1)
 endif()

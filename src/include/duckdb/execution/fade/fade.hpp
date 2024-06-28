@@ -40,7 +40,8 @@ class FadeNode {
 public:
 	FadeNode(int opid, int n_interventions, int num_worker, int rows, bool debug)
 	    : debug(debug), opid(opid), aggid(-1), n_interventions(n_interventions),
-	      num_worker(num_worker), rows(rows), n_groups(0), child_agg_id(-1), has_agg_child(false), counter(0) {};
+	      num_worker(num_worker), rows(rows), n_groups(0), child_agg_id(-1),
+        has_agg_child(false), gen(false), counter(0) {};
 
 	void GroupByAlloc(bool debug, PhysicalOperatorType typ, shared_ptr<OperatorLineage> lop,
 	                  PhysicalOperator* op, int aggid, vector<int>& groups);
@@ -96,6 +97,7 @@ public:
 	int n_groups;
 	int child_agg_id;
 	bool has_agg_child;
+	bool gen;
 
 	int counter;
 	std::mutex mtx;
@@ -110,10 +112,9 @@ public:
 
 class FadeCompile {
 public:
-	FadeCompile() : gen(false) {};
+	FadeCompile() {};
 	virtual ~FadeCompile() = default; // Virtual destructor
 public:
-	bool gen;
 	int (*filter_fn)(int, int*, void*, void*, const int, const int);
 	int (*join_fn)(int, int*, int*, void*, void*, void*, const int, const int);
 	int (*agg_duckdb_fn)(int, int*, void*, std::unordered_map<std::string, vector<void*>>&, ChunkCollection&, const int, const int);
@@ -232,12 +233,9 @@ public:
 	static string WhatifDense(PhysicalOperator* op, EvalConfig config);
 	static string WhatifDenseCompile(PhysicalOperator* op, EvalConfig config);
 	static string Whatif(PhysicalOperator* op, EvalConfig config);
-	static string PredicateSearch(PhysicalOperator* op, EvalConfig config);
+	static string WhatIfSparseCompile(PhysicalOperator* op, EvalConfig config);
 	static string WhatIfSparse(PhysicalOperator* op, EvalConfig config);
 
-	static void Intervention2DEval(int thread_id, EvalConfig& config, PhysicalOperator* op,
-	                        std::unordered_map<idx_t, unique_ptr<FadeNode>>& fade_data,
-	                        bool use_compiled);
 	static void Clear(PhysicalOperator *op);
 
 	template<class T1, class T2>
@@ -245,11 +243,11 @@ public:
 
 	static string get_header(EvalConfig config);
 	static string get_agg_alloc(EvalConfig& config, int fid, string fn, string out_type);
-	static string get_agg_finalize(EvalConfig config, unique_ptr<FadeNode>& node_data);
 	static string group_partitions(EvalConfig config, int n_groups,
 	                               std::unordered_map<string, vector<void*>>& alloc_vars,
 	                               std::unordered_map<string, int>& alloc_vars_index,
-	                               std::unordered_map<string, string>& alloc_vars_types);
+	                               std::unordered_map<string, string>& alloc_vars_types,
+                                 int num_worker);
 
 	static void* compile(std::string code, int id);
 
@@ -294,9 +292,6 @@ public:
 	static void InterventionSparseEvalPredicate(int thread_id, EvalConfig& config, PhysicalOperator* op,
 	                                            std::unordered_map<idx_t, unique_ptr<FadeNode>>& fade_data,
 	                                            bool use_compiled);
-	static void HashAggregateIntervene2DEval(int thread_id, EvalConfig& config, shared_ptr<OperatorLineage> lop,
-	                                         std::unordered_map<idx_t, unique_ptr<FadeNode>>& fade_data,
-	                                         PhysicalOperator* op, void* var_0, bool use_compile);
 };
 
 } // namespace duckdb

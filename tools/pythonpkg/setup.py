@@ -160,7 +160,7 @@ if platform.system() == 'Windows':
     toolchain_args.extend(['-DDUCKDB_BUILD_LIBRARY', '-DWIN32'])
 
 if True or "BUILD_LINEAGE" in os.environ:
-    toolchain_args.extend(['-DLINEAGE=1'])
+    toolchain_args.extend(['-DLINEAGE=1', '-mavx512f'])
 
 if 'BUILD_HTTPFS' in os.environ:
     libraries += ['crypto', 'ssl']

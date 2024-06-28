@@ -26,9 +26,9 @@ string FilterCodeAndAllocPredicate(EvalConfig& config, PhysicalOperator *op) {
 	oss << "\tint* __restrict__ out = (int* __restrict__)out_ptr;\n";
 	oss << "\tint* __restrict__ var = (int* __restrict__)var_ptr;\n";
 
-//  if (config.debug) {
+  if (config.debug) {
     oss << "\tstd::cout << \"Filter: \" << start << \" \" << end << std::endl;\n";
-  //}
+  }
 
 	oss << R"(
 	for (int i=start; i < end; ++i) {
@@ -80,25 +80,17 @@ void* __restrict__ rhs_var_ptr,  void* __restrict__ out_ptr, const int start, co
 
 
 string get_agg_init_predicate(EvalConfig config, int row_count, int chunk_count, int opid, int n_interventions, string fn, string alloc_code,
-                    string get_data_code, string get_vals_code) {
+                    string get_data_code, string get_vals_code, int num_worker) {
 	string fname = "agg_"+ to_string(opid) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
 	std::ostringstream oss;
-	if (config.use_duckdb) {
-		oss << R"(extern "C" int )"
-		    << fname
-		    << R"((int thread_id, int* lineage, void* __restrict__ var_0_ptr, std::unordered_map<std::string, std::vector<void*>>& alloc_vars,
-              duckdb::ChunkCollection &chunk_collection, const int start, const int end) {
+  oss << R"(extern "C" int )"
+      << fname
+      << R"((int thread_id, int* lineage, void* __restrict__ var_0_ptr, std::unordered_map<std::string, std::vector<void*>>& alloc_vars,
+            std::unordered_map<int, void*>& input_data_map, const int start, const int end) {
 )";
-	} else {
-		oss << R"(extern "C" int )"
-		    << fname
-		    << R"((int thread_id, int* lineage, void* __restrict__ var_0_ptr, std::unordered_map<std::string, std::vector<void*>>& alloc_vars,
-              std::unordered_map<int, void*>& input_data_map, const int start, const int end) {
-)";
-  }
-	
+
   oss << "\t__mmask16 tmp_mask;\n";
-	oss << "\tconst int num_threads  = " << config.num_worker << ";\n";
+	oss << "\tconst int num_threads  = " << num_worker << ";\n";
   oss << "\tif (thread_id >= num_threads)  return 0;\n";
 	oss << "\t int* __restrict__ var_0 = (int* __restrict__)var_0_ptr;\n";
 
@@ -200,7 +192,7 @@ string HashAggregateCodeAndAllocPredicate(EvalConfig& config, PhysicalOperator* 
                                           int keys, int n_groups, int n_interventions,
                                           std::unordered_map<string, vector<void*>>& alloc_vars,
                                           std::unordered_map<string, int>& alloc_vars_index,
-                                          std::unordered_map<string, string>& alloc_vars_types) {
+                                          std::unordered_map<string, string>& alloc_vars_types, int num_worker) {
 	string eval_code;
 	string body_code;
 	string code;
@@ -303,10 +295,10 @@ string HashAggregateCodeAndAllocPredicate(EvalConfig& config, PhysicalOperator* 
 	string init_code = get_agg_init_predicate(config, row_count,
 	                                          op->children[0]->lineage_op->chunk_collection.ChunkCount(),
 	                                          op->id,  n_interventions, "agg", alloc_code,
-	                                          get_data_code, get_vals_code);
+	                                          get_data_code, get_vals_code, num_worker);
 	string end_code;
 
-	end_code += Fade::group_partitions(config, n_groups, alloc_vars, alloc_vars_index, alloc_vars_types);
+	end_code += Fade::group_partitions(config, n_groups, alloc_vars, alloc_vars_index, alloc_vars_types, num_worker);
 	end_code +=  "\treturn 0;\n}\n";
 
 	code = init_code + body_code + end_code;
@@ -322,16 +314,12 @@ void GenCodeAndAllocPredicate(EvalConfig& config, string& code, PhysicalOperator
 	}
 
 	FadeNodeSparseCompile* cur_node = dynamic_cast<FadeNodeSparseCompile*>(fade_data[op->id].get());
-	if (op->type == PhysicalOperatorType::TABLE_SCAN) {
-		if (cur_node->n_interventions > 1 && cur_node->rows > cur_node->n_groups) {
-		  cur_node->gen = true;
-		  code += FilterCodeAndAllocPredicate(config, op);
-		}
-  	} else if (op->type == PhysicalOperatorType::FILTER) {
-		if ( cur_node->n_interventions > 1 && config.prune == false) {
+	if (op->type == PhysicalOperatorType::TABLE_SCAN && cur_node->n_interventions > 1 && cur_node->rows > cur_node->n_groups) {
+	  cur_node->gen = true;
+	  code += FilterCodeAndAllocPredicate(config, op);
+  } else if (op->type == PhysicalOperatorType::FILTER && cur_node->n_interventions > 1 && config.prune == false) {
 			cur_node->gen = true;
 			code += FilterCodeAndAllocPredicate(config, op);
-    	}
 	} else if (op->type == PhysicalOperatorType::HASH_JOIN
 	           || op->type == PhysicalOperatorType::NESTED_LOOP_JOIN
 	           || op->type == PhysicalOperatorType::BLOCKWISE_NL_JOIN
@@ -353,42 +341,39 @@ void GenCodeAndAllocPredicate(EvalConfig& config, string& code, PhysicalOperator
 		  code += HashAggregateCodeAndAllocPredicate(config, op, aggregates,
 			                                         gb->grouped_aggregate_data.groups.size(), cur_node->n_groups, cur_node->n_interventions,
 			                                         cur_node->alloc_vars,  cur_node->alloc_vars_index,
-			                                         cur_node->alloc_vars_types);
+			                                         cur_node->alloc_vars_types, cur_node->num_worker);
 		} else if (op->type == PhysicalOperatorType::PERFECT_HASH_GROUP_BY) {
 		  PhysicalPerfectHashAggregate * gb = dynamic_cast<PhysicalPerfectHashAggregate *>(op);
 		  auto &aggregates = gb->aggregates;
 		  code += HashAggregateCodeAndAllocPredicate(config, op, aggregates, gb->groups.size(),
 			                                         cur_node->n_groups, cur_node->n_interventions,
 			                                         cur_node->alloc_vars,  cur_node->alloc_vars_index,
-			                                         cur_node->alloc_vars_types);
+			                                         cur_node->alloc_vars_types, cur_node->num_worker);
 		} else {
 		  PhysicalUngroupedAggregate * gb = dynamic_cast<PhysicalUngroupedAggregate *>(op);
 		  auto &aggregates = gb->aggregates;
 		  code += HashAggregateCodeAndAllocPredicate(config, op, aggregates, 0, cur_node->n_groups,
 			                                         cur_node->n_interventions,
 			                                         cur_node->alloc_vars,  cur_node->alloc_vars_index,
-			                                         cur_node->alloc_vars_types);
+			                                         cur_node->alloc_vars_types, cur_node->num_worker);
 		}
 	}
 }
 
-// TODO: subtract incremental agg value from total agg
 // TODO: add nested agg for sparse implementation
 // TODO: add sparse encoding for ineq predicates
-// TODO: add different ranking metrics
 // TODO: stream results of aggregate if n * siezof(v) * groups * W > mem
-string Fade::PredicateSearch(PhysicalOperator *op, EvalConfig config) {
-	std::cout << "Predicate Search" << std::endl;
-	// timing vars
+string Fade::WhatIfSparseCompile(PhysicalOperator *op, EvalConfig config) {
+	std::cout << "WhatIfSparse Compiled" << std::endl;
+  std::cout << op->ToString() << std::endl;
 	std::chrono::steady_clock::time_point start_time, end_time;
 	std::chrono::duration<double> time_span;
-
-	// 1. Parse Spec = table_name.col:scale
+  
+  // 1. (t.col1|t.col2|..)
   std::unordered_map<std::string, std::vector<std::string>> columns_spec = parseSpec(config.columns_spec_str);
-
-	// holds any extra data needed during exec
 	std::unordered_map<idx_t, unique_ptr<FadeNode>> fade_data;
-	std::cout << "gen intervention" << std::endl;
+  
+	std::cout << "GrnSparceAndAlloc" << std::endl;
 	start_time = std::chrono::steady_clock::now();
 	bool compiled = true;
 	Fade::GenSparseAndAlloc(config, op, fade_data, columns_spec, compiled);
@@ -405,7 +390,7 @@ string Fade::PredicateSearch(PhysicalOperator *op, EvalConfig config) {
 	time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
 	double prep_time = time_span.count();
   
-  	start_time = std::chrono::steady_clock::now();
+  start_time = std::chrono::steady_clock::now();
 	GetCachedData(config, op, fade_data, columns_spec);
 	end_time = std::chrono::steady_clock::now();
 	time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
@@ -448,30 +433,16 @@ string Fade::PredicateSearch(PhysicalOperator *op, EvalConfig config) {
 
 	system("rm loop.cpp loop.so");
 
+  global_fade_node = nullptr;
+  global_fade_node = std::move(fade_data[ fade_data[op->id]->opid ]);
+  global_config = config;
 
-	if (config.topk > 0) {
-		// rank final agg result
-		/* std::vector<int> topk_vec = rank(op, config, fade_data);
-		std::string result = std::accumulate(topk_vec.begin(), topk_vec.end(), std::string{},
-		                                     [](const std::string& a, int b) {
-			                                     return a.empty() ? std::to_string(b) : a + "," + std::to_string(b);
-		                                     });
-    	std::cout << result << std::endl;*/
-		// return "select '" + result + "'";
-		return "select " + to_string(gen_time) + " as intervention_gen_time, "
-				   + to_string(prep_time) + " as prep_time, "
-				   + to_string(compile_time) + " as compile_time, "
-           + to_string(0) + " as code_gen_time, "
-           + to_string(data_time) + " as data_time, "
-				   + to_string(eval_time) + " as eval_time";
-	} else {
-		return "select " + to_string(gen_time) + " as intervention_gen_time, "
-				   + to_string(prep_time) + " as prep_time, "
-				   + to_string(compile_time) + " as compile_time, "
-           + to_string(0) + " as code_gen_time, "
-           + to_string(data_time) + " as data_time, "
-				   + to_string(eval_time) + " as eval_time";
-	}
+  return "select " + to_string(gen_time) + " as intervention_gen_time, "
+         + to_string(prep_time) + " as prep_time, "
+         + to_string(compile_time) + " as compile_time, "
+         + to_string(0) + " as code_gen_time, "
+         + to_string(data_time) + " as data_time, "
+         + to_string(eval_time) + " as eval_time";
 }
 
 } // namespace duckdb

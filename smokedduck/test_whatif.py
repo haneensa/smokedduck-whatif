@@ -21,6 +21,7 @@ parser.add_argument("--t", help="thread num", type=int, default=1)
 parser.add_argument("--is-scalar", help="is scalar", type=str, default="true")
 parser.add_argument("--csv", help="csv", type=str, default="out.csv")
 parser.add_argument("--debug", help="debug", type=str, default="true")
+parser.add_argument("--compile", help="debug", type=str, default="true")
 parser.add_argument("--prune", help="prune", type=str, default="true")
 parser.add_argument("--itype", help="Intervention Type", type=str, default="DENSE_DELETE")
 parser.add_argument("--spec", help="Intervention Spec", type=str, default="")
@@ -35,80 +36,80 @@ parser.add_argument("--use-gb-bw-lineage", help="use gb backward lineage", type=
 
 args = parser.parse_args()
 # Creating connection
-con = smokedduck.connect('db.out')
-# con.execute('CALL dbgen(sf=1);')
-con.execute('pragma threads=1')
-# 1, 3, 5, 6, 7, 8, 9, 10, 12
-# true, false
-i = args.i
-use_duckdb = args.use_duckdb
-num_threads = args.t
-is_scalar = args.is_scalar
-batch = args.batch
-debug = args.debug
-prune = args.prune
-prob = args.prob
-itype = args.itype
-is_incremental = args.incremental
-spec = args.spec
-use_gb_bw_lineage = args.use_gb_bw_lineage
-if use_gb_bw_lineage == "true":
-    use_duckdb = "false"
+with smokedduck.connect('db.out') as con:
+    # con.execute('CALL dbgen(sf=1);')
+    con.execute('pragma threads=1')
+    # 1, 3, 5, 6, 7, 8, 9, 10, 12
+    # true, false
+    i = args.i
+    use_duckdb = args.use_duckdb
+    num_threads = args.t
+    is_scalar = args.is_scalar
+    batch = args.batch
+    debug = args.debug
+    prune = args.prune
+    prob = args.prob
+    itype = args.itype
+    is_incremental = args.incremental
+    spec = args.spec
+    use_gb_bw_lineage = args.use_gb_bw_lineage
+    if use_gb_bw_lineage == "true":
+        use_duckdb = "false"
 
-qid = str(i).zfill(2)
-distinct = args.interventions
+    qid = str(i).zfill(2)
+    distinct = args.interventions
 
-print(f"############# Testing Whatif on {qid} ###########")
-query_file = f"queries/tpch/tpch_{qid}.sql"
-with open(query_file, "r") as f:
-    sql = " ".join(f.read().split())
-print(sql)
+    print(f"############# Testing Whatif on {qid} ###########")
+    query_file = f"queries/tpch/tpch_{qid}.sql"
+    with open(query_file, "r") as f:
+        sql = " ".join(f.read().split())
+    print(sql)
 
-#start = time.time()
-#out = con.execute(sql).df()
-#end = time.time()
-#no_lineage = end - start
+    #start = time.time()
+    #out = con.execute(sql).df()
+    #end = time.time()
+    #no_lineage = end - start
 
-# Printing lineage that was captured from base query
-# 2. run the query with lineage capture
-start = time.time()
-#out = con.execute(sql, capture_lineage='ksemimodule').df()
-out = con.execute(sql, capture_lineage='lineageAll').df()
-end = time.time()
-print(out)
-ksemimodule_timing = end - start
-#print(no_lineage, ksemimodule_timing, ksemimodule_timing-no_lineage)
+    # Printing lineage that was captured from base query
+    # 2. run the query with lineage capture
+    start = time.time()
+    #out = con.execute(sql, capture_lineage='ksemimodule').df()
+    out = con.execute(sql, capture_lineage='lineageAll').df()
+    end = time.time()
+    print(out)
+    ksemimodule_timing = end - start
+    #print(no_lineage, ksemimodule_timing, ksemimodule_timing-no_lineage)
 
-query_id = con.query_id
-print("=================", query_id, qid, use_duckdb, is_scalar, num_threads)
-forward_lineage = "false"
-if distinct == 1 and is_incremental == "true":
-    forward_lineage = "true"
+    query_id = con.query_id
+    print("=================", query_id, qid, use_duckdb, is_scalar, num_threads)
+    forward_lineage = "false"
+    if distinct == 1 and is_incremental == "true":
+        forward_lineage = "true"
 
-pp_timings = con.execute(f"pragma PrepareLineage({query_id}, {prune}, {forward_lineage}, {use_gb_bw_lineage})").df()
-print(pp_timings)
-#clear(con)
-# use_duckdb = false, is_scalr = true/false, batch = 4
-q = f"pragma WhatIf({query_id}, '{itype}', '{spec}', {distinct}, {batch}, {is_scalar}, {use_duckdb}, {num_threads}, {debug}, {prune}, {is_incremental}, {prob}, {use_gb_bw_lineage});"
-timings = con.execute(q).fetchdf()
-print(timings)
+    pp_timings = con.execute(f"pragma PrepareLineage({query_id}, {prune}, {forward_lineage}, {use_gb_bw_lineage})").df()
+    print(pp_timings)
+    #clear(con)
+    # use_duckdb = false, is_scalr = true/false, batch = 4
+    q = f"pragma WhatIf({query_id}, '{itype}', '{spec}', {distinct}, {batch}, {is_scalar}, {use_duckdb}, {num_threads}, {debug}, {prune}, {is_incremental}, {prob}, {use_gb_bw_lineage}, {args.compile});"
+    timings = con.execute(q).fetchdf()
+    print(timings)
 
-clear(con)
-if spec == '""':
-    spec=''
-res = [args.sf, i, itype, prob, is_incremental, use_duckdb, is_scalar, prune, num_threads, distinct, batch,
-        pp_timings["post_processing_time"][0], timings["intervention_gen_time"][0],
-        timings["prep_time"][0], timings["compile_time"][0], timings["eval_time"][0],
-        pp_timings["prune_time"][0], pp_timings["lineage_time"][0], ksemimodule_timing, spec,
-        pp_timings["lineage_count"][0], pp_timings["lineage_count_prune"][0],
-        pp_timings["lineage_size_mb"][0], pp_timings["lineage_size_mb_prune"][0],
-        use_gb_bw_lineage,
-        timings["code_gen_time"][0], timings["data_time"][0]
-        ]
-print(res)
+    clear(con)
+    if spec == '""':
+        spec=''
+    res = [args.sf, i, itype, prob, is_incremental, use_duckdb, is_scalar, prune, num_threads, distinct, batch,
+            pp_timings["post_processing_time"][0], timings["intervention_gen_time"][0],
+            timings["prep_time"][0], timings["compile_time"][0], timings["eval_time"][0],
+            pp_timings["prune_time"][0], pp_timings["lineage_time"][0], ksemimodule_timing, spec,
+            pp_timings["lineage_count"][0], pp_timings["lineage_count_prune"][0],
+            pp_timings["lineage_size_mb"][0], pp_timings["lineage_size_mb_prune"][0],
+            use_gb_bw_lineage,
+            timings["code_gen_time"][0], timings["data_time"][0]
+            ]
+    print(res)
 
-filename=args.csv
-print(filename)
-with open(filename, 'a') as csvfile:
-    csvwriter = csv.writer(csvfile)
-    csvwriter.writerow(res)
+    filename=args.csv
+    print(filename)
+    with open(filename, 'a') as csvfile:
+        csvwriter = csv.writer(csvfile)
+        csvwriter.writerow(res)

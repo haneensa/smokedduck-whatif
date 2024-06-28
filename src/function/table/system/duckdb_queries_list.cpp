@@ -107,7 +107,7 @@ void DuckDBQueriesListFunction(ClientContext &context, TableFunctionInput &data_
 	// start returning values
 	// either fill up the chunk or return all the remaining columns
 	idx_t count = 0;
-  	std::vector<idx_t> stats(3, 0);
+  std::vector<idx_t> stats(3, 0);
 	while (data.offset < query_to_id.size() && count < STANDARD_VECTOR_SIZE) {
 		string query = query_to_id[data.offset];
 		auto plan = context.client_data->lineage_manager->queryid_to_plan[data.offset].get();
@@ -132,8 +132,8 @@ void DuckDBQueriesListFunction(ClientContext &context, TableFunctionInput &data_
 		output.SetValue(col++, count,Value::INTEGER(stats[1]));
 
     // postprocess_time
-	float postprocess_time = ((float) end - start) / CLOCKS_PER_SEC;
-	output.SetValue(col++, count,Value::FLOAT(postprocess_time));
+	  float postprocess_time = ((float) end - start) / CLOCKS_PER_SEC;
+	  output.SetValue(col++, count,Value::FLOAT(postprocess_time));
 
     // plan, VARCHAR
 		output.SetValue(col++, count, PlanToString(plan ));
