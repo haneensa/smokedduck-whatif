@@ -8,21 +8,23 @@ export DUCKDB_LIB_PATH=/ProvEnhance/third_party/smokedduck-whatif/build/release/
 
 # Q1. chunked vs not : forward lineage, vary threads, vary n, scalar vs vec, single agg vs many (evaluated n at a time)
 query_nums=("1" "3" "5" "7" "9"  "10" "12")
-sf_values=("1") #"5" "10") #"1" "5" "10") # "10")  # "0.2" "0.4") # "5.0" "10.0") # (# "3.0" "4.0")
+sf_values=("5") #"5" "10") #"1" "5" "10") # "10")  # "0.2" "0.4") # "5.0" "10.0") # (# "3.0" "4.0")
 # ADD 64, 256
-distinct=("1" "64" "256" "512" "1024" "2048")
-threads_num=("1" "2" "4" "8")
+distinct=("64"  "512" "1024") # "2048")
+threads_num=("8") # "2" "4" "8")
 prune_binary=("true"  "false")
 is_scalar_binary=("true"  "false") 
-csv="all.csv" 
+csv="fade_simd_test.csv" 
+csv="fade_simd_test_scalarJoinFilter_sf5.csv" 
 debug="false"
-itype_list=("SCALE_RANDOM" "DENSE_DELETE" "SEARCH" "DENSE_SPEC")
+itype_list=("DENSE_DELETE") # "SCALE_RANDOM") #"SCALE_RANDOM" "DENSE_DELETE" "SEARCH" "DENSE_SPEC")
 spec='""'
 batch_list=("4") 
 use_duckdb="false"
 use_gb_bw_lineage_list=("false")
+iters=2
 touch ${csv}
-echo sf,qid,itype,prob,incremental,use_duckdb,is_scalar,prune,num_threads,distinct,batch,post_time,gen_time,prep_time,compile_time,eval_time,prune_time,lineage_time,ksemimodule_timing,spec,lineage_count,lineage_count_prune,lineage_size_mb,lineage_size_mb_prune,use_gb_backward_lineage,code_gen_time,data_time > ${csv}
+echo iter,sf,qid,itype,prob,incremental,use_duckdb,is_scalar,prune,num_threads,distinct,batch,post_time,gen_time,prep_time,compile_time,eval_time,prune_time,lineage_time,ksemimodule_timing,spec,lineage_count,lineage_count_prune,lineage_size_mb,lineage_size_mb_prune,use_gb_backward_lineage,code_gen_time,data_time > ${csv}
 
 for sf in "${sf_values[@]}"
 do
@@ -42,7 +44,7 @@ do
     for n in "${distinct[@]}"
     do
       if [ "$n" -eq 1 ] && [ "$itype" = "DENSE_DELETE" ] && [ "$spec" = '""' ] ; then
-        prob_list=("0.001") #  "0.002" "0.005" "0.01" "0.02" "0.05" "0.1" "0.2" "0.3" "0.4" "0.5")
+        prob_list=("0.001" "0.002" "0.005" "0.01" "0.02" "0.05" "0.1" "0.2" "0.3" "0.4" "0.5")
       else
         prob_list=("0.1")
       fi
@@ -67,14 +69,17 @@ do
                   do
                     for prob in "${prob_list[@]}"
                     do
-                      python3 smokedduck/test_whatif.py  --spec ${spec} --batch ${batch} --prune ${prune} --sf ${sf} --csv ${csv} --i ${query_num} --use-gb-bw-lineage ${use_gb_bw_lineage} --use-duckdb ${use_duckdb} --t ${thread} --is-scalar ${is_scalar} --debug ${debug} --interventions ${n} --itype ${itype} --prob ${prob} --incremental "false"
-                      if [ "$itype" = "SEARCH" ] ; then
-                        if [ "$itype" = "SEARCH" ] && [ "$is_scalar" = "false" ]; then
-                          echo "skip because itype==SEARCH is set and SIMD is set"
-                          continue
+                      for iter in $(seq 1 $iters)
+                      do
+                        python3 smokedduck/test_whatif.py  --iter ${iter} --spec ${spec} --batch ${batch} --prune ${prune} --sf ${sf} --csv ${csv} --i ${query_num} --use-gb-bw-lineage ${use_gb_bw_lineage} --use-duckdb ${use_duckdb} --t ${thread} --is-scalar ${is_scalar} --debug ${debug} --interventions ${n} --itype ${itype} --prob ${prob} --incremental "false"
+                        if [ "$itype" = "SEARCH" ] ; then
+                          if [ "$itype" = "SEARCH" ] && [ "$is_scalar" = "false" ]; then
+                            echo "skip because itype==SEARCH is set and SIMD is set"
+                            continue
+                          fi
+                          python3 smokedduck/test_whatif.py  --iter ${iter} --spec ${spec} --batch ${batch} --prune ${prune} --sf ${sf} --csv ${csv} --i ${query_num} --use-duckdb ${use_duckdb} --t ${thread} --is-scalar ${is_scalar} --debug ${debug} --interventions ${n} --itype ${itype} --prob ${prob} --incremental "true"
                         fi
-                        python3 smokedduck/test_whatif.py  --spec ${spec} --batch ${batch} --prune ${prune} --sf ${sf} --csv ${csv} --i ${query_num} --use-duckdb ${use_duckdb} --t ${thread} --is-scalar ${is_scalar} --debug ${debug} --interventions ${n} --itype ${itype} --prob ${prob} --incremental "true"
-                      fi
+                      done # iter
                     done # prob
                   done
                 done # batch

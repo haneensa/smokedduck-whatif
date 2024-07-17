@@ -14,6 +14,7 @@ def clear(c):
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--i", help="qid", type=int, default=1)
+parser.add_argument("--iter", help="qid", type=int, default=0)
 parser.add_argument("--interventions", help="interventions", type=int, default=1024)
 parser.add_argument("--sf", help="sf", type=float, default=1)
 parser.add_argument("--use-duckdb", help="use duckdb", type=str, default="true")
@@ -96,7 +97,7 @@ print(timings)
 clear(con)
 if spec == '""':
     spec=''
-res = [args.sf, i, itype, prob, is_incremental, use_duckdb, is_scalar, prune, num_threads, distinct, batch,
+res = [args.iter, args.sf, i, itype, prob, is_incremental, use_duckdb, is_scalar, prune, num_threads, distinct, batch,
         pp_timings["post_processing_time"][0], timings["intervention_gen_time"][0],
         timings["prep_time"][0], timings["compile_time"][0], timings["eval_time"][0],
         pp_timings["prune_time"][0], pp_timings["lineage_time"][0], ksemimodule_timing, spec,

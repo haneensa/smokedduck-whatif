@@ -95,11 +95,29 @@ ggsave(f"figures/agg_forward_vs_backward_sample.png", p, postfix=postfix, width=
 cat = "system"
 p = ggplot(scale_data_pick, aes(x='num_threads',  y="eval_time_ms", color=cat, fill=cat, linetype='vec_label'))
 p += geom_line(stat=esc('identity'))
-p += axis_labels('#threads', "Speedup", 'continuous')
+p += axis_labels('#threads', "runtime (ms)", 'continuous')
 p += legend_side
 p += facet_grid(".~alabel~glabel", scales=esc("free_y"))
 ggsave(f"figures/agg_forward_vs_backward_latency_sample.png", p, postfix=postfix, width=7, height=2.5, scale=0.8)
-
+print(con.execute("select system, num_threads, glabel, vec_label , avg(eval_time_ms) from scale_data_pick where num_threads=1 group by glabel, system,num_threads, vec_label order by system, num_threads, vec_label, glabel").df())
+print(con.execute("""select vec_label , num_threads, glabel, alabel,
+    avg(t1.eval_time_ms/t2.eval_time_ms) avg_ms,
+    min(t1.eval_time_ms/t2.eval_time_ms) max_ms,
+    max(t1.eval_time_ms/t2.eval_time_ms) min_ms,
+    avg(t1.eval_time_ms), avg(t2.eval_time_ms)
+    from (select * from scale_data_pick where system='backward') as t1
+    JOIN (select * from scale_data_pick where system='forward') as t2
+    USING (vec_label, num_threads, glabel, alabel)
+    group by vec_label , num_threads, glabel, alabel order by vec_label, num_threads, glabel, alabel""").df())
+print(con.execute("""select vec_label ,
+    avg(t1.eval_time_ms/t2.eval_time_ms) avg_ms,
+    min(t1.eval_time_ms/t2.eval_time_ms) max_ms,
+    max(t1.eval_time_ms/t2.eval_time_ms) min_ms,
+    avg(t1.eval_time_ms), avg(t2.eval_time_ms)
+    from (select * from scale_data_pick where system='backward') as t1
+    JOIN (select * from scale_data_pick where system='forward') as t2
+    USING (vec_label, num_threads, glabel, alabel)
+    group by vec_label order by vec_label""").df())
 
 # x-axis: num_threads, y-axis: speedup
 if False:

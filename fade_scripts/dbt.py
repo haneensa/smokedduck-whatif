@@ -32,17 +32,69 @@ def summary(table, attrs, extra="", whr=""):
     """).df()
 
     
+lineage_data = pd.read_csv('fade_data/lineage_overhead_all_april30_v2.csv')
+lineage_data["query"] = "Q"+lineage_data["qid"].astype(str)
+lineage_data["sf_label"] = "SF="+lineage_data["sf"].astype(str)
+
 if True:
     # fade using incremental data processing with sparse intervention representation
     #single_data_all = get_data("single_fade_april6.csv", 1000)
     #single_data_all = get_data("fade_data/dense_single_vary_probs_april7.csv", 1000)
     #single_data_all = get_data(f"fade_data/single_dense_vary_probs_nofilterOnprune.csv", 1000)
-    single_data_all = get_data(f"fade_data/forward_backward_all_probs_april26.csv", 1000)
-    dbt_data = get_data("fade_data/dbtoast_delete_april21.csv", 1)
-    dbt_data_no_prune = get_data("fade_data/dbtoast.csv", 1)
-    dbt_data = con.execute("select * from dbt_data UNION ALL select * from dbt_data_no_prune where prune='False'").df()
+    #single_data_all = get_data(f"fade_data/forward_backward_all_probs_april26.csv", 1000)
+    single_data_all = get_data(f"fade_signle_jul10.csv", 1000)
+    single_data_all = con.execute("""select
+    sf, qid, itype, prob, incremental, use_duckdb, is_scalar, prune,
+    num_threads, n, batch,
+    avg(post_time) as post_time,
+    avg(gen_time) as gen_time,
+    avg(prep_time) as prep_time,
+    avg(compile_time) as compile_time,
+    avg(eval_time) as eval_time,
+    avg(prune_time) as prune_time,
+    avg(lineage_time) as lineage_time,
+    avg(ksemimodule_timing) as ksemimodule_timing,
+    spec,
+    avg(lineage_count) as lineage_count,
+    avg(lineage_count_prune) as lineage_count_prune,
+    avg(lineage_size_mb) as lineage_size_mb,
+    avg(lineage_size_mb_prune) as lineage_size_mb_prune,
+    use_gb_backward_lineage,
+    avg(code_gen_time) as code_gen_time, avg(data_time) as data_time,
+    avg(eval_time_ms) as eval_time_ms,
+    avg(prune_time_ms) as prune_time_ms,
+    query, cat, sf_label, prune_label, 
+    from single_data_all
+    group by
+    sf, qid, query, cat, sf_label, prune_label, itype, incremental, use_duckdb, is_scalar, prune,
+    num_threads, n, batch, prob, spec, use_gb_backward_lineage
+    """).df()
+    fade_scale = con.execute("select * from single_data_all where itype='SCALE_RANDOM'").df()
+    fade_delete = con.execute("select * from single_data_all where itype='DENSE_DELETE'").df()
+    #dbt_data = get_data("fade_data/dbtoast_delete_april21.csv", 1)
+    #dbt_data = get_data("fade_data/dbtoast.csv", 1)
+    #dbt_data = con.execute("select * from dbt_data UNION ALL select * from dbt_data_no_prune where prune='False'").df()
     #dbt_data = get_data("fade_data/dbtoast_may1.csv", 1)
     #dbt_data = con.execute("select * from dbt_data where itype='DELETE'").df()
+    dbt_data_all = get_data("fade_data/dbtoast_july9.csv", 1)
+    dbt_data = con.execute("""select
+    avg(eval_time) as eval_time,
+    sf, qid, itype, prob, incremental, use_duckdb, is_scalar, prune,
+    num_threads, n, batch,
+    avg(post_time) as post_time,
+    avg(gen_time) as gen_time,
+    avg(prep_time) as prep_time,
+    avg(compile_time) as compile_time,
+    avg(prune_time) as prune_time,
+    avg(eval_time_ms) as eval_time_ms,
+    avg(prune_time_ms) as prune_time_ms,
+    query, cat, sf_label, prune_label, 
+    from dbt_data_all
+    group by
+    sf, qid, query, cat, sf_label, prune_label, itype, incremental, use_duckdb, is_scalar, prune,
+    num_threads, n, batch, prob
+    """).df()
+    # compute average
     dbt_data["cat"] = dbt_data.apply(lambda row: "DBT_prune" if row["prune"] else "DBT", axis=1)
     print(dbt_data)
 
@@ -73,9 +125,9 @@ if True:
     dbt_prob=0.1
     single_data = con.execute(f"""
         select 'FaDE' as system, query, prune, sf, sf_label, eval_time_ms, incremental
-            from single_data_all where n=1 and num_threads=1  and prune='False' and prob={dbt_prob} and incremental='False' and use_gb_backward_lineage='False'
+            from fade_delete where n=1 and num_threads=1  and prune='False' and prob={dbt_prob} and incremental='False' and use_gb_backward_lineage='False'
         UNION ALL select 'FaDE-Prune' as system, query, prune, sf, sf_label,  eval_time_ms, incremental
-            from single_data_all where n=1 and num_threads=1 and prune='True' and prob={dbt_prob} and incremental='False' and use_gb_backward_lineage='False'
+            from fade_delete where n=1 and num_threads=1 and prune='True' and prob={dbt_prob} and incremental='False' and use_gb_backward_lineage='False'
         UNION ALL select 'DBT-Prune' as system, query, prune, sf, sf_label, eval_time_ms as eval_time, 'False' as incremental
             from dbt_data where prob={dbt_prob} and prune='True'
             and itype='DELETE'
@@ -103,8 +155,53 @@ if True:
     p += axis_labels('Query', 'Latency (ms, log)', 'discrete', 'log10')
     p += legend_side
     ggsave("figures/fade_single_sf1_side.png", p, postfix=postfix, width=7, height=2.5, scale=0.8)
+
+    print(con.execute(
+                "select * from lineage_data where sf=1 and model='lineage'").df())
+    single_data_speedup = con.execute(f"""
+        select t1.system, t1.query, t1.sf, t1.sf_label, t1.eval_time, t2.eval_time, t2.eval_time / t1.eval_time as speedup from 
+            (select 'FaDE' as system, query, sf, sf_label,  eval_time_ms as eval_time,
+                from fade_delete where n=1 and num_threads=1 and prune='True' and prob={dbt_prob} and incremental='False' and use_gb_backward_lineage='False'
+                ) as t1 JOIN (
+                select sf, query, sf_label, query_timing*1000 as eval_time from lineage_data where sf=1 and model='lineage' and workload='tpch'
+                ) as t2 USING (query, sf, sf_label)
+        UNION ALL select t1.system, t1.query, t1.sf, t1.sf_label, t1.eval_time, t2.eval_time, t2.eval_time / t1.eval_time as speedup from
+                    (select 'IVM' as system, query, sf, sf_label, eval_time_ms as eval_time from dbt_data where prob={dbt_prob} and prune='False'
+            and itype='DELETE') as t1 JOIN (
+                select sf, query, sf_label, query_timing*1000 as eval_time from lineage_data where sf=1 and model='lineage' and workload='tpch'
+            ) as t2 USING (query, sf, sf_label)
+        UNION ALL select t1.system, t1.query, t1.sf, t1.sf_label, t1.eval_time, t2.eval_time, t2.eval_time / t1.eval_time as speedup from 
+                    ( select 'Circuit' as system, query, 1 as sf, sf_label, time_ms as eval_time, 
+                        from df_provsql where with_prov='True') as t1 JOIN (select 'Postgres' as system, query, 1 as sf,
+                        sf_label, time_ms as eval_time from df_provsql where with_prov='False') as t2 USING (query, sf, sf_label)
+            """).df()
+
+    postfix_sample = """
+    data$query = factor(data$query, levels=c('Q1', 'Q3', 'Q5', 'Q7', 'Q9', 'Q10', 'Q12'))
+    data$system = factor(data$system, levels=c('IVM', 'FaDE', 'Circuit'))
+    """
+    print(con.execute("select * from single_data_speedup order by system, query").df())
+    # show DBT, ProvSQL, Original Query, ProvSQL, Fade-prune as Fade
+    p = ggplot(single_data_speedup, aes(x='query', y='speedup', color=cat, fill=cat, group=cat))
+    p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.6), width=0.5)
+    p += axis_labels('Query', 'Original Query / WhatIf (log)', 'discrete', 'log10',
+        ykwargs=dict(breaks=[0.1,0, 10,100,1000,10000],  labels=list(map(esc,['0.1','0', '10','100','1000','10000']))),
+            )
+    p += legend_bottom
+    ggsave("figures/fade_single_sf1_sample.png", p, postfix=postfix_sample, width=7, height=4, scale=0.8)
+
+    # TODO: show speedup or slowdowns compared to base query -> one bar per system
+    # show ProvSQL, Original Query, ProvSQL
+    single_data_prov = con.execute("""select * from single_data_speedup where sf=1 and system IN ('IVM', 'Circuit')""").df()
+    p = ggplot(single_data_prov, aes(x='query', y='speedup', color=cat, fill=cat, group=cat))
+    p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.6), width=0.5)
+    p += axis_labels('Query', 'Original Query / WhatIf (log)', 'discrete', 'log10',
+        ykwargs=dict(breaks=[0.1, 0, 10,100,1000,10000],  labels=list(map(esc,['0.1','0', '10','100','1000','10000']))),
+            )
+    p += legend_bottom
+    ggsave("figures/fade_single_sf1_provsql_dbt.png", p, postfix=postfix_sample, width=7, height=4, scale=0.8)
     
-    single_data_all = con.execute("select * from single_data_all where use_gb_backward_lineage='False'").df()
+    fade_delete = con.execute("select * from fade_delete where use_gb_backward_lineage='False' and itype='DENSE_DELETE'").df()
     dense_data = con.execute("select * from dense_data where use_gb_backward_lineage='False'").df()
 
     # fig 1:
@@ -114,8 +211,8 @@ if True:
     fade.prune as fprune, fade.num_threads,
     (dbt.eval_time_ms / fade.eval_time_ms) as nor,
     dbt.eval_time_ms, fade.eval_time_ms
-    from (select * from dbt_data where prune='True') as dbt JOIN
-    (select * from  single_data_all where n=1 and num_threads=1 and incremental='False') as fade
+    from (select * from dbt_data where prune='True' and itype='DELETE') as dbt JOIN
+    (select * from  fade_delete where n=1 and num_threads=1 and incremental='False') as fade
     USING (query, sf, prob)
     """).df()
 
@@ -167,11 +264,13 @@ if True:
         min(dbt_data.eval_time) as min_deval,
         min(f.eval_time_ms) as min_feval,
         max(dbt_data.eval_time / f.eval_time_ms) as max_speedup,
+        max(f.eval_time_ms / dbt_data.eval_time) as max_slowdown,
         avg(dbt_data.eval_time / f.eval_time_ms) as avg_speedup,
         min(dbt_data.eval_time / f.eval_time_ms) as min_speedup
         from {fade_data} as f JOIN dbt_data
         USING (qid, sf)
         where f.n=1 and f.prune='{fade_prune}' and dbt_data.prune='{dbt_prune}'
+        and dbt_data.prob=0.1 and  f.prob=0.1
         and f.incremental='{is_incremental}' and f.num_threads=1
         group by {group} sf
         order by {group} sf""").df()
@@ -186,6 +285,7 @@ if True:
         from {fade_data} as f JOIN dbt_data
         USING (qid, sf, prob)
         where f.n=1 and f.prune='{fade_prune}' and dbt_data.prune='{dbt_prune}'
+        and dbt_data.prob=0.1 and f.prob=0.1
         and f.incremental='{is_incremental}' and f.num_threads=1
         group by {group} sf
         order by {group} sf""").df()
@@ -341,11 +441,7 @@ if True:
 
 
 if True:
-    dbt_data_scale = get_data("fade_data/dbtoast_may1.csv", 1)
-    dbt_data_all = con.execute("""select * from dbt_data_scale where itype='SCALE'
-    UNION ALL select * from dbt_data where itype='DELETE'""").df()
-    fade_scale = get_data("scaling_sf1_may1.csv", 1000)
-    dbt_data_all["cat"] = dbt_data_all.apply(lambda row: "DBT_prune" if row["prune"] else "DBT", axis=1)
+    #fade_scale = get_data("scaling_sf1_may1.csv", 1000)
     cat = 'query'
     p = ggplot(dbt_data_all, aes(x='prob',  y="eval_time_ms", color=cat, fill=cat, group=cat))
     p += geom_line(stat=esc('identity')) + geom_point(stat=esc('identity'))
