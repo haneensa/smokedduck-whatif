@@ -17,7 +17,7 @@ namespace duckdb {
 
 string FilterCodeAndAllocPredicate(EvalConfig& config, PhysicalOperator *op,
     shared_ptr<OperatorLineage> lop, std::unordered_map<idx_t, FadeDataPerNode>& fade_data) {
-	string fname = "filter_"+ to_string(op->id) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
+	string fname = "filter_"+ to_string(op->id) + "_" + to_string(config.qid); // + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
 	std::ostringstream oss;
 	oss << R"(extern "C" int )"
 	    << fname
@@ -47,7 +47,7 @@ string FilterCodeAndAllocPredicate(EvalConfig& config, PhysicalOperator *op,
 
 
 string JoinCodeAndAllocPredicate(EvalConfig config, PhysicalOperator *op, shared_ptr<OperatorLineage> lop, std::unordered_map<idx_t, FadeDataPerNode>& fade_data) {
-	string fname = "join_"+ to_string(op->id) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
+	string fname = "join_"+ to_string(op->id) + "_" + to_string(config.qid); // + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
 	std::ostringstream oss;
 	oss << R"(extern "C" int )"
 	    << fname
@@ -82,7 +82,7 @@ void* __restrict__ rhs_var_ptr,  void* __restrict__ out_ptr, const int start, co
 
 string get_agg_init_predicate(EvalConfig config, int row_count, int chunk_count, int opid, int n_interventions, string fn, string alloc_code,
                     string get_data_code, string get_vals_code) {
-	string fname = "agg_"+ to_string(opid) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
+	string fname = "agg_"+ to_string(opid) + "_" + to_string(config.qid); // + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
 	std::ostringstream oss;
 	if (config.use_duckdb) {
 		oss << R"(extern "C" int )"

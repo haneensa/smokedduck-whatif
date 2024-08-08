@@ -404,12 +404,16 @@ if best_distinct:
         p += facet_grid(".~prune_label", scales=esc("free_y"))
         ggsave(f"figures/{prefix}_fade_vec_8.png", p, postfix=postfix, width=6, height=2, scale=0.8)
         
+        # TODO: rename
         vec_data_distinct_samples = con.execute("select * from vec_data_distinct where query in ('Q1','Q5','Q9','Q12')").df()
-        p = ggplot(vec_data_distinct_samples, aes(x='n',  y="speedup", color="prune_label", fill="prune_label"))
+        vec_data_distinct_samples["sys_label"] = "+B+W8"
+        vec_data_distinct_samples["sys_label"] = vec_data_distinct_samples.apply(lambda row: row["sys_label"] + "+P" if row["prune_label"]=='FaDE-P' else row["sys_label"] , axis=1)
+        vec_data_distinct_samples["sys_label"] = vec_data_distinct_samples.apply(lambda row: row["sys_label"] + "+D" , axis=1)
+        p = ggplot(vec_data_distinct_samples, aes(x='n',  y="speedup", color="sys_label", fill="sys_label"))
         p += geom_line(stat=esc('identity'))  + geom_point(stat=esc('identity'))
         p += legend_side
-        p += axis_labels('Batch Size', "Speedup", "continuous",
-                xkwargs=dict(breaks=[64, 512,2048],  labels=list(map(esc,['64',  '512','2K']))),
+        p += axis_labels('Batch Size', "Speedup", "log10",
+                xkwargs=dict(breaks=[64, 512,2048],  labels=list(map(esc,['64',  '512','2K  ']))),
             )
         p += facet_grid(".~query", scales=esc("free_y"))
         ggsave(f"figures/{prefix}_fade_vec_queries.png", p, postfix=postfix, width=6, height=2, scale=0.8)
@@ -432,7 +436,7 @@ if best_distinct:
         p += facet_grid(".~prune_label", scales=esc("free_y"))
         ggsave(f"figures/{prefix}_fade_vec_8_wprune.png", p, postfix=postfix, width=6, height=2, scale=0.8)
         for nv in [2048]:
-            # Baseline, +B, +B+W, +B+W+SIMD, +B+W+SIMD+P
+            # Baseline, +B, +B+W, +B+W+D, +B+W+D+P
             def label_cat(c):
                 if c==f'1W+B=1':
                     return 'Baseline'
@@ -440,10 +444,10 @@ if best_distinct:
                     return '+B'
                 elif c==f'8W+B={nv}':
                     return '+B+W'
-                elif c==f'8W+SIMD+B={nv}':
-                    return '+B+W+SIMD'
-                elif c==f'8W+SIMD+P+B={nv}':
-                    return '+B+W+P+SIMD'
+                elif c==f'8W+D+B={nv}':
+                    return '+B+W+D'
+                elif c==f'8W+D+P+B={nv}':
+                    return '+B+W+P+D'
                 elif c==f'8W+P+B={nv}':
                     return '+B+W+P'
                 else:
@@ -451,23 +455,23 @@ if best_distinct:
             data_distinct["cat2"] = data_distinct.apply(lambda row: label_cat(row["cat"]), axis=1)
             postfixcat = """
             data$query = factor(data$query, levels=c('Q1', 'Q3', 'Q5', 'Q7', 'Q9', 'Q10', 'Q12'))
-            data$cat = factor(data$cat, levels=c('1W', '1W+SIMD', '1W+P', '1W+SIMD+P',
-            '2W', '2W+SIMD', '2W+P', '2W+SIMD+P',
-            '4W', '4W+SIMD', '4W+P', '4W+SIMD+P',
-            '8W', '8W+SIMD', '8W+P', '8W+SIMD+P'))
-            data$cat2 = factor(data$cat2, levels=c('Baseline', '+B', '+B+W', '+B+W+SIMD', '+B+W+P', '+B+W+P+SIMD'))
+            data$cat = factor(data$cat, levels=c('1W', '1W+D', '1W+P', '1W+D+P',
+            '2W', '2W+D', '2W+P', '2W+D+P',
+            '4W', '4W+D', '4W+P', '4W+D+P',
+            '8W', '8W+D', '8W+P', '8W+D+P'))
+            data$cat2 = factor(data$cat2, levels=c('Baseline', '+B', '+B+W', '+B+W+D', '+B+W+P', '+B+W+P+D'))
                 """
             data_distinct_q = con.execute(f"""
             select 'avg' as typ, prob ,cat, cat2, query, sf_label, prune_label, n, avg(throughput) throughput, avg(speedup) as speedup
             ,avg(speedupwprune) as speedupwprune, avg(throughputwprune) as throughputwprune
             ,max(speedupall) as speedupall, max(throughputall) as throughputall
             from data_distinct
-            where prob={prob} and cat IN ('1W+B=1', '1W+B={nv}', '8W+B={nv}', '8W+SIMD+B={nv}', '8W+P+B={nv}', '8W+SIMD+P+B={nv}')
+            where prob={prob} and cat IN ('1W+B=1', '1W+B={nv}', '8W+B={nv}', '8W+D+B={nv}', '8W+P+B={nv}', '8W+D+P+B={nv}')
             group by cat, sf_label, prune_label, n, prob, typ, query, cat2
             """).df()
             print(f"++++++++++Summary {nv}+++++++")
             data_distinct_q_vec = con.execute("""select query, t1.cat2, prune_label,( t1.speedup / base.speedup) as speedup from
-            (select * from data_distinct_q where cat2='+B+W+P+SIMD' or cat2='+B+W+SIMD') as t1 JOIN
+            (select * from data_distinct_q where cat2='+B+W+P+D' or cat2='+B+W+D') as t1 JOIN
             (select * from data_distinct_q where cat2='+B+W+P'  or cat2='+B+W') as base using
             (prune_label, query)""").df()
             p = ggplot(data_distinct_q_vec, aes(x='query',  y="speedup", color='cat2', fill='cat2'))
@@ -477,7 +481,7 @@ if best_distinct:
             p += legend_side
             ggsave(f"figures/{prefix}_fade_{nv}_sf1_speedup_vec.png", p,  postfix=postfixcat,width=8, height=2.5, scale=0.8)
 
-            data_distinct_q = con.execute("select * from data_distinct_q where cat2<>'+B+W+SIMD'").df()
+            data_distinct_q = con.execute("select * from data_distinct_q where cat2<>'+B+W+D'").df()
             p = ggplot(data_distinct_q, aes(x='query',  y="speedup", color='cat2', fill='cat2'))
             p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.9), width=0.88)
             p += axis_labels('Query', "Speedup (log)", "discrete", "log10")
@@ -527,8 +531,8 @@ if best_distinct:
             # VERIFY: a single intervention, that pruning increases throughput by on average 30× (1−190×)
             print(f"(+B+W+P) is on average 579× (31−2104×) faster than the baseline.")
             summary_nv(f"sf_label, cat2", f"where cat='8W+P+B={nv}'")
-            print(f"+B+W+P+SIMD) is on average 621× (2149.−32×) faster than the baseline,")
-            summary_nv(f"sf_label, cat2", f"where cat='8W+SIMD+P+B={nv}'")
+            print(f"+B+W+P+D) is on average 621× (2149.−32×) faster than the baseline,")
+            summary_nv(f"sf_label, cat2", f"where cat='8W+D+P+B={nv}'")
             print(f"+++++++++++++++++")
         
 def summary_eval(table, attrs, whr):
