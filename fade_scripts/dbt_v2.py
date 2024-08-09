@@ -18,14 +18,26 @@ include_incremental_random = True
 postfix = """
 data$query = factor(data$query, levels=c('Q1', 'Q3', 'Q5','Q6',  'Q7', 'Q8', 'Q9', 'Q10', 'Q12', 'Q14', 'Q19'))
 """
-selected_queries = " query IN ('Q1', 'Q3', 'Q5', 'Q7', 'Q9', 'Q10', 'Q12') "
     
 lineage_data = pd.read_csv('fade_data/lineage_overhead_all_april30_v2.csv')
 lineage_data["query"] = "Q"+lineage_data["qid"].astype(str)
 lineage_data["sf_label"] = "SF="+lineage_data["sf"].astype(str)
 
+use_sample = False #True
+exclude_sample = True #False
+
+if use_sample:
+    selected_queries = "query IN  ('Q1', 'Q3', 'Q5', 'Q7', 'Q9', 'Q10', 'Q12') "
+else:
+    selected_queries = " true "
+
+if exclude_sample:
+    selected_queries = "query IN  ('Q6', 'Q8', 'Q14', 'Q19') "
+
+
 if True:
     fade_single = get_data(f"fade_all_queries_a5.csv", 1000)
+    fade_single = con.execute(f"select * from fade_single where {selected_queries}").df()
     fade_single["spec"] = fade_single.apply(lambda row: '' if type(row["spec"]) is not str else row["spec"], axis=1)
     fade_single = con.execute("""select
     sf, qid, itype, prob, incremental, use_duckdb, is_scalar, prune,
@@ -52,7 +64,7 @@ if True:
     sf, qid, query, cat, sf_label, prune_label, itype, incremental, use_duckdb, is_scalar, prune,
     num_threads, n, batch, prob
     """).df()
-    print(fade_single)
+    
     fade_single["sys_label"] = "FaDE"
     fade_single["sys_label"] = fade_single.apply(lambda row: row["sys_label"] + "-W" + str(row["num_threads"]) , axis=1)
     fade_single["sys_label"] = fade_single.apply(lambda row: row["sys_label"] + "-P" if row["prune"] else row["sys_label"] , axis=1)
@@ -64,10 +76,12 @@ if True:
     df_provsql = pd.DataFrame(provsql_data)
     df_provsql["query"] = "Q"+df_provsql["qid"].astype(str)
     df_provsql["sf_label"] = "SF=1.0"
+    df_provsql = con.execute(f"select * from df_provsql where {selected_queries}").df()
 
     dbt_data_july9 = get_data("fade_data/dbtoast_july9.csv", 1)
     dbt_data_a5 = get_data("dbtoast_a5.csv", 1)
     dbt_data_all = con.execute("select * from dbt_data_a5 UNION ALL select * from dbt_data_july9").df()
+    dbt_data_all = con.execute(f"select * from dbt_data_all where {selected_queries}").df()
     dbt_data = con.execute("""select
     avg(eval_time) as eval_time,
     sf, qid, itype, prob, incremental, use_duckdb, is_scalar, prune,
@@ -85,9 +99,9 @@ if True:
     sf, qid, query, cat, sf_label, prune_label, itype, incremental, use_duckdb, is_scalar, prune,
     num_threads, n, batch, prob
     """).df()
+
     # compute average
     dbt_data["sys_label"] = dbt_data.apply(lambda row: "DBT-P" if row["prune"] else "DBT", axis=1)
-    print(dbt_data)
 
     cat = "query"
     p = ggplot(dbt_data, aes(x='prob',  y="eval_time_ms", color=cat, fill=cat, group=cat))
@@ -120,20 +134,10 @@ if True:
     p = ggplot(single_data_sf1, aes(x='query', y='eval_time_ms', color=cat, fill=cat, group=cat))
     p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.6), width=0.5)
     p += axis_labels('Query', 'Latency (ms, log)', 'discrete', 'log10',
-            ykwargs=dict(breaks=[0.1,10,100,1000,10000],  labels=list(map(esc,['0.1','10','100','1000','10000']))),
-            )
+            ykwargs=dict(breaks=[0.1,10,100,1000,10000],  labels=list(map(esc,['0.1','10','100','1000','10000']))),)
     p += legend_side
     ggsave("figures/fade_single_sf1_side.png", p, postfix=postfix, width=7, height=2.5, scale=0.8)
     
-    single_data_sf1_sample = con.execute(f"select * from single_data where sf=1 and {selected_queries}").df()
-    p = ggplot(single_data_sf1_sample, aes(x='query', y='eval_time_ms', color=cat, fill=cat, group=cat))
-    p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.6), width=0.5)
-    p += axis_labels('Query', 'Latency (ms, log)', 'discrete', 'log10',
-            ykwargs=dict(breaks=[0.1,10,100,1000,10000],  labels=list(map(esc,['0.1','10','100','1000','10000']))),
-            )
-    p += legend_side
-    ggsave("figures/fade_single_sf1_sample_side.png", p, postfix=postfix, width=7, height=2.5, scale=0.8)
-
     # speedup against base query
     single_data_speedup = con.execute(f"""
         select t1.system, t1.query, t1.sf, t1.sf_label, t1.eval_time, t2.eval_time, t2.eval_time / t1.eval_time as speedup from 
@@ -153,8 +157,7 @@ if True:
                         sf_label, time_ms as eval_time from df_provsql where with_prov='False') as t2 USING (query, sf, sf_label)
             """).df()
 
-    postfix_sample = """
-    data$query = factor(data$query, levels=c('Q1', 'Q3', 'Q5', 'Q7', 'Q9', 'Q10', 'Q12'))
+    postfix_sample = postfix + """
     data$system = factor(data$system, levels=c('IVM', 'FaDE-W1-P', 'Circuit'))
     """
     # show DBT, ProvSQL, Original Query, ProvSQL, Fade-prune as Fade
@@ -203,27 +206,12 @@ if True:
     p += facet_grid(".~system", scales=esc("free_y"))
     ggsave(f"figures/fade_dbt_vs_fade.png", p, postfix=postfix, width=7, height=2.5, scale=0.8)
 
-    dbt_fade_data_sample = con.execute(f"select * from dbt_fade_data where {selected_queries}").df()
-    p = ggplot(dbt_fade_data_sample, aes(x='prob',  y="nor", color="query", fill="query"))
-    p += geom_line(stat=esc('identity')) 
-    p += axis_labels('Intervention Probability (log)', "Speedup (log)", "log10", "log10",
-        ykwargs=dict(breaks=[0.1,10,100,1000,10000],  labels=list(map(esc,['0.1','10','100','1000','10000']))),
-        xkwargs=dict(breaks=[0.001, 0.01, 0.1,0.5],  labels=list(map(esc,['0.001','0.01','0.1', '0.5']))),
-        )
-    p += legend_bottom
-    p += legend_side
-    p += geom_hline(aes(yintercept=1))
-    p += facet_grid(".~system", scales=esc("free_y"))
-    ggsave(f"figures/fade_dbt_vs_fade_sample.png", p, postfix=postfix, width=7, height=2.5, scale=0.8)
-
-
     def get_summary(fade_data, dbt_prune, fade_prune, is_incremental, group, whr):
         print("get_summary", fade_data, dbt_prune, fade_prune, is_incremental, group)
         return con.execute(f"""select {group} sf,
-        avg(dbt_data.eval_time) as dbt_ms,
-        avg(f.eval_time_ms) as fade_ms,
-        min(dbt_data.eval_time) as dbt_min,
-        min(f.eval_time_ms) as fade_min,
+        avg(dbt_data.eval_time) as dbt_ms, avg(f.eval_time_ms) as fade_ms,
+        min(dbt_data.eval_time) as dbt_min, min(f.eval_time_ms) as fade_min,
+        max(dbt_data.eval_time) as dbt_max, max(f.eval_time_ms) as fade_max,
         max(dbt_data.eval_time / f.eval_time_ms) as max_speedup,
         avg(dbt_data.eval_time / f.eval_time_ms) as avg_speedup,
         min(dbt_data.eval_time / f.eval_time_ms) as min_speedup
@@ -239,8 +227,7 @@ if True:
     def summary(table, attrs, extra="", whr=""):
         print(table, attrs, extra, whr)
         return con.execute(f"""
-        select  {attrs}, 
-        {extra}
+        select  {attrs}, {extra}
         max(eval_time_ms) as eval_time_max, avg(eval_time_ms) as eval_time_avg, min(eval_time_ms) as eval_time_min,
         from {table}
         {whr}
@@ -258,7 +245,6 @@ if True:
         print("*** per query prob=0.1: \n", summary_data)
         summary_data = get_summary("fade_single", "False", "False", "False", "", prob_where)
         print("***probe=0.1 \n", summary_data)
-        
         
         print("======== DBT-P vs FaDe Summary =============")
         # fade_data, dbt_prune, fade_prune, is_incremental, group
@@ -308,7 +294,6 @@ if True:
     single_data_summary = con.execute(f"""
     select sf, system, avg(eval_time_ms) as latency_avg, max(eval_time_ms) as latency_max, min(eval_time_ms) as latency_min
     from single_data
-    where {selected_queries}
     group by sf, system
     """).df()
     print(single_data_summary)
@@ -408,6 +393,21 @@ if True:
     Since \dbtpruned runtime evaluation is always faster than \dbtfull (ignoring the high price of data pruning) in the rest of this section, we mainly compare \sys to \dbtpruned.
     """
     print(dbt_vs_fade_text)
+
+    summary = con.execute("""select query,
+        fade.eval_time_ms as fade_ms, fade_prune.eval_time_ms as fadep_ms,
+        provsql.eval_time_ms as provsql_ms, postgres.eval_time_ms as postgres_ms,
+        provsql.eval_time_ms/postgres.eval_time_ms as provsql_slowdown,
+        provsql.eval_time_ms/fade.eval_time_ms as fade_speedup,
+        provsql.eval_time_ms/fade_prune.eval_time_ms as fadep_speedup
+        from (select * from single_data where system='FaDE-W1') as fade JOIN
+        (select * from single_data where system='FaDE-W1-P') as fade_prune using (query) JOIN
+        (select * from single_data where system='ProvSQL') as provsql using (query) JOIN
+        (select * from single_data where system='Postgres') as postgres using (query)
+        """).df()
+    print(summary)
+
+    print(con.execute("select avg(fade_speedup), avg(provsql_slowdown) from summary").df())
 
 
 if False:

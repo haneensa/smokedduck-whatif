@@ -9,9 +9,9 @@ def get_data(fname, scale):
     local_data["prune_time_ms"] = scale * local_data["prune_time"]
     local_data["query"] = "Q"+ local_data["qid"].astype(str)
     local_data["cat"] = local_data.apply(lambda row: str(row["num_threads"]) + "W", axis=1)
-    local_data["cat"] = local_data.apply(lambda row: row["cat"] + "+SIMD" if row["is_scalar"] == False else row["cat"] , axis=1)
+    local_data["cat"] = local_data.apply(lambda row: row["cat"] + "+D" if row["is_scalar"] == False else row["cat"] , axis=1)
     local_data["sf_label"] = "SF="+ local_data["sf"].astype(str)
-    local_data["prune_label"] = local_data.apply(lambda row:"FaDE-Prune" if row["prune"] else "FaDE" , axis=1)
+    local_data["prune_label"] = local_data.apply(lambda row:"FaDE-P" if row["prune"] else "FaDE" , axis=1)
     local_data.rename(columns={'distinct': 'n'}, inplace=True)
     return local_data
     

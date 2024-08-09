@@ -31,7 +31,18 @@ dense_fade = dense_fade[dense_fade['spec']!='lineitem.i']
 postfix = """
 data$query = factor(data$query, levels=c('Q1', 'Q3', 'Q5','Q6',  'Q7', 'Q8', 'Q9', 'Q10', 'Q12', 'Q14', 'Q19'))
 """
-selected_queries = " query IN ('Q1', 'Q3', 'Q5', 'Q7', 'Q9', 'Q10', 'Q12') "
+use_sample = False #True
+exclude_sample = True #False
+
+if use_sample:
+    selected_queries = "query IN  ('Q1', 'Q3', 'Q5', 'Q7', 'Q9', 'Q10', 'Q12') "
+else:
+    selected_queries = " true "
+
+if exclude_sample:
+    selected_queries = "query IN  ('Q6', 'Q8', 'Q14', 'Q19') "
+
+dense_fade = con.execute(f"select * from dense_fade where {selected_queries}").df()
 
 if best:
     print("--->======== DENSE best =============")
@@ -396,7 +407,11 @@ if best_distinct:
         ggsave(f"figures/{prefix}_19_fade_vec_8.png", p, postfix=postfix, width=6, height=2, scale=0.8)
         
         # TODO: rename
-        vec_data_distinct_samples = con.execute("select * from vec_data_distinct where query in ('Q1','Q5','Q9','Q12')").df()
+        if exclude_sample:
+            vec_data_distinct_samples = con.execute("select * from vec_data_distinct where query in ('Q6','Q8','Q14','Q19')").df()
+        else:
+            vec_data_distinct_samples = con.execute("select * from vec_data_distinct where query in ('Q1','Q5','Q9','Q12')").df()
+
         vec_data_distinct_samples["sys_label"] = "+B+W8"
         vec_data_distinct_samples["sys_label"] = vec_data_distinct_samples.apply(lambda row: row["sys_label"] + "+P" if row["prune_label"]=='FaDE-P' else row["sys_label"] , axis=1)
         vec_data_distinct_samples["sys_label"] = vec_data_distinct_samples.apply(lambda row: row["sys_label"] + "+D" , axis=1)
@@ -408,7 +423,7 @@ if best_distinct:
             )
         p += facet_grid(".~query", scales=esc("free_y"))
         ggsave(f"figures/{prefix}_20_fade_vec_queries.png", p, postfix=postfix, width=6, height=2, scale=0.8)
-        
+    
         vec_data_distinct_samples = con.execute("select * from vec_data_distinct where n IN  (64, 512, 2048)").df()
         p = ggplot(vec_data_distinct_samples, aes(x='query',  y="speedup", color="prune_label", fill="prune_label"))
         p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.9), width=0.88)
@@ -444,8 +459,7 @@ if best_distinct:
                 else:
                     return c
             data_distinct["cat2"] = data_distinct.apply(lambda row: label_cat(row["cat"]), axis=1)
-            postfixcat = """
-            data$query = factor(data$query, levels=c('Q1', 'Q3', 'Q5','Q6',  'Q7', 'Q8', 'Q9', 'Q10', 'Q12', 'Q14', 'Q19'))
+            postfixcat = postfix + """
             data$cat = factor(data$cat, levels=c('1W', '1W+D', '1W+P', '1W+D+P',
             '2W', '2W+D', '2W+P', '2W+D+P',
             '4W', '4W+D', '4W+P', '4W+D+P',
