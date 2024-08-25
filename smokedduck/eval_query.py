@@ -46,7 +46,7 @@ if args.workload == "tpch":
     con = smokedduck.connect(':default:')
     con.execute(f'CALL dbgen(sf={sf});')
     # capture provenance overhead for flights and nsf workload
-    for i in [1, 3, 5, 7, 9, 10, 12]:
+    for i in [1, 3, 5, 6, 7, 8, 9, 10, 12, 14, 19]:
         qid = str(i).zfill(2)
         query_file = f"queries/tpch/tpch_{qid}.sql"
         with open(query_file, "r") as f:

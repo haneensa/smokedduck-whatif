@@ -29,14 +29,14 @@ legend = theme_bw() + theme(**{
     "strip.text": element_text(color=esc("#333333")),
     "legend.position": esc('none'),
     "legend.margin": margin(t = 0, r = 0, b = 0, l = 0, unit = esc("pt")),
-    "legend.text": element_text(colour = "'#333333'", size=9, family = "'Arial'"),
+    "legend.text": element_text(colour = "'#333333'", size=8, family = "'Arial'"),
     "legend.key.size": unit(8, esc('pt')),
-})
+    }) 
+
 
 legend_bottom = legend + theme(**{
-  "legend.position":esc("bottom"),
-  "legend.spacing": "unit(-.1, 'cm')"
-})
+  "legend.position": esc("bottom"),
+}) +  guides(colour = guide_legend(nrow = 1))                # Ensure the legend has only one row
 
 legend_side = legend + theme(**{
   "legend.position":esc("right"),

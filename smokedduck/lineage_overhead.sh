@@ -2,9 +2,10 @@
 
 sf_values=("1" "5" "10")
 models=("lineage" "lineageAll" "ksemimodule")
-workload=("tpch" "nsf" "flights")
+workload=("tpch") # "nsf" "flights")
 # add prob, itype, incremental
-lineage_csv="fade_data/lineage_overhead_all_april30_v3.csv"
+#lineage_csv="fade_data/lineage_overhead_all_april30_v3.csv"
+lineage_csv="fade_data/lineage_overhead_all_tpch.csv"
 touch ${lineage_csv}
 echo qid,sf,model,workload,query_timing,lineage_timing > ${lineage_csv}
 for w in "${workload[@]}"

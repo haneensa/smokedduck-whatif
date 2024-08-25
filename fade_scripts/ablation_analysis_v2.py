@@ -31,8 +31,8 @@ dense_fade = dense_fade[dense_fade['spec']!='lineitem.i']
 postfix = """
 data$query = factor(data$query, levels=c('Q1', 'Q3', 'Q5','Q6',  'Q7', 'Q8', 'Q9', 'Q10', 'Q12', 'Q14', 'Q19'))
 """
-use_sample = False #True
-exclude_sample = True #False
+use_sample = False #True #True
+exclude_sample = False #True #True #False
 
 if use_sample:
     selected_queries = "query IN  ('Q1', 'Q3', 'Q5', 'Q7', 'Q9', 'Q10', 'Q12') "
@@ -40,6 +40,7 @@ else:
     selected_queries = " true "
 
 if exclude_sample:
+    use_sample = False
     selected_queries = "query IN  ('Q6', 'Q8', 'Q14', 'Q19') "
 
 dense_fade = con.execute(f"select * from dense_fade where {selected_queries}").df()
@@ -422,7 +423,7 @@ if best_distinct:
                 xkwargs=dict(breaks=[64, 512,2048],  labels=list(map(esc,['64',  '512','2K  ']))),
             )
         p += facet_grid(".~query", scales=esc("free_y"))
-        ggsave(f"figures/{prefix}_20_fade_vec_queries.png", p, postfix=postfix, width=6, height=2, scale=0.8)
+        ggsave(f"figures/{prefix}_20_fade_vec_queries.png", p, postfix=postfix, width=8, height=2, scale=0.8)
     
         vec_data_distinct_samples = con.execute("select * from vec_data_distinct where n IN  (64, 512, 2048)").df()
         p = ggplot(vec_data_distinct_samples, aes(x='query',  y="speedup", color="prune_label", fill="prune_label"))
@@ -507,15 +508,15 @@ if best_distinct:
             p += axis_labels('Query', "Speedup (log)", "discrete", "log10")
             p += legend_bottom
             p += legend_side
-            ggsave(f"figures/{prefix}_26_fade_{nv}_sf1_speedup_prunecost.png", p,  postfix=postfixcat, width=8, height=2.5, scale=0.8)
+            ggsave(f"figures/{prefix}_26_fade_{nv}_sf1_speedup_prunecost.png", p,  postfix=postfixcat, width=8, height=2, scale=0.8)
             
             p = ggplot(data_distinct_q, aes(x='query',  y="throughputwprune", color='cat2', fill='cat2'))
             p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.9), width=0.88)
-            p += axis_labels('Query', "Interventions / Sec (log)", "discrete", "log10",
+            p += axis_labels('Query', "Intervention / Sec (log)", "discrete", "log10",
                 ykwargs=dict(breaks=[10,1000,100000, 1000000],  labels=list(map(esc,['10','1K','100K', '1M']))))
             p += legend_bottom
             p += legend_side
-            ggsave(f"figures/{prefix}_27_fade_{nv}_sf1_throughput_prunecost.png", p, postfix=postfixcat, width=8, height=2.5, scale=0.8)
+            ggsave(f"figures/{prefix}_27_fade_{nv}_sf1_throughput_prunecost.png", p, postfix=postfixcat, width=8, height=2, scale=0.8)
             def summary_nv(attrs, whr=""):
                 print(attrs, whr)
                 print(con.execute(f"""select {attrs},

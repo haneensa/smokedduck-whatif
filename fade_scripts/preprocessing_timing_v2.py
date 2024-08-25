@@ -11,6 +11,7 @@ con = duckdb.connect(':default:')
 def summary_size(table, attrs):
     print(table, attrs)
     print(con.execute(f"""select {attrs},
+    avg(lineage_count_prune/lineage_count) as diff_inv,
     avg(lineage_count) as avg_count, avg(lineage_count_prune) as avg_count_prune,
     max(lineage_count) as max_count, max(lineage_count_prune) as max_count_prune,
     min(lineage_count) as min_count, min(lineage_count_prune) as min_count_prune,
@@ -60,6 +61,16 @@ lineage_data = con.execute("""select sf, qid, prune, use_gb_backward_lineage, av
                             order by sf, qid
                             """).df()
 print(lineage_data)
+# Q3, 5, 6, 7, 8, 12, 19
+print(con.execute(f"""
+    select 'pruning ratio:' as label, sf, qid, prune,
+    avg(lineage_count/lineage_count_prune) as diff,
+    avg(lineage_count_prune/lineage_count) as diff_inv,
+    avg( (lineage_count-lineage_count_prune) / lineage_count) lineage_pruned,
+    avg(lineage_count) as avg_count, avg(lineage_count_prune) as avg_count_prune,
+    avg(lineage_size_mb) as avg_mb, avg(lineage_size_mb_prune) as avg_mb_prune,
+    from lineage_data where prune='True'
+    group by sf, qid, prune""").df())
 summary_size("lineage_data", "sf")
 summary_size("lineage_data", "sf, qid, prune")
 
@@ -68,34 +79,43 @@ print("Provenance on SF=1 is on average XMB (x − xMB) and YMB (y − yMB) afte
 summary_size("lineage_data", "sf, prune")
 
 summary_time("lineage_data", "sf, qid, use_gb_backward_lineage")
+print("""
+        (avg_datai, max_data) to cache input to aggregates values, 
+        (avg_post, max_post) to post-process the provenance data and allocate output buffers for the ioperators, and $30ms$ for provenance pruning---a total of $705ms$ on average.
+        """)
 summary_time("lineage_data", "sf, use_gb_backward_lineage")
 
-lineage_data = pd.read_csv('fade_data/lineage_overhead.csv')
-lineage_data = pd.read_csv('fade_data/lineage_overhead_all_april30_v2.csv')
-lineage_data["query"] = "Q"+lineage_data["qid"].astype(str)
-lineage_data["sf_label"] = "SF="+lineage_data["sf"].astype(str)
-print("======== Lineage Overheaad Summary =============")
-#summary_data = con.execute("""
-#select qid, sf, avg(query_timing) as qtiming, avg(lineage_timing) as ltiming,
-#avg(dense_data.ksemimodule_timing) as ktiming,
-#avg(lineage_timing-query_timing) as lineage_overhead,
-#avg(dense_data.ksemimodule_timing-query_timing) as ksemimodule_overhead,
-#from lineage_data JOIN dense_data USING (qid, sf)
-#group by qid, sf
-#order by qid, sf
-#""").df()
-#print(summary_data)
-def lineage_details(attrs):
-    print(con.execute(f"""select {attrs}, avg(query_timing), avg(lineage_timing),
-        avg(lineage_timing/query_timing) slowdown,
-        avg( 1000*(lineage_timing-query_timing)) diff_ms,
-        avg( ((lineage_timing-query_timing) / query_timing)*100 ) avg_rover,
-        max( ((lineage_timing-query_timing) / query_timing)*100 ) max_rover,
-        min( ((lineage_timing-query_timing) / query_timing)*100 ) min_rover
-    from lineage_data group by {attrs}
-    order by {attrs}""").df())
-lineage_details("sf, query, model, workload")
-lineage_details("sf, model, workload")
-lineage_details("model, workload")
+if True:
+    lineage_data = pd.read_csv('fade_data/lineage_overhead_all_tpch.csv')
+    #lineage_data = pd.read_csv('fade_data/lineage_overhead.csv')
+    #lineage_data = pd.read_csv('fade_data/lineage_overhead_all_april30_v2.csv')
+    lineage_data["query"] = "Q"+lineage_data["qid"].astype(str)
+    lineage_data["sf_label"] = "SF="+lineage_data["sf"].astype(str)
+    print("======== Lineage Overheaad Summary =============")
+    #summary_data = con.execute("""
+    #select qid, sf, avg(query_timing) as qtiming, avg(lineage_timing) as ltiming,
+    #avg(dense_data.ksemimodule_timing) as ktiming,
+    #avg(lineage_timing-query_timing) as lineage_overhead,
+    #avg(dense_data.ksemimodule_timing-query_timing) as ksemimodule_overhead,
+    #from lineage_data JOIN dense_data USING (qid, sf)
+    #group by qid, sf
+    #order by qid, sf
+    #""").df()
+    #print(summary_data)
+    def lineage_details(attrs):
+        print(con.execute(f"""select {attrs}, avg(query_timing), avg(lineage_timing),
+            avg(lineage_timing/query_timing) slowdown,
+            avg( 1000*(lineage_timing-query_timing)) diff_ms,
+            max( 1000*(lineage_timing-query_timing)) max_diff_ms,
+            avg( ((lineage_timing-query_timing) / query_timing)*100 ) avg_rover,
+            max( ((lineage_timing-query_timing) / query_timing)*100 ) max_rover,
+            min( ((lineage_timing-query_timing) / query_timing)*100 ) min_rover
+        from lineage_data
+        where sf=1
+        group by {attrs}
+        order by {attrs}""").df())
+    lineage_details("sf, query, model, workload")
+    lineage_details("sf, model, workload")
+    lineage_details("model, workload")
 
-# TODO: get how much extra overhead to cache values
+    # TODO: get how much extra overhead to cache values

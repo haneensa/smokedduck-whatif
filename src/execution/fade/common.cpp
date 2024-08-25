@@ -1093,7 +1093,7 @@ void Fade::BindFunctions(EvalConfig& config, void* handle, PhysicalOperator* op,
 	}
 
 	if (op->type == PhysicalOperatorType::TABLE_SCAN || op->type == PhysicalOperatorType::FILTER) {
-		string fname = "filter_"+ to_string(op->id) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
+		string fname = "filter_"+ to_string(op->id) + "_" + to_string(config.qid); // + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
 		fade_data[op->id].filter_fn = (int(*)(int, int*, void*, void*, const int, const int))dlsym(handle, fname.c_str());
 	} else if (op->type == PhysicalOperatorType::HASH_JOIN
 	           || op->type == PhysicalOperatorType::NESTED_LOOP_JOIN
@@ -1101,14 +1101,14 @@ void Fade::BindFunctions(EvalConfig& config, void* handle, PhysicalOperator* op,
 	           || op->type == PhysicalOperatorType::PIECEWISE_MERGE_JOIN
 	           || op->type == PhysicalOperatorType::CROSS_PRODUCT) {
 		//if (fade_data[op->id].n_masks > 0) {
-		string fname = "join_"+ to_string(op->id) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
+		string fname = "join_"+ to_string(op->id) + "_" + to_string(config.qid); // + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
 		fade_data[op->id].join_fn = (int(*)(int, int*, int*, void*, void*, void*,
             const int, const int))dlsym(handle, fname.c_str());
 		//}
 	} else if (op->type == PhysicalOperatorType::HASH_GROUP_BY
 	           || op->type == PhysicalOperatorType::PERFECT_HASH_GROUP_BY
 	           || op->type == PhysicalOperatorType::UNGROUPED_AGGREGATE) {
-		string fname = "agg_"+ to_string(op->id) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
+		string fname = "agg_"+ to_string(op->id) + "_" + to_string(config.qid); // + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
 		if (config.use_duckdb && fade_data[op->id].has_agg_child == false) {
 			fade_data[op->id].agg_duckdb_fn = (int(*)(int, int*, void*, std::unordered_map<std::string, vector<void*>>&,
 			                                           ChunkCollection&, const int, const int))dlsym(handle, fname.c_str());
@@ -1120,7 +1120,7 @@ void Fade::BindFunctions(EvalConfig& config, void* handle, PhysicalOperator* op,
 		  		fade_data[op->id].agg_fn = (int(*)(int, int*, void*, std::unordered_map<std::string, vector<void*>>&,
 				                              std::unordered_map<int, void*>&, const int, const int))dlsym(handle, fname.c_str());
           if (config.use_gb_backward_lineage) {
-		        string fname = "bw_agg_"+ to_string(op->id) + "_" + to_string(config.qid) + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
+		        string fname = "bw_agg_"+ to_string(op->id) + "_" + to_string(config.qid);// + "_" + to_string(config.use_duckdb) +  "_" + to_string(config.is_scalar);
             fade_data[op->id].agg_fn_bw = (int(*)(int, std::vector<std::vector<int>>&, void*, std::unordered_map<std::string, vector<void*>>&,
                                         std::unordered_map<int, void*>&))dlsym(handle, fname.c_str());
           }

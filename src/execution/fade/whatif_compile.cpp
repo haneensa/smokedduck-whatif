@@ -434,7 +434,7 @@ string get_agg_eval(EvalConfig& config, int total_agg_count, int agg_count, stri
 string get_batch_join_template(EvalConfig &config, PhysicalOperator *op,
                           std::unordered_map<idx_t, FadeDataPerNode>& fade_data) {
 	std::ostringstream oss;
-	if (config.is_scalar || config.n_intervention < 512) {
+	if (true || config.is_scalar || config.n_intervention < 512) {
 		oss << R"(
       int lhs_col = lhs_lineage[i] * n_masks;
       int rhs_col = rhs_lineage[i] * n_masks;
@@ -575,7 +575,7 @@ string GetFilterCode(EvalConfig& config, PhysicalOperator *op, shared_ptr<Operat
 		out[i] = var[lineage[i]];
 	}
 )";
-	} else if (config.is_scalar || config.n_intervention < 512) {
+	} else if (true || config.is_scalar || config.n_intervention < 512) {
 		oss << R"(
 	for (int i=start; i < end; ++i) {
     int col_out = i*n_masks;
@@ -1193,10 +1193,11 @@ void Alloc(EvalConfig& config, PhysicalOperator* op,
 }
 
 void Intervention2DEval(int thread_id, EvalConfig& config, void* handle, PhysicalOperator* op,
-                        std::unordered_map<idx_t, FadeDataPerNode>& fade_data,
-                        std::unordered_map<int, double>& ops_timing) {
+                        std::unordered_map<idx_t, FadeDataPerNode>& fade_data
+                      //, std::unordered_map<int, double>& ops_timing
+                        ) {
 	for (idx_t i = 0; i < op->children.size(); ++i) {
-		Intervention2DEval(thread_id, config, handle, op->children[i].get(), fade_data, ops_timing);
+		Intervention2DEval(thread_id, config, handle, op->children[i].get(), fade_data/*, ops_timing*/);
 	}
     
 //	std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
@@ -1486,18 +1487,18 @@ string Fade::Whatif(PhysicalOperator *op, EvalConfig config) {
 
   std::cout << "intervention" << std::endl;
 	std::vector<std::thread> workers;
-  std::unordered_map<int, double> ops_timing;
+  //std::unordered_map<int, double> ops_timing;
 	start_time = std::chrono::steady_clock::now();
   	if (config.num_worker > 1) {
 		for (int i = 0; i < config.num_worker; ++i) {
-		  workers.emplace_back(Intervention2DEval, i, std::ref(config), handle,  op, std::ref(fade_data), std::ref(ops_timing));
+		  workers.emplace_back(Intervention2DEval, i, std::ref(config), handle,  op, std::ref(fade_data)/*, std::ref(ops_timing)*/);
 		}
 		// Wait for all tasks to complete
 		for (std::thread& worker : workers) {
 		  worker.join();
 		}
 	} else {
-		Intervention2DEval(0, config, handle,  op, fade_data, ops_timing);
+		Intervention2DEval(0, config, handle,  op, fade_data/*, ops_timing*/);
 	}
 
 	end_time = std::chrono::steady_clock::now();
@@ -1511,9 +1512,9 @@ string Fade::Whatif(PhysicalOperator *op, EvalConfig config) {
 
 	system("rm loop.cpp loop.so");
 
-  for (auto& it: ops_timing) {
+ /* for (auto& it: ops_timing) {
     std::cout << "ops timing: " << it.first << " " << it.second << std::endl;
-  }
+  }*/
 
   config.topk=10;
 	if (config.topk > 0) {

@@ -189,7 +189,7 @@ if plot:
     p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.9), width=0.88)
     p += axis_labels('Query', "Speedup (log)", "discrete", "log10")
     p += legend_side
-    ggsave("figures/fade_search_fade_sf10_2048_speedup.png", p,  postfix=postfix,width=7, height=2.5, scale=0.8)
+    ggsave("figures/fade_search_fade_sf10_2048_speedup.png", p,  postfix=postfix,width=6, height=2, scale=0.8)
     
     p = ggplot(sf10_plot_data, aes(x='query',  y="throughput", color=cat, fill=cat, group=cat))
     p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.9), width=0.88)

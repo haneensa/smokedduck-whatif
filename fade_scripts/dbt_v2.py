@@ -10,33 +10,34 @@ dbt_prob = 0.1
 con = duckdb.connect(':default:')
 plot = True
 print_summary = True
-include_dbt = True
-dense = True
-single = True
 plot_scale = False
-include_incremental_random = True
 postfix = """
 data$query = factor(data$query, levels=c('Q1', 'Q3', 'Q5','Q6',  'Q7', 'Q8', 'Q9', 'Q10', 'Q12', 'Q14', 'Q19'))
 """
     
+prefix = "ALL"
 lineage_data = pd.read_csv('fade_data/lineage_overhead_all_april30_v2.csv')
 lineage_data["query"] = "Q"+lineage_data["qid"].astype(str)
 lineage_data["sf_label"] = "SF="+lineage_data["sf"].astype(str)
 
-use_sample = False #True
-exclude_sample = True #False
+use_sample = False
+exclude_sample = False
 
 if use_sample:
+    prefix = "SAMPLE"
     selected_queries = "query IN  ('Q1', 'Q3', 'Q5', 'Q7', 'Q9', 'Q10', 'Q12') "
 else:
     selected_queries = " true "
 
 if exclude_sample:
+    use_sample = False
+    prefix = "EXTRA"
     selected_queries = "query IN  ('Q6', 'Q8', 'Q14', 'Q19') "
 
-
 if True:
-    fade_single = get_data(f"fade_all_queries_a5.csv", 1000)
+    fade_single_a5 = get_data(f"fade_all_queries_a5.csv", 1000)
+    fade_single_a21 = get_data(f"fade_all_a21.csv", 1000)
+    fade_single = con.execute(f"select * from fade_single_a5 UNION ALL select * from fade_single_a21").df()
     fade_single = con.execute(f"select * from fade_single where {selected_queries}").df()
     fade_single["spec"] = fade_single.apply(lambda row: '' if type(row["spec"]) is not str else row["spec"], axis=1)
     fade_single = con.execute("""select
@@ -48,13 +49,6 @@ if True:
     avg(compile_time) as compile_time,
     avg(eval_time) as eval_time,
     avg(prune_time) as prune_time,
-    avg(lineage_time) as lineage_time,
-    avg(ksemimodule_timing) as ksemimodule_timing,
-    avg(lineage_count) as lineage_count,
-    avg(lineage_count_prune) as lineage_count_prune,
-    avg(lineage_size_mb) as lineage_size_mb,
-    avg(lineage_size_mb_prune) as lineage_size_mb_prune,
-    avg(code_gen_time) as code_gen_time, avg(data_time) as data_time,
     avg(eval_time_ms) as eval_time_ms,
     avg(prune_time_ms) as prune_time_ms,
     query, cat, sf_label, prune_label, 
@@ -72,15 +66,18 @@ if True:
     fade_scale = con.execute("select * from fade_single where itype='SCALE_RANDOM'").df()
     fade_delete = con.execute("select * from fade_single where itype='DENSE_DELETE'").df()
     
-    provsql_data = [{'qid': 1, 'with_prov': False, 'expid': 0, 'time_ms': 3927.064}, {'qid': 3, 'with_prov': False, 'expid': 1, 'time_ms': 476.422}, {'qid': 5, 'with_prov': False, 'expid': 2, 'time_ms': 1234.733}, {'qid': 7, 'with_prov': False, 'expid': 3, 'time_ms': 892.848}, {'qid': 9, 'with_prov': False, 'expid': 4, 'time_ms': 1315.129}, {'qid': 10, 'with_prov': False, 'expid': 5, 'time_ms': 1389.753}, {'qid': 12, 'with_prov': False, 'expid': 6, 'time_ms': 501.138}, {'qid': 3, 'with_prov': True, 'expid': 8, 'time_ms': 5544.203}, {'qid': 5, 'with_prov': True, 'expid': 9, 'time_ms': 1624.657}, {'qid': 7, 'with_prov': True, 'expid': 10, 'time_ms': 1334.478}, {'qid': 9, 'with_prov': True, 'expid': 11, 'time_ms': 68457.627}, {'qid': 10, 'with_prov': True, 'expid': 12, 'time_ms': 23379.272}, {'qid': 12, 'with_prov': True, 'expid': 13, 'time_ms': 3617.771}]
+    #provsql_data = [{'qid': 1, 'with_prov': False, 'expid': 0, 'time_ms': 3927.064}, {'qid': 3, 'with_prov': False, 'expid': 1, 'time_ms': 476.422}, {'qid': 5, 'with_prov': False, 'expid': 2, 'time_ms': 1234.733}, {'qid': 7, 'with_prov': False, 'expid': 3, 'time_ms': 892.848}, {'qid': 9, 'with_prov': False, 'expid': 4, 'time_ms': 1315.129}, {'qid': 10, 'with_prov': False, 'expid': 5, 'time_ms': 1389.753}, {'qid': 12, 'with_prov': False, 'expid': 6, 'time_ms': 501.138}, {'qid': 3, 'with_prov': True, 'expid': 8, 'time_ms': 5544.203}, {'qid': 5, 'with_prov': True, 'expid': 9, 'time_ms': 1624.657}, {'qid': 7, 'with_prov': True, 'expid': 10, 'time_ms': 1334.478}, {'qid': 9, 'with_prov': True, 'expid': 11, 'time_ms': 68457.627}, {'qid': 10, 'with_prov': True, 'expid': 12, 'time_ms': 23379.272}, {'qid': 12, 'with_prov': True, 'expid': 13, 'time_ms': 3617.771}]
+    #provsql_data = [{'qid': 3, 'with_prov': True, 'expid': -1, 'prob': 0.1, 'time_ms': 5478.671}, {'qid': 5, 'with_prov': True, 'expid': -1, 'prob': 0.1, 'time_ms': 1655.536}, {'qid': 6, 'with_prov': True, 'expid': -1, 'prob': 0.1, 'time_ms': 3797.805}, {'qid': 7, 'with_prov': True, 'expid': -1, 'prob': 0.1, 'time_ms': 1328.272}, {'qid': 9, 'with_prov': True, 'expid': -1, 'prob': 0.1, 'time_ms': 70812.42}, {'qid': 10, 'with_prov': True, 'expid': -1, 'prob': 0.1, 'time_ms': 23351.137}, {'qid': 12, 'with_prov': True, 'expid': -1, 'prob': 0.1, 'time_ms': 3625.865}, {'qid': 14, 'with_prov': True, 'expid': -1, 'prob': 0.1, 'time_ms': 8876.905}, {'qid': 19, 'with_prov': True, 'expid': -1, 'prob': 0.1, 'time_ms': 16.985}, {'qid': 6, 'with_prov': False, 'expid': -1, 'prob': 0, 'time_ms': 315.343}, {'qid': 14, 'with_prov': False, 'expid': -1, 'prob': 0, 'time_ms': 324.35}, {'qid': 19, 'with_prov': False, 'expid': -1, 'prob': 0, 'time_ms': 571.451}, {'qid': 6, 'with_prov': True, 'expid': -1, 'prob': 0, 'time_ms': 3647.282}, {'qid': 14, 'with_prov': True, 'expid': -1, 'prob': 0, 'time_ms': 8675.165}, {'qid': 19, 'with_prov': True, 'expid': -1, 'prob': 0, 'time_ms': 16.66}, {'qid': 1, 'with_prov': False, 'expid': 0, 'prob': 0, 'time_ms': 3927.064}, {'qid': 3, 'with_prov': False, 'expid': 1, 'prob': 0, 'time_ms': 476.422}, {'qid': 5, 'with_prov': False, 'expid': 2, 'prob': 0, 'time_ms': 1234.733}, {'qid': 7, 'with_prov': False, 'expid': 3, 'prob': 0, 'time_ms': 892.848}, {'qid': 9, 'with_prov': False, 'expid': 4, 'prob': 0, 'time_ms': 1315.129}, {'qid': 10, 'with_prov': False, 'expid': 5, 'prob': 0, 'time_ms': 1389.753}, {'qid': 12, 'with_prov': False, 'expid': 6, 'prob': 0, 'time_ms': 501.138}, {'qid': 3, 'with_prov': True, 'expid': 8, 'prob': 0, 'time_ms': 5544.203}, {'qid': 5, 'with_prov': True, 'expid': 9, 'prob': 0, 'time_ms': 1624.657}, {'qid': 7, 'with_prov': True, 'expid': 10, 'prob': 0, 'time_ms': 1334.478}, {'qid': 9, 'with_prov': True, 'expid': 11, 'prob': 0, 'time_ms': 68457.627}, {'qid': 10, 'with_prov': True, 'expid': 12, 'prob': 0, 'time_ms': 23379.272}, {'qid': 12, 'with_prov': True, 'expid': 13, 'prob': 0, 'time_ms': 3617.771}]
+    provsql_data = [{'qid': 3, 'with_prov': True, 'expid': -1, 'prob': 0.1, 'time_ms': 5478.671}, {'qid': 5, 'with_prov': True, 'expid': -1, 'prob': 0.1, 'time_ms': 1655.536}, {'qid': 6, 'with_prov': True, 'expid': -1, 'prob': 0.1, 'time_ms': 3797.805}, {'qid': 7, 'with_prov': True, 'expid': -1, 'prob': 0.1, 'time_ms': 1328.272}, {'qid': 9, 'with_prov': True, 'expid': -1, 'prob': 0.1, 'time_ms': 70812.42}, {'qid': 10, 'with_prov': True, 'expid': -1, 'prob': 0.1, 'time_ms': 23351.137}, {'qid': 12, 'with_prov': True, 'expid': -1, 'prob': 0.1, 'time_ms': 3625.865}, {'qid': 14, 'with_prov': True, 'expid': -1, 'prob': 0.1, 'time_ms': 8876.905}, {'qid': 19, 'with_prov': True, 'expid': -1, 'prob': 0.1, 'time_ms': 16.985}, {'qid': 6, 'with_prov': False, 'expid': -1, 'prob': 0, 'time_ms': 315.343}, {'qid': 8, 'with_prov': False, 'expid': -1, 'prob': 0, 'time_ms': 416.686}, {'qid': 14, 'with_prov': False, 'expid': -1, 'prob': 0, 'time_ms': 324.35}, {'qid': 19, 'with_prov': False, 'expid': -1, 'prob': 0, 'time_ms': 571.451}, {'qid': 6, 'with_prov': True, 'expid': -1, 'prob': 0, 'time_ms': 3647.282}, {'qid': 14, 'with_prov': True, 'expid': -1, 'prob': 0, 'time_ms': 8675.165}, {'qid': 19, 'with_prov': True, 'expid': -1, 'prob': 0, 'time_ms': 16.66}, {'qid': 1, 'with_prov': False, 'expid': 0, 'prob': 0, 'time_ms': 3927.064}, {'qid': 3, 'with_prov': False, 'expid': 1, 'prob': 0, 'time_ms': 476.422}, {'qid': 5, 'with_prov': False, 'expid': 2, 'prob': 0, 'time_ms': 1234.733}, {'qid': 7, 'with_prov': False, 'expid': 3, 'prob': 0, 'time_ms': 892.848}, {'qid': 9, 'with_prov': False, 'expid': 4, 'prob': 0, 'time_ms': 1315.129}, {'qid': 10, 'with_prov': False, 'expid': 5, 'prob': 0, 'time_ms': 1389.753}, {'qid': 12, 'with_prov': False, 'expid': 6, 'prob': 0, 'time_ms': 501.138}, {'qid': 3, 'with_prov': True, 'expid': 8, 'prob': 0, 'time_ms': 5544.203}, {'qid': 5, 'with_prov': True, 'expid': 9, 'prob': 0, 'time_ms': 1624.657}, {'qid': 7, 'with_prov': True, 'expid': 10, 'prob': 0, 'time_ms': 1334.478}, {'qid': 9, 'with_prov': True, 'expid': 11, 'prob': 0, 'time_ms': 68457.627}, {'qid': 10, 'with_prov': True, 'expid': 12, 'prob': 0, 'time_ms': 23379.272}, {'qid': 12, 'with_prov': True, 'expid': 13, 'prob': 0, 'time_ms': 3617.771}]
     df_provsql = pd.DataFrame(provsql_data)
     df_provsql["query"] = "Q"+df_provsql["qid"].astype(str)
     df_provsql["sf_label"] = "SF=1.0"
     df_provsql = con.execute(f"select * from df_provsql where {selected_queries}").df()
 
     dbt_data_july9 = get_data("fade_data/dbtoast_july9.csv", 1)
-    dbt_data_a5 = get_data("dbtoast_a5.csv", 1)
-    dbt_data_all = con.execute("select * from dbt_data_a5 UNION ALL select * from dbt_data_july9").df()
+    dbt_data_a5 = get_data("fade_data/dbtoast_a5.csv", 1)
+    dbt_data_a22 = get_data("fade_data/dbtoast_a22.csv", 1)
+    dbt_data_all = con.execute("select * from dbt_data_a5 UNION ALL select * from dbt_data_july9 UNION ALL select * from dbt_data_a22").df()
     dbt_data_all = con.execute(f"select * from dbt_data_all where {selected_queries}").df()
     dbt_data = con.execute("""select
     avg(eval_time) as eval_time,
@@ -95,6 +92,7 @@ if True:
     avg(prune_time_ms) as prune_time_ms,
     query, cat, sf_label, prune_label, 
     from dbt_data_all
+    where itype='DELETE'
     group by
     sf, qid, query, cat, sf_label, prune_label, itype, incremental, use_duckdb, is_scalar, prune,
     num_threads, n, batch, prob
@@ -109,7 +107,20 @@ if True:
     p += axis_labels('Prob', "Run time (ms)", "continuous", "log10")
     p += legend_bottom
     p += facet_grid(".~prune~num_threads~itype", scales=esc("free_y"))
-    ggsave("figures/dbt.png", p, postfix=postfix,width=10, height=8, scale=0.8)
+    ggsave(f"figures/{prefix}_dbt.png", p, postfix=postfix,width=10, height=8, scale=0.8)
+    
+    provsql_data = con.execute(f"""
+        select 'postgres' as stype, 'P' || cast(prob as varchar) as prob, 'ProvSQL' as system, query, 'False' as prune, 1 as sf, sf_label, avg(time_ms) as eval_time_ms, 'False' as incremental
+            from df_provsql where with_prov='True'
+            group by stype, system, query, prune, sf, sf_label, incremental, prob
+            """).df()
+    p = ggplot(provsql_data, aes(x='query',  y="eval_time_ms", color='prob', fill='prob', group='prob'))
+    p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.6), width=0.5)
+    p += axis_labels('Query', "Run time (ms, log)", "discrete", "log10",
+            ykwargs=dict(breaks=[10,1000,100000],  labels=list(map(esc,['10','10^3','10^5']))),)
+    p += legend_bottom
+    ggsave(f"figures/{prefix}_provsql.png", p, postfix=postfix,width=4, height=2, scale=0.8)
+    
 
     # figure 1: single intervention latency
     single_data = con.execute(f"""
@@ -121,7 +132,7 @@ if True:
             and itype='DELETE'
             group by stype, system, query, prune, sf, sf_label, incremental
         UNION ALL select 'postgres' as stype, 'ProvSQL' as system, query, 'False' as prune, 1 as sf, sf_label, avg(time_ms) as eval_time_ms, 'False' as incremental
-            from df_provsql where with_prov='True'
+            from df_provsql where with_prov='True' and prob=0
             group by stype, system, query, prune, sf, sf_label, incremental
         UNION ALL select 'postgres' as stype, 'Postgres' as system, query,  'False' as prune, 1 as sf, sf_label, avg(time_ms) as eval_time_ms, 'False' as incremental
             from df_provsql where with_prov='False'
@@ -135,51 +146,84 @@ if True:
     p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.6), width=0.5)
     p += axis_labels('Query', 'Latency (ms, log)', 'discrete', 'log10',
             ykwargs=dict(breaks=[0.1,10,100,1000,10000],  labels=list(map(esc,['0.1','10','100','1000','10000']))),)
-    p += legend_side
-    ggsave("figures/fade_single_sf1_side.png", p, postfix=postfix, width=7, height=2.5, scale=0.8)
-    
-    # speedup against base query
-    single_data_speedup = con.execute(f"""
-        select t1.system, t1.query, t1.sf, t1.sf_label, t1.eval_time, t2.eval_time, t2.eval_time / t1.eval_time as speedup from 
-            (select sys_label as system, query, sf, sf_label,  eval_time_ms as eval_time,
-                from fade_delete where n=1 and num_threads=1 and prune='True' and prob={dbt_prob} and incremental='False'
-                ) as t1 JOIN (
-                select sf, query, sf_label, query_timing*1000 as eval_time from lineage_data where sf=1 and model='lineage' and workload='tpch'
-                ) as t2 USING (query, sf, sf_label)
-        UNION ALL select t1.system, t1.query, t1.sf, t1.sf_label, t1.eval_time, t2.eval_time, t2.eval_time / t1.eval_time as speedup from
-                    (select 'IVM' as system, query, sf, sf_label, eval_time_ms as eval_time from dbt_data where prob={dbt_prob} and prune='False'
-            and itype='DELETE') as t1 JOIN (
-                select sf, query, sf_label, query_timing*1000 as eval_time from lineage_data where sf=1 and model='lineage' and workload='tpch'
-            ) as t2 USING (query, sf, sf_label)
-        UNION ALL select t1.system, t1.query, t1.sf, t1.sf_label, t1.eval_time, t2.eval_time, t2.eval_time / t1.eval_time as speedup from 
-                    ( select 'Circuit' as system, query, 1 as sf, sf_label, time_ms as eval_time, 
-                        from df_provsql where with_prov='True') as t1 JOIN (select 'Postgres' as system, query, 1 as sf,
-                        sf_label, time_ms as eval_time from df_provsql where with_prov='False') as t2 USING (query, sf, sf_label)
-            """).df()
-
-    postfix_sample = postfix + """
-    data$system = factor(data$system, levels=c('IVM', 'FaDE-W1-P', 'Circuit'))
+    p += legend_bottom
+    postfix_sys = postfix +"""
+    data$system = factor(data$system, levels=c('FaDE-W1', 'FaDE-W1-P', 'DBT', 'DBT-P', 'ProvSQL', 'Postgres'))
     """
-    # show DBT, ProvSQL, Original Query, ProvSQL, Fade-prune as Fade
-    p = ggplot(single_data_speedup, aes(x='query', y='speedup', color=cat, fill=cat, group=cat))
-    p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.6), width=0.5)
-    p += axis_labels('Query', 'Original Query / WhatIf (log)', 'discrete', 'log10',
-        ykwargs=dict(breaks=[0.1,0, 10,100,1000,10000],  labels=list(map(esc,['0.1','0', '10','100','1000','10000']))),
-            )
-    p += legend_bottom
-    ggsave("figures/fade_single_sf1_sample.png", p, postfix=postfix_sample, width=7, height=4, scale=0.8)
-
-    # TODO: show speedup or slowdowns compared to base query -> one bar per system
-    # show ProvSQL, Original Query, ProvSQL
-    single_data_prov = con.execute("""select * from single_data_speedup where sf=1 and system IN ('IVM', 'Circuit')""").df()
-    p = ggplot(single_data_prov, aes(x='query', y='speedup', color=cat, fill=cat, group=cat))
-    p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.6), width=0.5)
-    p += axis_labels('Query', 'Original Query / WhatIf (log)', 'discrete', 'log10',
-        ykwargs=dict(breaks=[0.1, 0, 10,100,1000,10000],  labels=list(map(esc,['0.1','0', '10','100','1000','10000']))),
-            )
-    p += legend_bottom
-    ggsave("figures/fade_single_sf1_provsql_dbt.png", p, postfix=postfix_sample, width=7, height=4, scale=0.8)
+    ggsave(f"figures/{prefix}_fade_single_sf1.png", p, postfix=postfix_sys, width=6, height=2.5, scale=0.8)
     
+    single_throughput_data_sf1 = con.execute("select system, query, 1/(eval_time_ms/1000.0) as throughput from single_data where sf=1").df()
+    p = ggplot(single_throughput_data_sf1, aes(x='query', y='throughput', color=cat, fill=cat, group=cat))
+    p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.6), width=0.5)
+    p += axis_labels('Query', 'Latency (ms, log)', 'discrete', 'log10',
+            ykwargs=dict(breaks=[0.1,10,100,1000,10000],  labels=list(map(esc,['0.1','10','100','1000','10000']))),)
+    p += legend_bottom
+    postfix_sys = postfix +"""
+    data$system = factor(data$system, levels=c('FaDE-W1', 'FaDE-W1-P', 'DBT', 'DBT-P', 'ProvSQL', 'Postgres'))
+    """
+    ggsave(f"figures/{prefix}_fade_single_sf1_throughput.png", p, postfix=postfix_sys, width=6, height=2.5, scale=0.8)
+    
+    if not exclude_sample:
+        # speedup against base query
+        single_data_speedup = con.execute(f"""
+            select t1.system, t1.query, t1.sf, t1.sf_label, t1.eval_time, t2.eval_time, t2.eval_time / t1.eval_time as speedup from 
+                (select sys_label as system, query, sf, sf_label,  eval_time_ms as eval_time,
+                    from fade_delete where n=1 and num_threads=1 and prune='True' and prob={dbt_prob} and incremental='False'
+                    ) as t1 JOIN (
+                    select sf, query, sf_label, query_timing*1000 as eval_time from lineage_data where sf=1 and model='lineage' and workload='tpch'
+                    ) as t2 USING (query, sf, sf_label)
+            UNION ALL select t1.system, t1.query, t1.sf, t1.sf_label, t1.eval_time, t2.eval_time, t2.eval_time / t1.eval_time as speedup from
+                        (select 'IVM' as system, query, sf, sf_label, eval_time_ms as eval_time from dbt_data where prob={dbt_prob} and prune='False'
+                and itype='DELETE') as t1 JOIN (
+                    select sf, query, sf_label, query_timing*1000 as eval_time from lineage_data where sf=1 and model='lineage' and workload='tpch'
+                ) as t2 USING (query, sf, sf_label)
+            UNION ALL select t1.system, t1.query, t1.sf, t1.sf_label, t1.eval_time, t2.eval_time, t2.eval_time / t1.eval_time as speedup from 
+                        ( select 'Circuit' as system, query, 1 as sf, sf_label, time_ms as eval_time, 
+                            from df_provsql where with_prov='True') as t1 JOIN (select 'Postgres' as system, query, 1 as sf,
+                            sf_label, time_ms as eval_time from df_provsql where with_prov='False') as t2 USING (query, sf, sf_label)
+                """).df()
+
+        postfix_sample = postfix + """
+        data$system = factor(data$system, levels=c('IVM', 'FaDE-W1-P', 'Circuit'))
+        """
+        # show DBT, ProvSQL, Original Query, ProvSQL, Fade-prune as Fade
+        p = ggplot(single_data_speedup, aes(x='query', y='speedup', color=cat, fill=cat, group=cat))
+        p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.6), width=0.5)
+        p += axis_labels('Query', 'Original Query / WhatIf (log)', 'discrete', 'log10',
+            ykwargs=dict(breaks=[0.1,0, 10,100,1000,10000],  labels=list(map(esc,['0.1','0', '10','100','1000','10000']))),
+                )
+        p += legend_bottom
+        ggsave(f"figures/{prefix}_fade_single_sf1_sample.png", p, postfix=postfix_sample, width=7, height=4, scale=0.8)
+
+        # TODO: show speedup or slowdowns compared to base query -> one bar per system
+        # show ProvSQL, Original Query, ProvSQL
+        single_data_prov = con.execute("""select * from single_data_speedup where sf=1 and system IN ('IVM', 'Circuit')""").df()
+        p = ggplot(single_data_prov, aes(x='query', y='speedup', color=cat, fill=cat, group=cat))
+        p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.6), width=0.5)
+        p += axis_labels('Query', 'Original Query / WhatIf (log)', 'discrete', 'log10',
+            ykwargs=dict(breaks=[0.1, 0, 10,100,1000,10000],  labels=list(map(esc,['0.1','0', '10','100','1000','10000']))),
+                )
+        p += legend_bottom
+        ggsave(f"figures/{prefix}_fade_single_sf1_provsql_dbt.png", p, postfix=postfix_sample, width=7, height=4, scale=0.8)
+    
+    probs_var_data = con.execute("""
+    select * from (select sys_label as system, 1 as sf, query, prob, eval_time_ms  from dbt_data where itype='DELETE') UNION ALL
+    (select sys_label as system, sf, query, prob, eval_time_ms from fade_delete where n=1 and num_threads=1 and incremental='False')
+    """).df()
+
+    p = ggplot(probs_var_data, aes(x='prob',  y="eval_time_ms", color="query", fill="query", shape='query'))
+    p += geom_line(stat=esc('identity')) 
+    p += axis_labels('Intervention Probability (log)', "Latency (ms, log)", "log10", "log10",
+        ykwargs=dict(breaks=[0.01,0.1,1,10,100,1000,10000],  labels=list(map(esc,['0.01','0.1','1','10','100','1000','10000']))),
+        xkwargs=dict(breaks=[0.001, 0.01, 0.1,0.5],  labels=list(map(esc,['    0.001','0.01','0.1', '0.5']))),
+        )
+    p += legend_bottom
+    p += geom_hline(aes(yintercept=1))
+    p += facet_grid(".~system", scales=esc("free_y"))
+    postfix_sys = postfix +"""
+    data$system = factor(data$system, levels=c('FaDE-W1', 'DBT', 'FaDE-W1-P', 'DBT-P', 'ProvSQL', 'Postgres'))
+    """
+    ggsave(f"figures/{prefix}_fade_dbt_vs_fade_runtime.png", p, postfix=postfix_sys, width=7, height=3, scale=0.8)
     # fig 1:
     # x-axis prob, y-axis dbt normalized latency against fade
     dbt_fade_data = con.execute("""
@@ -194,32 +238,34 @@ if True:
     group by system, sf, query, prob, fade.incremental, fade.prune_label, dbt.prune, fprune, fade.num_threads
     """).df()
 
-    p = ggplot(dbt_fade_data, aes(x='prob',  y="nor", color="query", fill="query"))
-    p += geom_line(stat=esc('identity')) 
+    p = ggplot(dbt_fade_data, aes(x='prob',  y="nor", color="query", fill="query", shape='query'))
+    p += geom_line(stat=esc('identity')) + geom_point(stat=esc('identity'))
     p += axis_labels('Intervention Probability (log)', "Speedup (log)", "log10", "log10",
-        ykwargs=dict(breaks=[0.1,10,100,1000,10000],  labels=list(map(esc,['0.1','10','100','1000','10000']))),
+        ykwargs=dict(breaks=[0.01,0.1,1,10,100,1000,10000],  labels=list(map(esc,['0.01','0.1','1','10','100','1000','10000']))),
         xkwargs=dict(breaks=[0.001, 0.01, 0.1,0.5],  labels=list(map(esc,['0.001','0.01','0.1', '0.5']))),
         )
-    p += legend_bottom
     p += legend_side
     p += geom_hline(aes(yintercept=1))
     p += facet_grid(".~system", scales=esc("free_y"))
-    ggsave(f"figures/fade_dbt_vs_fade.png", p, postfix=postfix, width=7, height=2.5, scale=0.8)
+    ggsave(f"figures/{prefix}_fade_dbt_vs_fade.png", p, postfix=postfix, width=7, height=2.5, scale=0.8)
 
-    def get_summary(fade_data, dbt_prune, fade_prune, is_incremental, group, whr):
-        print("get_summary", fade_data, dbt_prune, fade_prune, is_incremental, group)
+    def get_summary(fade_data, toast_data, dbt_prune, fade_prune, group, whr, jn="", divide_prune=True):
+        comp_where = "true"
+        if divide_prune:
+            comp_where = f"f.incremental='False' and f.n=1 and f.num_threads=1 and f.prune='{fade_prune}' and d.prune='{dbt_prune}'"
+        print("get_summary", ", fade_data: ", fade_data, ", dbt_data: ", toast_data,
+                ", group: ", group, ", join: ", jn, ", where: ", comp_where)
+
         return con.execute(f"""select {group} sf,
-        avg(dbt_data.eval_time) as dbt_ms, avg(f.eval_time_ms) as fade_ms,
-        min(dbt_data.eval_time) as dbt_min, min(f.eval_time_ms) as fade_min,
-        max(dbt_data.eval_time) as dbt_max, max(f.eval_time_ms) as fade_max,
-        max(dbt_data.eval_time / f.eval_time_ms) as max_speedup,
-        avg(dbt_data.eval_time / f.eval_time_ms) as avg_speedup,
-        min(dbt_data.eval_time / f.eval_time_ms) as min_speedup
-        from {fade_data} as f JOIN dbt_data
-        USING (qid, sf, prob)
-        where f.n=1 and f.prune='{fade_prune}' and dbt_data.prune='{dbt_prune}'
-        {whr}
-        and f.incremental='{is_incremental}' and f.num_threads=1
+        avg(d.eval_time_ms) as dbt_ms, avg(f.eval_time_ms) as fade_ms,
+        min(d.eval_time_ms) as dbt_min, min(f.eval_time_ms) as fade_min,
+        max(d.eval_time_ms) as dbt_max, max(f.eval_time_ms) as fade_max,
+        max(d.eval_time_ms / f.eval_time_ms) as max_speedup,
+        avg(d.eval_time_ms / f.eval_time_ms) as avg_speedup,
+        min(d.eval_time_ms / f.eval_time_ms) as min_speedup
+        from {fade_data} as f JOIN {toast_data} as d
+        USING ({jn})
+        where {comp_where} {whr}
         group by {group} sf
         order by {group} sf""").df()
 
@@ -238,35 +284,36 @@ if True:
     if print_summary:
         print("======== DBT vs FaDe Summary =============")
         # fade_data, dbt_prune, fade_prune, is_incremental, group
-        prob_where = "and dbt_data.prob=0.1 and f.prob=0.1"
-        summary_data = get_summary("fade_single", "False", "False", "False", "qid,", "")
+        jn = "qid, sf, prob"
+        prob_where = "and d.prob=0.1 and f.prob=0.1"
+        summary_data = get_summary("fade_single", "dbt_data", "False", "False", "qid,", "", jn)
         print("*** per query: \n", summary_data)
-        summary_data = get_summary("fade_single", "False", "False", "False", "qid,", prob_where)
+        summary_data = get_summary("fade_single", "dbt_data", "False", "False", "qid,", prob_where, jn)
         print("*** per query prob=0.1: \n", summary_data)
-        summary_data = get_summary("fade_single", "False", "False", "False", "", prob_where)
+        summary_data = get_summary("fade_single", "dbt_data", "False", "False",  "", prob_where, jn)
         print("***probe=0.1 \n", summary_data)
         
         print("======== DBT-P vs FaDe Summary =============")
         # fade_data, dbt_prune, fade_prune, is_incremental, group
-        summary_data = get_summary("fade_single", "True", "False", "False", "qid,", "")
+        summary_data = get_summary("fade_single", "dbt_data", "True", "False",  "qid,", "", jn)
         #print("*** per query:\n", summary_data)
 
-        summary_data = get_summary("fade_single", "True", "False", "False", "qid,", prob_where)
+        summary_data = get_summary("fade_single", "dbt_data", "True", "False", "qid,", prob_where, jn)
         print("*** per query prob=0.1: \n", summary_data)
     
-        summary_data = get_summary("fade_single", "True", "False", "False", "", prob_where)
+        summary_data = get_summary("fade_single", "dbt_data", "True", "False",  "", prob_where, jn)
         print("*** probe=0.1\n", summary_data)
         print(f"{round(summary_data['avg_speedup'][0])}X (min: {summary_data['min_speedup'][0]:.4f}, max: {round(summary_data['max_speedup'][0])})")
         
         print("======== DBT-P vs FaDe-P Summary =============")
         # fade_data, dbt_prune, fade_prune, is_incremental, group
-        summary_data = get_summary("fade_single", "True", "True", "False", "qid,", "")
+        summary_data = get_summary("fade_single", "dbt_data", "True", "True", "qid,", "", jn)
         print("*** per query:\n", summary_data)
-        summary_data = get_summary("fade_single", "True", "True", "False", "qid,", prob_where)
+        summary_data = get_summary("fade_single", "dbt_data", "True", "True", "qid,", prob_where, jn)
         print("*** per query prob=0.1:\n", summary_data)
         
         print("FaDE-P-W1 is always faster than DBT-P by up to Y×.")
-        summary_data = get_summary("fade_single", "True", "True", "False", "", prob_where)
+        summary_data = get_summary("fade_single", "dbt_data", "True", "True",  "", prob_where, jn)
         print("*** prob 0.1:\n", summary_data)
         print(f"{round(summary_data['avg_speedup'][0])}X (min: {summary_data['min_speedup'][0]:.4f}, max: {round(summary_data['max_speedup'][0])})")
         
@@ -292,29 +339,28 @@ if True:
     print("======== Single Summary prob=0.1 =============")
     
     single_data_summary = con.execute(f"""
-    select sf, system, avg(eval_time_ms) as latency_avg, max(eval_time_ms) as latency_max, min(eval_time_ms) as latency_min
+    select sf, system, avg(eval_time_ms) as latency_avg, max(eval_time_ms) as latency_max,
+    min(eval_time_ms) as latency_min
     from single_data
     group by sf, system
     """).df()
     print(single_data_summary)
     
     
-    single_summary_all = con.execute("""
-    select sf, prune,
-    avg(fade.eval_time_ms) as avg_fade, 
-    min(fade.eval_time_ms) as min_fade, 
-    max(fade.eval_time_ms) as max_fade, 
-    avg(dbt.eval_time_ms) as avg_dbt,
-    min(dbt.eval_time_ms) as min_dbt,
-    max(dbt.eval_time_ms) as max_dbt,
-    avg(dbt.eval_time_ms / fade.eval_time_ms) as avg_speedup,
-    min(dbt.eval_time_ms / fade.eval_time_ms) as min_speedup,
-    max(dbt.eval_time_ms / fade.eval_time_ms) as max_speedup
-    from (select * from single_data where system='FaDE-W1-P' OR system='FaDE-W1') as fade JOIN
-    (select * from single_data where system='DBT' OR system='DBT-P') as dbt using (query, sf, prune)
-    group by sf, prune
-    """).df()
-    print(single_summary_all)
+    jn = "query, sf, prune"
+    summary_data_prune = get_summary("(select * from single_data where stype='FaDE')", "(select * from single_data where stype='DBT')", "False", "False", "prune, ", "", jn, False)
+    print(summary_data_prune)
+    
+    summary_data_all = get_summary("(select * from single_data where stype='FaDE')", "(select * from single_data where stype='DBT')", "False", "False", "", "", jn, False)
+    print(summary_data_all)
+    #print("FaDE-W1 and FaDE-W1-P take on average 5ms (max: 27ms) as compared to 192ms (max: 1.2sec) for DBT-P.")
+    #FaDE-P-𝑊1 is faster than DBT-P on average by 158× (min/max: 1.8/980×)
+    print(f"""----> FaDE-W1 and FaDE-W1-P take on average {summary_data_all['fade_ms'][0]:.4f}ms (max: {summary_data_all['fade_max'][0]}ms)
+            as compared to {summary_data_prune['dbt_ms'][1]:.4f}ms (max: {round(summary_data_prune['dbt_max'][1])}ms) for DBT-P
+            and {round(summary_data_prune['dbt_ms'][0]/1000.0)}sec (max: {round(summary_data_prune['dbt_max'][0])}ms) for DBT.
+            FaDE-P-W1 is faster than DBT-P on average bt {round(summary_data_prune['avg_speedup'][1])} 
+            (min/max: {summary_data_prune['min_speedup'][1]}/{round(summary_data_prune['max_speedup'][1])})
+            """)
 
     single_per_q_summary = con.execute("""
     select sf, query,
@@ -349,68 +395,121 @@ if True:
     group by sf
     """).df()
     print(single_summary_all)
-
-    #print("FaDE-W1 and FaDE-W1-P take on average 5ms (max: 27ms) as compared to 192ms (max: 1.2sec) for DBT-P.")
-    print("----> FaDE-W1 and FaDE-W1-P take on average Xms (max: xms) as compared to Yms (max: ysec) for DBT-P.")
-    dbtfull_latency_avg = con.execute("select latency_avg from single_data_summary where system='DBT'").df()["latency_avg"][0]
-    fade_avg_latency = con.execute("select latency_avg from single_data_summary where system='FaDE-W1'").df()
-    fadep_avg_latency = con.execute("select latency_avg from single_data_summary where system='FaDE-W1-P'").df()
-    fade_latency_avg = (fade_avg_latency["latency_avg"][0] + fadep_avg_latency["latency_avg"][0])/2.0
-    fadep_speedup = single_summary_all["fp_dp_speedup"][0]
-    fade_slowdown = single_per_q_summary["f_dp_speedup"][5]
-    single_text = f"""The figure shows that \sys and \sys-P outperforms \dbtfull for all queries with an average latency of {fade_latency_avg:.1f} 
-    compared to {dbtfull_latency_avg:.1f}.
-    When compared to \dbtpruned, \sys-P is always faster than \dbtpruned by {fadep_speedup:.1f}.
-    \sys is faster than \dbtpruned for all queries except Q7 with {fade_slowdown:.1f} slowdown.
-    """
-    print(single_text)
-
-    dbtpruned_speedup_avg = round(speedup_data["speedup_avg"][0])
-    dbtpruned_speedup_max = round(speedup_data["speedup_max"][0])
-    dbt = []
-    dbt_str = []
-    dbt.append(round(dbtruntime_data["eval_time_avg"][0]))
-    dbt.append(round(dbtruntime_data["eval_time_min"][0]))
-    dbt.append(round(dbtruntime_data["eval_time_max"][0]))
-    dbt.append(round(dbtruntime_data["eval_time_avg"][1]))
-    dbt.append(round(dbtruntime_data["eval_time_min"][1]))
-    dbt.append(round(dbtruntime_data["eval_time_max"][1]))
-    dbt.append(round(dbtruntime_data["prune_time_avg"][0]))
-    dbt.append(round(dbtruntime_data["prune_time_min"][0]))
-    dbt.append(round(dbtruntime_data["prune_time_max"][0]))
-    for val in dbt:
-        if val > 1000:
-            dbt_str.append(f"{round(val/1000.0)}s")
-        else:
-            dbt_str.append(f"{val}ms")
-
-    dbt_vs_fade_text = f"""
-    \dbtpruned never process data more than \dbtfull at the cost of an expensive pre-processing step per query.
-    This results on an average of {dbtpruned_speedup_avg}$\\times$ (min: 0, max: {dbtpruned_speedup_max}) speedup over \dbtfull,
-    reducing average runtime from {dbt_str[0]} (max: {dbt_str[2]}) to 
-    {dbt_str[3]} (max: {dbt_str[5]}).
-    This benefit comes at a high pruning cost {dbt_str[6]} (min: {dbt_str[7]}, max: {dbt_str[8]}), which includes the cost of reading, filtering, and writing the tables referenced by the query of interest.
-    Since \dbtpruned runtime evaluation is always faster than \dbtfull (ignoring the high price of data pruning) in the rest of this section, we mainly compare \sys to \dbtpruned.
-    """
-    print(dbt_vs_fade_text)
-
-    summary = con.execute("""select query,
-        fade.eval_time_ms as fade_ms, fade_prune.eval_time_ms as fadep_ms,
-        provsql.eval_time_ms as provsql_ms, postgres.eval_time_ms as postgres_ms,
-        provsql.eval_time_ms/postgres.eval_time_ms as provsql_slowdown,
-        provsql.eval_time_ms/fade.eval_time_ms as fade_speedup,
-        provsql.eval_time_ms/fade_prune.eval_time_ms as fadep_speedup
-        from (select * from single_data where system='FaDE-W1') as fade JOIN
-        (select * from single_data where system='FaDE-W1-P') as fade_prune using (query) JOIN
-        (select * from single_data where system='ProvSQL') as provsql using (query) JOIN
-        (select * from single_data where system='Postgres') as postgres using (query)
-        """).df()
-    print(summary)
-
-    print(con.execute("select avg(fade_speedup), avg(provsql_slowdown) from summary").df())
+    
+    is_fade_p_faster_than_dbt_pruned = con.execute("""
+    select 'dbtp < fade-p' as label, * from (select * from single_data where system='FaDE-W1-P') fadep JOIN
+    (select * from single_data where system='DBT-P') as dbtp
+    USING (sf, query)
+    where fadep.eval_time_ms > dbtp.eval_time_ms
+            """).df()
+    print(is_fade_p_faster_than_dbt_pruned)
+    
+    dbtp_vs_fade_speedup = con.execute("""
+    select 'dbt-p vs fade speedup' as label, sf,query,
+    avg(f.eval_time_ms) as fms, 
+    avg(dp.eval_time_ms) as dpms,
+    avg(dp.eval_time_ms / f.eval_time_ms) as f_dp_speedup,
+    avg(f.eval_time_ms / dp.eval_time_ms) as dp_f_speedup,
+    from (select * from single_data where system='FaDE-W1') as f JOIN
+    (select * from single_data where system='DBT-P') as dp using (query, sf)
+    where dp.eval_time_ms < f.eval_time_ms and query<>'Q19'
+    group by sf, query
+    """).df()
+    print(dbtp_vs_fade_speedup)
+    
+    dbtp_vs_fade_speedup = con.execute("""
+    select 'dbt-p vs fade speedup' as label, sf,
+    avg(f.eval_time_ms-dp.eval_time_ms) as diff, 
+    max(f.eval_time_ms-dp.eval_time_ms) as max_diff, 
+    min(f.eval_time_ms-dp.eval_time_ms) as min_diff, 
+    avg(f.eval_time_ms) as fms, 
+    avg(dp.eval_time_ms) as dpms,
+    avg(dp.eval_time_ms / f.eval_time_ms) as f_dp_speedup,
+    avg(f.eval_time_ms / dp.eval_time_ms) as dp_f_speedup,
+    from (select * from single_data where system='FaDE-W1') as f JOIN
+    (select * from single_data where system='DBT-P') as dp using (query, sf)
+    where dp.eval_time_ms < f.eval_time_ms
+    group by sf
+    """).df()
+    print(dbtp_vs_fade_speedup)
+    
+    dbtp_vs_fade_speedup = con.execute("""
+    select 'dbt-p vs fade speedup' as label, sf,query,
+    avg(f.eval_time_ms-dp.eval_time_ms) as diff, 
+    max(f.eval_time_ms-dp.eval_time_ms) as max_diff, 
+    min(f.eval_time_ms-dp.eval_time_ms) as min_diff, 
+    avg(f.eval_time_ms) as fms, 
+    avg(dp.eval_time_ms) as dpms,
+    avg(dp.eval_time_ms / f.eval_time_ms) as f_dp_speedup,
+    avg(f.eval_time_ms / dp.eval_time_ms) as dp_f_speedup,
+    from (select * from single_data where system='FaDE-W1') as f JOIN
+    (select * from single_data where system='DBT-P') as dp using (query, sf)
+    where dp.eval_time_ms < f.eval_time_ms
+    group by sf, query
+    """).df()
+    print(dbtp_vs_fade_speedup)
 
 
-if False:
+    if not exclude_sample:
+        dbtfull_latency_avg = con.execute("select latency_avg from single_data_summary where system='DBT'").df()["latency_avg"][0]
+        fade_avg_latency = con.execute("select latency_avg from single_data_summary where system='FaDE-W1'").df()
+        fadep_avg_latency = con.execute("select latency_avg from single_data_summary where system='FaDE-W1-P'").df()
+        fade_latency_avg = (fade_avg_latency["latency_avg"][0] + fadep_avg_latency["latency_avg"][0])/2.0
+        fadep_speedup = single_summary_all["fp_dp_speedup"][0]
+        fade_slowdown = single_per_q_summary["f_dp_speedup"][5]
+        single_text = f"""The figure shows that \sys and \sys-P outperforms \dbtfull for all queries with an average latency of {fade_latency_avg:.1f} 
+        compared to {dbtfull_latency_avg:.1f}.
+        When compared to \dbtpruned, \sys-P is always faster than \dbtpruned by {fadep_speedup:.1f}.
+        \sys is faster than \dbtpruned for all queries except Q7 with {fade_slowdown:.1f} slowdown.
+        """
+        print(single_text)
+
+        dbtpruned_speedup_avg = round(speedup_data["speedup_avg"][0])
+        dbtpruned_speedup_max = round(speedup_data["speedup_max"][0])
+        dbt = []
+        dbt_str = []
+        dbt.append(round(dbtruntime_data["eval_time_avg"][0]))
+        dbt.append(round(dbtruntime_data["eval_time_min"][0]))
+        dbt.append(round(dbtruntime_data["eval_time_max"][0]))
+        dbt.append(round(dbtruntime_data["eval_time_avg"][1]))
+        dbt.append(round(dbtruntime_data["eval_time_min"][1]))
+        dbt.append(round(dbtruntime_data["eval_time_max"][1]))
+        dbt.append(round(dbtruntime_data["prune_time_avg"][0]))
+        dbt.append(round(dbtruntime_data["prune_time_min"][0]))
+        dbt.append(round(dbtruntime_data["prune_time_max"][0]))
+        for val in dbt:
+            if val > 1000:
+                dbt_str.append(f"{round(val/1000.0)}s")
+            else:
+                dbt_str.append(f"{val}ms")
+
+        dbt_vs_fade_text = f"""
+        \dbtpruned never process data more than \dbtfull at the cost of an expensive pre-processing step per query.
+        This results on an average of {dbtpruned_speedup_avg}$\\times$ (min: 0, max: {dbtpruned_speedup_max}) speedup over \dbtfull,
+        reducing average runtime from {dbt_str[0]} (max: {dbt_str[2]}) to 
+        {dbt_str[3]} (max: {dbt_str[5]}).
+        This benefit comes at a high pruning cost {dbt_str[6]} (min: {dbt_str[7]}, max: {dbt_str[8]}), which includes the cost of reading, filtering, and writing the tables referenced by the query of interest.
+        Since \dbtpruned runtime evaluation is always faster than \dbtfull (ignoring the high price of data pruning) in the rest of this section, we mainly compare \sys to \dbtpruned.
+        """
+        print(dbt_vs_fade_text)
+
+        summary = con.execute("""select query,
+            fade.eval_time_ms as fade_ms, fade_prune.eval_time_ms as fadep_ms,
+            provsql.eval_time_ms as provsql_ms, postgres.eval_time_ms as postgres_ms,
+            provsql.eval_time_ms/postgres.eval_time_ms as provsql_slowdown,
+            provsql.eval_time_ms/fade.eval_time_ms as fade_speedup,
+            provsql.eval_time_ms/fade_prune.eval_time_ms as fadep_speedup
+            from (select * from single_data where system='FaDE-W1') as fade JOIN
+            (select * from single_data where system='FaDE-W1-P') as fade_prune using (query) JOIN
+            (select * from single_data where system='ProvSQL') as provsql using (query) JOIN
+            (select * from single_data where system='Postgres') as postgres using (query)
+            """).df()
+        print(summary)
+
+        print(con.execute("select avg(fade_speedup), avg(provsql_slowdown) from summary").df())
+
+
+if plot_scale:
     #fade_scale = get_data("scaling_sf1_may1.csv", 1000)
     cat = 'query'
     p = ggplot(dbt_data_all, aes(x='prob',  y="eval_time_ms", color=cat, fill=cat, group=cat))
@@ -418,7 +517,7 @@ if False:
     p += axis_labels('Prob', "Run time (ms)", "continuous", "log10")
     p += legend_bottom
     p += facet_grid(".~prune~num_threads~itype", scales=esc("free_y"))
-    ggsave("figures/dbt_scale.png", p,width=10, height=8, scale=0.8)
+    ggsave(f"figures/{prefix}_dbt_scale.png", p,width=10, height=8, scale=0.8)
     
     dbt_fade_data = con.execute("""
     select 'DBT-P / ' || fade.prune_label as system, sf, query, dbt.prob, fade.incremental, fade.prune_label, dbt.prune, 
@@ -432,7 +531,7 @@ if False:
     print(dbt_fade_data)
 
     p = ggplot(dbt_fade_data, aes(x='prob',  y="nor", color="query", fill="query"))
-    p += geom_line(stat=esc('identity')) 
+    p += geom_line(stat=esc('identity')) + geom_point(stat=esc('identity'))
     p += axis_labels('Intervention Probability (log)', "Speedup (log)", "log10", "log10",
         ykwargs=dict(breaks=[0.1,10,100,1000,10000],  labels=list(map(esc,['0.1','10','100','1000','10000']))),
         xkwargs=dict(breaks=[0.001, 0.01, 0.05, 0.1,0.5],  labels=list(map(esc,['0.001','0.01','0.05', '0.1', '0.5']))),
@@ -441,7 +540,7 @@ if False:
     p += legend_side
     p += geom_hline(aes(yintercept=1))
     p += facet_grid(".~system", scales=esc("free_y"))
-    ggsave(f"figures/fade_dbt_vs_fade_scale.png", p, postfix=postfix, width=7, height=2.5, scale=0.8)
+    ggsave(f"figures/{prefix}_fade_dbt_vs_fade_scale.png", p, postfix=postfix, width=7, height=2.5, scale=0.8)
     
     dbt_prob=0.1
     single_data_scale = con.execute(f"""
@@ -473,7 +572,7 @@ if False:
     p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.6), width=0.5)
     p += axis_labels('Query', 'Latency (ms, log)', 'discrete', 'log10')
     p += legend_side
-    ggsave("figures/fade_single_sf1_side_scale.png", p, postfix=postfix, width=7, height=6, scale=0.8)
+    ggsave(f"figures/{prefix}_fade_single_sf1_side_scale.png", p, postfix=postfix, width=7, height=6, scale=0.8)
 
     
     # compare speedup of delete and scaling on lineitem
