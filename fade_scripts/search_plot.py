@@ -5,7 +5,7 @@ from utils import get_data
 from utils import legend, legend_bottom, legend_side
 
 postfix = """
-data$query = factor(data$query, levels=c('Q1', 'Q3', 'Q5', 'Q7', 'Q9', 'Q10', 'Q12'))
+data$query = factor(data$query, levels=c('Q1', 'Q3', 'Q5', 'Q6', 'Q7', 'Q8', 'Q9', 'Q10', 'Q12', 'Q14', 'Q19'))
     """
 
 pd.set_option('display.max_rows', None)
@@ -20,33 +20,91 @@ single = True
 plot_scale = False
 include_incremental_random = True
 
+prefix = f"ALL"
+use_sample = True
+exclude_sample = False #True #False
+
+if use_sample:
+    prefix = f"SAMPLE"
+    selected_queries = "query IN  ('Q1', 'Q3', 'Q5', 'Q7', 'Q9', 'Q10', 'Q12') "
+else:
+    selected_queries = " true "
+
+if exclude_sample:
+    use_sample = False
+    prefix = f"EXTRA"
+    selected_queries = "query IN  ('Q6', 'Q8', 'Q14', 'Q19') "
+
+
 # contains overhead of original query without lineage capture, then with, then with intermediates
-lineage_data = pd.read_csv('fade_data/lineage_overhead.csv')
+#lineage_data = pd.read_csv('fade_data/lineage_overhead.csv')
+lineage_data = pd.read_csv('fade_data/lineage_overhead_all_tpch.csv')
 lineage_data["query"] = "Q"+lineage_data["qid"].astype(str)
 lineage_data["sf_label"] = "SF="+lineage_data["sf"].astype(str)
-
+print(lineage_data)
 # benchmark.sh set: lineiten.i
+    
+dbt_data_all = get_data("fade_data/dbtoast_a25_sf10_lineitem.csv", 1)
+dbt_data = con.execute("""select 'DBT-P' as sys, 'DBT-P' as itype,
+avg(eval_time) as eval_time,
+sf, qid, itype, prob, incremental, use_duckdb, is_scalar, prune,
+num_threads, n, batch,
+avg(post_time) as post_time,
+avg(gen_time) as gen_time,
+avg(prep_time) as prep_time,
+avg(compile_time) as compile_time,
+avg(prune_time) as prune_time,
+avg(eval_time_ms) as eval_time_ms,
+avg(prune_time_ms) as prune_time_ms,
+query, cat, sf_label, prune_label, 
+from dbt_data_all
+where itype='DELETE'
+group by
+sf, qid, query, cat, sf_label, prune_label, itype, incremental, use_duckdb, is_scalar, prune,
+num_threads, n, batch, prob
+""").df()
+
 #data_spec = pd.read_csv('search_dense.csv')
+data_spec_a25_19 = get_data('fade_all_a25_spec_19.csv', 1000)
+data_spec_a25 = get_data('fade_all_a25_spec.csv', 1000)
 data_spec = get_data('dense_predicate_search_april27.csv', 1000)
-data_spec = con.execute("""select sf, prune, prune_time*1000 as prune_time_ms, eval_time_ms, query, qid, n, incremental, num_threads, is_scalar  from data_spec
+data_spec = con.execute("""
+select sf, prune, prune_time*1000 as prune_time_ms, eval_time_ms, query, qid, n, incremental, num_threads, is_scalar  from data_spec
 where n=2048
 UNION ALL select sf, prune,  prune_time*1000 as prune_time_ms, (2048.0/n)*eval_time_ms as eval_time_ms, query, qid, 2048 as n, incremental, num_threads, is_scalar  from data_spec
 where query='Q1'
 UNION ALL select sf, prune,  prune_time*1000 as prune_time_ms, (2048.0/n)*eval_time_ms as eval_time_ms, query, qid, 2048 as n, incremental, num_threads, is_scalar  from data_spec
 where sf>1 and prune='False'
+UNION ALL select sf, prune,  avg(prune_time*1000) as prune_time_ms, avg((2048.0/n)*eval_time_ms) as eval_time_ms, query, qid, 2048 as n, incremental, num_threads, is_scalar  from data_spec_a25
+where itype='DENSE_DELETE' and query<>'Q19'
+group by sf, prune, query, qid, incremental, num_threads, is_scalar
+UNION ALL select sf, prune,  avg(prune_time*1000) as prune_time_ms, avg((2048.0/n)*eval_time_ms) as eval_time_ms, query, qid, 2048 as n, incremental, num_threads, is_scalar  from data_spec_a25
+where itype='DENSE_DELETE' and query='Q19'
+group by sf, prune, query, qid, incremental, num_threads, is_scalar, n
 """).df()
 # predicate search
 #data_search = pd.read_csv('search_m2.csv')
 #data_search = get_data('predicate_search_april27.csv', 1000)
 #data_search = get_data('search_april28.csv', 1000)
 data_search = get_data('search_april29.csv', 1000)
-data_search = con.execute("""select sf,  prune, post_time, gen_time, code_gen_time, data_time, prep_time, lineage_time, prune_time*1000 as prune_time_ms, eval_time_ms, query, qid, n, incremental, num_threads, is_scalar from data_search""").df()
+data_search = con.execute("""
+        select sf,  prune, post_time, gen_time, code_gen_time, data_time, prep_time, lineage_time, prune_time*1000 as prune_time_ms, 
+        eval_time_ms, query, qid, n, incremental, num_threads, is_scalar from data_search
+        UNION ALL 
+        select sf,  prune, avg(post_time) as post_time, avg(gen_time) as gen_time, avg(code_gen_time) as code_gen_time,
+                avg(data_time) as data_time, avg(prep_time) as prep_time, avg(lineage_time) as lineage_time,
+                avg(prune_time*1000) as prune_time_ms, 
+                avg(eval_time_ms) as eval_time_ms,
+                query, qid, n, incremental, num_threads, is_scalar from data_spec_a25 where itype='SEARCH'
+        group by sf, prune, query, qid, incremental, num_threads, is_scalar, n
+        """).df()
 data_search["post_time"] *= 1000
 data_search["gen_time"] *= 1000
 data_search["code_gen_time"] *= 1000
 data_search["data_time"] *= 1000
 data_search["prep_time"] *= 1000
 data_search["lineage_time"] *= 1000
+
 def summary_time(table, attrs):
     print(table, attrs)
     print(con.execute(f"""select {attrs},
@@ -111,13 +169,17 @@ if plot:
         from data where n>1 and itype='DD' and incremental='False'
     UNION ALL
     select 'x' as prune, sys, cat, query, prune_time_ms, eval_time_ms, itype,n, sf, num_threads, n/(eval_time_ms/1000.0) as throughput from data_cube 
+    UNION ALL
+    select prune, sys, 'P' as cat, query, 0 as prune_time_ms, 2048*eval_time_ms, itype, 2048 as n, sf, 1 as num_threads, 1/(eval_time_ms/1000.0) as throughput from dbt_data
             """).df()
     plot_data_best = con.execute("""select itype, sys, query, min(eval_time_ms) as eval_time_ms,
                                 min(eval_time_ms+prune_time_ms) as eval_prune_time_ms,
                                 avg(prune_time_ms) as prune_time_ms, n, sf
                                 from plot_data where n=2048 group by itype, sys, n, sf, query order by sys, query, n, sf
                                 """).df()
+    print(plot_data_best)
     cat = "sys"
+    print("======== plot data best ===========")
     print(plot_data_best)
     p = ggplot(plot_data_best, aes(x='query',  y="eval_prune_time_ms", color=cat, fill=cat, group=cat))
     p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.9), width=0.9)
@@ -138,7 +200,8 @@ if plot:
 
     # todo: add baseline
     # read lineage_overhead.csv, get tpch runtimes without lineage
-    lineage_data = pd.read_csv('fade_data/lineage_overhead_all_april30_v2.csv')
+    #lineage_data = pd.read_csv('fade_data/lineage_overhead_all_april30_v2.csv')
+    lineage_data = pd.read_csv('fade_data/lineage_overhead_all_tpch.csv')
     lineage_data["query"] = "Q"+lineage_data["qid"].astype(str)
     """
             UNION ALL
@@ -161,14 +224,17 @@ if plot:
     plot_data = con.execute("""
             select 'sf='||sf as sf_label, t1.sys, sf, n, query, max((base.query_timing*1000) / t1.eval_prune_time_ms) as speedup,
             min(t1.eval_time_ms) as sys_eval, min(base.query_timing*1000) as base_eval,
+            avg(t1.eval_prune_time_ms) as eval_prune,
             max(n/(t1.eval_prune_time_ms/1000.0)) as throughput,
             avg(t1.prune_time_ms) as prune_eval, 
             from (select * from plot_data_best where  itype<>'GB') as t1 JOIN
             (select * from lineage_data where workload='tpch') as base using (sf, query)
             group by sf, n, query, t1.sys
             UNION ALL
-            select 'sf='||sf as sf_label, 'Baseline' as sys, sf, 1, query, 0 speedup, 0 sys_eval, 0 base_eval,
-            max(1/query_timing) as throughput, 0 as prune_eval
+            select 'sf='||sf as sf_label, 'Baseline' as sys, sf, 1, query, 0 speedup, 0 sys_eval, avg(query_timing)*1000 base_eval,
+            0 as eval_prune,
+            max(1/query_timing) as throughput, 
+            0 as prune_eval
             from lineage_data
             where workload='tpch'
             group by sf, query, workload
@@ -182,7 +248,7 @@ if plot:
     p += facet_grid(".~sf_label", scales=esc("free_y"))
     ggsave("figures/fade_search_fade_2048_speedup.png", p,  width=8, height=2.5, scale=0.8)
     
-    sf10_plot_data = con.execute("""select 'sf='||sf as sf_label,*  from plot_data where sf=10""").df()
+    sf10_plot_data = con.execute(f"""select 'sf='||sf as sf_label,*  from plot_data where sf=10 and {selected_queries}""").df()
     print("check")
     print(sf10_plot_data)
     p = ggplot(sf10_plot_data, aes(x='query',  y="speedup", color=cat, fill=cat, group=cat))
@@ -199,7 +265,7 @@ if plot:
     ggsave("figures/fade_search_fade_sf10_2048_throughput.png", p,  postfix=postfix,width=7, height=2.5, scale=0.8)
     
     
-    summary = con.execute("""select sf, sys,
+    summary = con.execute(f"""select sf, sys,
     avg(speedup) as as, max(speedup) maxs, min(speedup) mins,
     avg(sys_eval) asys, 
     avg(base_eval) abase,
@@ -207,19 +273,21 @@ if plot:
     max(throughput)
     from plot_data
     where query='Q1'
+    and {selected_queries}
     group by sf, sys
     order by sf, sys
     """).df()
     print(summary)
-    summary = con.execute("""select sf, sys,
+    summary = con.execute(f"""select sf, sys, 
     avg(speedup) as as, max(speedup) maxs, min(speedup) mins,
     avg(sys_eval) asys,
     avg(base_eval) abase, 
     avg(throughput),
     max(throughput)
     from plot_data
-    where query<>'Q1'
-    group by sf, sys
+    where query<>'Q1' 
+    and {selected_queries}
+    group by sf, sys, 
     order by sf, sys
     """).df()
     print(summary)

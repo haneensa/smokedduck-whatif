@@ -7,20 +7,21 @@ export DUCKDB_LIB_PATH=/ProvEnhance/third_party/smokedduck-whatif/build/release/
 # forward vs backward as we vary threads
 
 # Q1. chunked vs not : forward lineage, vary threads, vary n, scalar vs vec, single agg vs many (evaluated n at a time)
-query_nums=("1" "3" "5" "7" "9"  "10" "12" "6" "8" "19") # "14")
-sf_values=("1") # "5" "10") # "5" "10") #"1" "5" "10") # "10")  # "0.2" "0.4") # "5.0" "10.0") # (# "3.0" "4.0")
+query_nums=("19") #"6" "8" "19" "14") #"1" "3" "5" "7" "9"  "10" "12" "6" "8" "19") # "14")
+sf_values=("10" "5" "1") # "5" "10") # "5" "10") #"1" "5" "10") # "10")  # "0.2" "0.4") # "5.0" "10.0") # (# "3.0" "4.0")
 # ADD 64, 256
 distinct=("1" "64" "256" "512" "1024" "2048")
 threads_num=("1"  "2" "4" "8")
-prune_binary=("true"  "false")
+prune_binary=("true") #  "false")
 is_scalar_binary=("true"  "false") 
 csv="fade_simd_test.csv" 
 csv="fade_simd_test_scalarJoinFilter_sf5.csv" 
 csv="fade_scalar_extra.csv"
 csv="fade_all_a21.csv"
 csv="fade_all_a22_scalarJoinFilter.csv"
+csv="fade_all_a25_spec_19_test.csv"
 debug="false"
-itype_list=("DENSE_DELETE") # "DENSE_SPEC") # "SCALE_RANDOM") #"SCALE_RANDOM" "DENSE_DELETE" "SEARCH" "DENSE_SPEC")
+itype_list=("DENSE_SPEC" "SEARCH") #"DENSE_DELETE") # "DENSE_SPEC") # "SCALE_RANDOM") #"SCALE_RANDOM" "DENSE_DELETE" "SEARCH" "DENSE_SPEC")
 spec='""'
 batch_list=("4") 
 use_duckdb="false"

@@ -42,7 +42,7 @@ if True:
     #single_data_all = get_data("fade_data/dense_single_vary_probs_april7.csv", 1000)
     #single_data_all = get_data(f"fade_data/single_dense_vary_probs_nofilterOnprune.csv", 1000)
     #single_data_all = get_data(f"fade_data/forward_backward_all_probs_april26.csv", 1000)
-    single_data_all = get_data(f"fade_signle_jul10.csv", 1000)
+    single_data_all = get_data(f"fade_data/fade_single_jul10.csv", 1000)
     single_data_all = con.execute("""select
     sf, qid, itype, prob, incremental, use_duckdb, is_scalar, prune,
     num_threads, n, batch,
@@ -440,7 +440,7 @@ if True:
     print(dbt_vs_fade_text)
 
 
-if True:
+if False:
     #fade_scale = get_data("scaling_sf1_may1.csv", 1000)
     cat = 'query'
     p = ggplot(dbt_data_all, aes(x='prob',  y="eval_time_ms", color=cat, fill=cat, group=cat))

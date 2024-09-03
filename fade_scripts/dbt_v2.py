@@ -21,7 +21,7 @@ lineage_data["query"] = "Q"+lineage_data["qid"].astype(str)
 lineage_data["sf_label"] = "SF="+lineage_data["sf"].astype(str)
 
 use_sample = False
-exclude_sample = False
+exclude_sample = True
 
 if use_sample:
     prefix = "SAMPLE"
@@ -155,7 +155,7 @@ if True:
     single_throughput_data_sf1 = con.execute("select system, query, 1/(eval_time_ms/1000.0) as throughput from single_data where sf=1").df()
     p = ggplot(single_throughput_data_sf1, aes(x='query', y='throughput', color=cat, fill=cat, group=cat))
     p += geom_bar(stat=esc('identity'), alpha=0.8, position=position_dodge(width=0.6), width=0.5)
-    p += axis_labels('Query', 'Latency (ms, log)', 'discrete', 'log10',
+    p += axis_labels('Query', 'Interventions/Sec (log)', 'discrete', 'log10',
             ykwargs=dict(breaks=[0.1,10,100,1000,10000],  labels=list(map(esc,['0.1','10','100','1000','10000']))),)
     p += legend_bottom
     postfix_sys = postfix +"""
@@ -292,6 +292,8 @@ if True:
         print("*** per query prob=0.1: \n", summary_data)
         summary_data = get_summary("fade_single", "dbt_data", "False", "False",  "", prob_where, jn)
         print("***probe=0.1 \n", summary_data)
+        summary_data = get_summary("fade_single", "dbt_data", "False", "False",  "", "and (qid<>1 and qid<>6 and qid<>19)", jn)
+        print("**ALL \n", summary_data)
         
         print("======== DBT-P vs FaDe Summary =============")
         # fade_data, dbt_prune, fade_prune, is_incremental, group
@@ -316,6 +318,9 @@ if True:
         summary_data = get_summary("fade_single", "dbt_data", "True", "True",  "", prob_where, jn)
         print("*** prob 0.1:\n", summary_data)
         print(f"{round(summary_data['avg_speedup'][0])}X (min: {summary_data['min_speedup'][0]:.4f}, max: {round(summary_data['max_speedup'][0])})")
+        
+        summary_data = get_summary("fade_single", "dbt_data", "True", "True",  "", "and (qid<>1 and qid<>6 and qid<>19)", jn)
+        print("**ALL \n", summary_data)
         
         
     # print summary
@@ -366,11 +371,12 @@ if True:
     select sf, query,
     f.eval_time_ms as fms, fp.eval_time_ms as fpms,
     d.eval_time_ms as dms, dp.eval_time_ms as dpms,
+    d.eval_time_ms / dp.eval_time_ms as dp_speedup,
     f.eval_time_ms / fp.eval_time_ms as fp_speedup,
     d.eval_time_ms / f.eval_time_ms as f_d_speedup,
     dp.eval_time_ms / f.eval_time_ms as f_dp_speedup,
     d.eval_time_ms / fp.eval_time_ms as fp_d_speedup,
-    dp.eval_time_ms / fp.eval_time_ms as fp_dp_speedup
+    dp.eval_time_ms / fp.eval_time_ms as fp_dp_speedup,
     from (select * from single_data where system='FaDE-W1-P') as fp JOIN
     (select * from single_data where system='FaDE-W1') as f using (query, sf) JOIN
     (select * from single_data where system='DBT') as d using (query, sf) JOIN
@@ -384,6 +390,8 @@ if True:
     avg(f.eval_time_ms) as fms, avg(fp.eval_time_ms) as fpms,
     avg(d.eval_time_ms) as dms, avg(dp.eval_time_ms) as dpms,
     avg(f.eval_time_ms / fp.eval_time_ms) as fp_speedup,
+    min(f.eval_time_ms / fp.eval_time_ms) as fp_speedup_min,
+    max(f.eval_time_ms / fp.eval_time_ms) as fp_speedup_max,
     avg(d.eval_time_ms / f.eval_time_ms) as f_d_speedup,
     avg(dp.eval_time_ms / f.eval_time_ms) as f_dp_speedup,
     avg(d.eval_time_ms / fp.eval_time_ms) as fp_d_speedup,
@@ -506,7 +514,7 @@ if True:
             """).df()
         print(summary)
 
-        print(con.execute("select avg(fade_speedup), avg(provsql_slowdown) from summary").df())
+        print(con.execute("select avg(fade_speedup), avg(provsql_slowdown), max(provsql_slowdown) from summary").df())
 
 
 if plot_scale:
